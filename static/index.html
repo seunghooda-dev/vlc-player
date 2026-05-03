@@ -1,0 +1,1014 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Archive Tagger — MXF Player</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#2b2b2b;--s1:#303030;--b0:#111;--b1:#1e1e1e;
+  --yellow:#FFD700;--orange:#FF8C00;
+  --green:#00C853;--red:#FF4444;--blue:#4A9EFF;--teal:#00BCD4;--purple:#AA44FF;
+  --t0:#E0E0E0;--t1:#999;--t2:#666;--t3:#444;--sel:#1a4a8a;
+}
+*{margin:0;padding:0;box-sizing:border-box;user-select:none;}
+body{background:#181818;font-family:'Noto Sans KR',sans-serif;font-size:11px;color:var(--t0);display:flex;align-items:center;justify-content:center;min-height:100vh;padding:12px;}
+
+/* WINDOW */
+.W{width:1100px;background:var(--bg);border:2px solid var(--b0);box-shadow:0 12px 48px rgba(0,0,0,.9);}
+
+/* TITLE */
+.TB{height:26px;background:linear-gradient(180deg,#404040,#2e2e2e);border-bottom:1px solid var(--b0);display:flex;align-items:center;padding:0 8px;gap:6px;}
+.d{width:11px;height:11px;border-radius:50%;}
+.dr{background:#FF5F57;}.dy{background:#FFBD2E;}.dg{background:#28C941;}
+.TBT{flex:1;text-align:center;font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--t2);letter-spacing:.1em;}
+
+/* CHANNEL TABS */
+.CT{background:linear-gradient(180deg,#363636,#2c2c2c);border-bottom:2px solid var(--b0);display:flex;align-items:flex-end;padding:0 4px;gap:2px;}
+.ct{padding:4px 10px;font-size:10px;font-family:'Share Tech Mono',monospace;color:var(--t2);background:#282828;border:1px solid #1e1e1e;border-bottom:none;cursor:pointer;position:relative;top:1px;}
+.ct:hover{color:var(--t0);background:#333;}
+.ct.on{color:var(--green);background:var(--s1);border-color:#464646;border-bottom:1px solid var(--s1);}
+.ct .L{font-size:8px;font-weight:700;padding:0 3px;margin-right:2px;color:#000;}
+.ct:nth-child(1) .L{background:var(--green);}
+.ct:nth-child(2) .L{background:var(--blue);}
+.ct:nth-child(3) .L{background:var(--orange);}
+.ct:nth-child(4) .L{background:var(--purple);}
+.ct-exp{margin-left:auto;padding:4px 10px;font-size:10px;color:var(--t2);background:#282828;border:1px solid #1e1e1e;border-bottom:none;cursor:pointer;top:1px;position:relative;}
+.ct-exp.on{color:var(--t0);background:var(--s1);border-color:#464646;border-bottom:1px solid var(--s1);}
+.gear{margin-left:4px;margin-bottom:2px;width:19px;height:19px;background:#3a3a3a;border:1px solid #222;border-radius:2px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--t2);}
+
+/* LAYOUT */
+.ML{display:flex;}
+
+/* ══ PLAYER ══ */
+.PP{width:600px;display:flex;flex-direction:column;border-right:2px solid var(--b0);}
+.ST{display:flex;background:#2c2c2c;border-bottom:1px solid var(--b0);}
+.st{padding:5px 14px;font-size:10px;font-weight:500;cursor:pointer;color:var(--t2);border-right:1px solid #202020;}
+.st.on{color:var(--t0);background:var(--s1);border-bottom:2px solid var(--green);}
+.IB{background:#252525;border-bottom:1px solid var(--b0);padding:3px 10px;display:flex;align-items:center;gap:12px;}
+.ib{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--t2);}
+.ib span{color:var(--orange);}
+
+/* VIEWPORT */
+.VP{background:#000;position:relative;height:270px;display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;}
+#V{width:100%;height:100%;object-fit:contain;display:none;}
+#V.on{display:block;}
+.VPH{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;pointer-events:none;}
+.VPH.hide{display:none;}
+.vph-ico{font-size:52px;opacity:.1;}
+.vph-t{font-size:11px;color:#3a3a3a;letter-spacing:.12em;font-family:'Share Tech Mono',monospace;}
+.vph-s{font-size:9px;color:#2a2a2a;font-family:'Share Tech Mono',monospace;}
+
+/* SUBTITLE OVERLAY */
+.SUB{position:absolute;bottom:10px;left:0;right:0;text-align:center;pointer-events:none;}
+.sub-text{display:inline-block;background:rgba(0,0,0,.75);color:#fff;font-size:13px;font-weight:500;padding:4px 12px;border-radius:2px;letter-spacing:.02em;max-width:90%;line-height:1.5;}
+
+/* STATUS / FORMAT BADGE */
+.SB{position:absolute;top:8px;left:8px;color:#fff;font-size:9px;font-weight:700;letter-spacing:.15em;padding:2px 8px;font-family:'Share Tech Mono',monospace;}
+.SB.play{background:var(--green);}.SB.stop{background:#E65100;}.SB.pause{background:#444;}.SB.error{background:var(--red);}.SB.load{background:var(--blue);}
+.FB{position:absolute;top:8px;right:8px;background:rgba(0,0,0,.75);color:var(--t1);font-size:8px;letter-spacing:.1em;padding:3px 7px;font-family:'Share Tech Mono',monospace;border:1px solid #2a2a2a;display:none;}
+.FB.on{display:block;}
+.DB-IND{position:absolute;bottom:40px;right:8px;background:rgba(0,200,83,.15);border:1px solid var(--green);color:var(--green);font-family:'Share Tech Mono',monospace;font-size:8px;padding:2px 7px;display:none;}
+.DB-IND.on{display:block;}
+
+/* TC */
+.TC{background:#0e0e0e;padding:6px 10px;border-top:1px solid #000;border-bottom:1px solid #2a2a2a;display:grid;grid-template-columns:1fr 1fr;gap:4px;align-items:center;}
+.tcm{font-family:'Share Tech Mono',monospace;font-size:30px;color:var(--yellow);letter-spacing:.04em;line-height:1;text-shadow:0 0 14px rgba(255,215,0,.35);}
+.tcr{display:flex;flex-direction:column;gap:3px;}
+.tcrow{display:grid;grid-template-columns:52px 1fr auto;gap:4px;align-items:center;font-family:'Share Tech Mono',monospace;font-size:9px;}
+.tcl{color:var(--t3);}.tci{display:flex;gap:2px;}
+.tib{width:15px;height:15px;background:#2a2a2a;border:1px solid #1e1e1e;border-radius:1px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:7px;color:var(--t2);}
+.tib:hover{background:#3a3a3a;color:var(--t0);}
+.tcv{font-size:11px;color:var(--t0);text-align:right;padding-right:4px;}
+.tcpm{display:flex;gap:1px;}
+.tcpm s{text-decoration:none;width:13px;height:15px;background:#242424;border:1px solid #1e1e1e;display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--t2);cursor:pointer;}
+
+/* PROGRESS */
+.PA{background:#181818;padding:5px 8px;border-bottom:1px solid var(--b0);}
+.PT{width:100%;height:8px;background:#242424;border:1px solid var(--b0);position:relative;cursor:pointer;border-radius:1px;}
+.PF{height:100%;background:linear-gradient(90deg,var(--blue),var(--green));width:0%;border-radius:1px;transition:width .07s;}
+.PH{position:absolute;top:-4px;width:14px;height:14px;background:#fff;border:2px solid var(--blue);border-radius:50%;transform:translateX(-50%);left:0%;cursor:grab;box-shadow:0 0 7px rgba(74,158,255,.55);}
+.IM{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--yellow);display:none;}
+.OM{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--orange);display:none;}
+/* SCENE MARKERS */
+.scene-mark{position:absolute;top:-3px;bottom:-3px;width:1px;background:var(--purple);opacity:.6;}
+
+/* TRANSPORT */
+.TR{background:linear-gradient(180deg,#3c3c3c,#2e2e2e);padding:6px 8px;border-bottom:1px solid var(--b0);display:flex;align-items:center;gap:4px;}
+.tej{width:27px;height:25px;background:linear-gradient(180deg,#565656,#3c3c3c);border:1px solid #1e1e1e;border-top-color:#686868;border-bottom-color:#181818;border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--t1);cursor:pointer;}
+.tej:hover{background:linear-gradient(180deg,#666,#464646);}
+.jog{display:flex;align-items:center;gap:2px;background:#222;border:1px solid #181818;padding:2px 7px;font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--t2);}
+.tsep{width:1px;height:20px;background:#1e1e1e;margin:0 2px;}
+.TB2{width:30px;height:26px;background:linear-gradient(180deg,#606060,#4c4c4c,#3c3c3c);border:1px solid #1e1e1e;border-top-color:#686868;border-bottom-color:#181818;border-radius:2px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--t0);font-size:11px;flex-shrink:0;transition:all .05s;}
+.TB2:hover{background:linear-gradient(180deg,#707070,#5a5a5a,#484848);}
+.TB2:active{transform:translateY(1px);}
+.TB2.pl{color:var(--green);font-size:14px;}
+.TB2.st2{color:#aaa;}
+.CUE{margin-left:auto;padding:0 12px;height:26px;background:linear-gradient(180deg,#565656,#3c3c3c);border:1px solid #1e1e1e;border-top-color:#686868;border-bottom-color:#181818;border-radius:2px;font-family:'Share Tech Mono',monospace;font-size:10px;font-weight:700;letter-spacing:.12em;color:var(--yellow);cursor:pointer;}
+.CUE:hover{background:linear-gradient(180deg,#666,#464646);}
+
+/* AI CONTROL BAR */
+.AI-BAR{background:#1a1a2e;border-bottom:1px solid var(--b0);padding:5px 8px;display:flex;align-items:center;gap:6px;}
+.ai-btn{padding:3px 10px;height:22px;font-family:'Share Tech Mono',monospace;font-size:9px;font-weight:700;letter-spacing:.06em;border:none;cursor:pointer;border-radius:1px;display:flex;align-items:center;gap:4px;}
+.ai-btn.stt{background:#1565C0;color:#90CAF9;border:1px solid #1976D2;}
+.ai-btn.stt:hover{background:#1976D2;}
+.ai-btn.scene{background:#4A148C;color:#CE93D8;border:1px solid #6A1B9A;}
+.ai-btn.scene:hover{background:#6A1B9A;}
+.ai-btn.disabled{opacity:.4;cursor:not-allowed;}
+.ai-status{font-family:'Share Tech Mono',monospace;font-size:8px;color:var(--t2);display:flex;align-items:center;gap:8px;}
+.ai-dot{width:6px;height:6px;border-radius:50%;background:#333;flex-shrink:0;}
+.ai-dot.run{background:var(--orange);animation:blink 0.8s infinite;}
+.ai-dot.done{background:var(--green);}
+.ai-dot.err{background:var(--red);}
+
+/* CLIP LIST */
+.CLT{background:#2a2a2a;border-bottom:1px solid var(--b0);padding:4px 8px;display:flex;gap:4px;align-items:center;}
+.clb{width:23px;height:21px;background:linear-gradient(180deg,#525252,#3e3e3e);border:1px solid #1e1e1e;border-top-color:#5c5c5c;border-radius:2px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:10px;color:var(--t2);}
+.clb:hover{color:var(--t0);}
+.CL{background:#262626;overflow-y:auto;min-height:50px;max-height:110px;}
+.cli{display:grid;grid-template-columns:18px 1fr auto;padding:4px 7px;border-bottom:1px solid #1e1e1e;cursor:pointer;align-items:center;gap:5px;}
+.cli:hover{background:#2e2e2e;}.cli.on{background:var(--sel);}
+.clic{width:12px;height:12px;border:1px solid #444;background:#1e1e1e;border-radius:1px;display:flex;align-items:center;justify-content:center;font-size:8px;color:var(--green);}
+.clin{font-size:9px;color:var(--t0);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:'Share Tech Mono',monospace;}
+.clim{font-size:8px;color:var(--t3);font-family:'Share Tech Mono',monospace;margin-top:1px;}
+.cli-badges{display:flex;gap:2px;}
+.cbadge{font-size:7px;padding:1px 4px;border-radius:1px;font-family:'Share Tech Mono',monospace;font-weight:700;}
+.cbadge.stt{background:rgba(21,101,192,.4);color:#90CAF9;border:1px solid #1565C0;}
+.cbadge.scn{background:rgba(74,20,140,.4);color:#CE93D8;border:1px solid #4A148C;}
+
+/* ══ RIGHT PANEL ══ */
+.EP{flex:1;display:flex;flex-direction:column;min-width:0;}
+.ET{display:flex;background:#2c2c2c;border-bottom:1px solid var(--b0);}
+.et{padding:5px 10px;font-size:10px;font-weight:500;cursor:pointer;color:var(--t2);border-right:1px solid #202020;white-space:nowrap;}
+.et.on{color:var(--t0);background:var(--s1);border-bottom:2px solid var(--blue);}
+.et.tarc.on{border-bottom-color:var(--teal);}
+.et.tstt.on{border-bottom-color:var(--purple);}
+.et.tscn.on{border-bottom-color:#AA44FF;}
+.et.tsch.on{border-bottom-color:var(--yellow);}
+
+/* PANEL BASE */
+.TAB-PANEL{display:none;flex-direction:column;flex:1;overflow:hidden;}
+.TAB-PANEL.on{display:flex;}
+
+/* EXPLORER */
+.ETB{background:#282828;padding:4px 8px;border-bottom:1px solid var(--b0);display:flex;align-items:center;gap:6px;}
+.eref{width:21px;height:21px;background:linear-gradient(180deg,#525252,#3e3e3e);border:1px solid #1e1e1e;border-top-color:#5c5c5c;border-radius:2px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:11px;color:var(--t2);}
+.eref:hover{color:var(--t0);}
+.RG{display:flex;gap:10px;margin-left:4px;}
+.ro{display:flex;align-items:center;gap:4px;font-size:9px;color:var(--t2);cursor:pointer;font-family:'Share Tech Mono',monospace;}
+.rd{width:10px;height:10px;border:1px solid #555;border-radius:50%;display:flex;align-items:center;justify-content:center;}
+.ro.on .rd{border-color:var(--green);}
+.ro.on .rd::after{content:'';width:5px;height:5px;border-radius:50%;background:var(--green);}
+.fob{padding:3px 10px;height:21px;background:var(--green);color:#000;font-family:'Share Tech Mono',monospace;font-size:9px;font-weight:700;border:none;cursor:pointer;border-radius:1px;}
+.fob:hover{background:#00ee55;}
+.fob2{padding:3px 10px;height:21px;background:var(--blue);color:#000;font-family:'Share Tech Mono',monospace;font-size:9px;font-weight:700;border:none;cursor:pointer;border-radius:1px;margin-left:4px;}
+.fob2:hover{background:#6ab8ff;}
+.PBR{background:#1e1e1e;padding:3px 9px;border-bottom:1px solid var(--b0);font-family:'Share Tech Mono',monospace;font-size:8px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px;}
+.PBR span{color:var(--t1);}
+.FL{flex:1;overflow-y:auto;background:#1e1e1e;}
+.fi{display:grid;grid-template-columns:66px 1fr auto;padding:5px 8px;border-bottom:1px solid #252525;cursor:pointer;gap:8px;align-items:start;transition:background .1s;}
+.fi:hover{background:#262626;}.fi.on{background:var(--sel);}
+.fth{width:66px;height:40px;background:#2a2a2a;border:1px solid #333;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;}
+.fth img{width:100%;height:100%;object-fit:cover;display:none;}
+.fth .ni{font-size:7px;color:var(--t3);font-family:'Share Tech Mono',monospace;text-align:center;line-height:1.5;}
+.fin{min-width:0;}
+.fnm{font-size:9px;color:var(--t0);font-family:'Share Tech Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px;}
+.fmt2{font-size:8px;color:var(--t3);font-family:'Share Tech Mono',monospace;line-height:1.7;}
+.fmt2 .fc{color:var(--blue);}
+.fsd{font-size:8px;color:var(--t3);font-family:'Share Tech Mono',monospace;text-align:right;white-space:nowrap;line-height:1.7;flex-shrink:0;}
+.fempty{padding:32px;text-align:center;color:#2e2e2e;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:.1em;line-height:2.4;}
+.PRB{background:#191919;border-top:1px solid var(--b0);padding:8px 10px;font-family:'Share Tech Mono',monospace;font-size:8px;color:var(--t2);display:none;}
+.PRB.on{display:block;}
+.prb-g{display:grid;grid-template-columns:1fr 1fr;gap:2px 14px;}
+.prb-r{display:flex;gap:6px;}
+.prb-k{color:var(--t3);width:72px;flex-shrink:0;}
+.prb-v{color:var(--t0);}
+.prb-v.g{color:var(--green);}
+
+/* ══ STT 탭 ══ */
+.stt-toolbar{background:#0d1117;padding:5px 8px;border-bottom:1px solid var(--b0);display:flex;align-items:center;gap:6px;}
+.stt-search{flex:1;background:#161b22;border:1px solid #30363d;color:var(--t0);font-family:'Share Tech Mono',monospace;font-size:9px;padding:4px 8px;outline:none;}
+.stt-search:focus{border-color:var(--purple);}
+.stt-sbtn{padding:3px 10px;height:22px;background:var(--purple);color:#fff;font-family:'Share Tech Mono',monospace;font-size:9px;font-weight:700;border:none;cursor:pointer;border-radius:1px;}
+.stt-sbtn:hover{background:#bb66ff;}
+.stt-scope{display:flex;gap:6px;}
+.sscope{font-size:9px;color:var(--t2);cursor:pointer;font-family:'Share Tech Mono',monospace;padding:2px 6px;border:1px solid #333;background:#222;}
+.sscope.on{border-color:var(--purple);color:var(--purple);}
+.stt-list{flex:1;overflow-y:auto;background:#0d1117;}
+.stt-item{padding:6px 10px;border-bottom:1px solid #161b22;cursor:pointer;transition:background .1s;}
+.stt-item:hover{background:#161b22;}
+.stt-item.on{background:#1a2a3a;}
+.stt-tc{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--yellow);margin-bottom:3px;}
+.stt-tc .fn{color:var(--blue);margin-left:8px;font-size:8px;}
+.stt-text{font-size:10px;color:var(--t0);line-height:1.5;}
+.stt-text em{background:rgba(170,68,255,.3);color:#ce93d8;font-style:normal;padding:0 2px;}
+.stt-empty{padding:30px;text-align:center;color:#2a2a2a;font-family:'Share Tech Mono',monospace;font-size:9px;line-height:2.4;}
+
+/* ══ 씬 탭 ══ */
+.scene-list{flex:1;overflow-y:auto;background:#0d1117;}
+.scene-item{display:grid;grid-template-columns:36px 80px 1fr 60px;padding:5px 10px;border-bottom:1px solid #161b22;cursor:pointer;align-items:center;gap:8px;transition:background .1s;}
+.scene-item:hover{background:#161b22;}
+.scene-item.on{background:#1a2a3a;}
+.sc-num{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--t3);text-align:center;}
+.sc-tc{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--yellow);}
+.sc-thumb{width:56px;height:34px;background:#1e1e1e;border:1px solid #333;object-fit:cover;display:block;}
+.sc-go{font-size:9px;color:var(--blue);cursor:pointer;font-family:'Share Tech Mono',monospace;text-align:right;}
+.sc-go:hover{color:#90caf9;}
+.scene-empty{padding:30px;text-align:center;color:#2a2a2a;font-family:'Share Tech Mono',monospace;font-size:9px;line-height:2.4;}
+
+/* ══ 검색 탭 ══ */
+.sch-wrap{padding:12px;display:flex;flex-direction:column;gap:8px;}
+.sch-label{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--t2);}
+.sch-input{background:#1a1a1a;border:1px solid #444;color:var(--t0);font-family:'Share Tech Mono',monospace;font-size:11px;padding:7px 10px;outline:none;width:100%;}
+.sch-input:focus{border-color:var(--yellow);}
+.sch-btn{padding:6px 16px;background:var(--yellow);color:#000;font-family:'Share Tech Mono',monospace;font-size:10px;font-weight:700;border:none;cursor:pointer;letter-spacing:.1em;}
+.sch-btn:hover{background:#ffe44d;}
+.sch-results{flex:1;overflow-y:auto;}
+.sch-item{padding:7px 10px;border-bottom:1px solid #252525;cursor:pointer;transition:background .1s;}
+.sch-item:hover{background:#222;}
+.sch-fn{font-family:'Share Tech Mono',monospace;font-size:8px;color:var(--blue);margin-bottom:3px;}
+.sch-tc{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--yellow);margin-bottom:3px;}
+.sch-txt{font-size:10px;color:var(--t0);line-height:1.5;}
+.sch-txt em{background:rgba(255,215,0,.25);color:var(--yellow);font-style:normal;padding:0 2px;}
+
+/* ══ ARCHIVE 탭 ══ */
+.arc-toolbar{background:#282828;padding:5px 8px;border-bottom:1px solid var(--b0);display:flex;align-items:center;gap:6px;}
+.arc-search{flex:1;background:#1a1a1a;border:1px solid #333;color:var(--t0);font-family:'Share Tech Mono',monospace;font-size:9px;padding:3px 8px;outline:none;}
+.arc-search:focus{border-color:var(--teal);}
+.arc-btn{padding:3px 10px;height:21px;font-family:'Share Tech Mono',monospace;font-size:9px;font-weight:700;border:none;cursor:pointer;border-radius:1px;}
+.arc-btn.rfs{background:#3a3a3a;color:var(--t0);border:1px solid #444;}
+.arc-btn.exp{background:var(--teal);color:#000;}
+.arc-list{flex:1;overflow-y:auto;background:#1a1a1a;}
+.arc-item{padding:6px 10px;border-bottom:1px solid #222;cursor:pointer;display:grid;grid-template-columns:1fr auto;gap:8px;align-items:start;}
+.arc-item:hover{background:#222;}
+.arc-name{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--t0);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px;}
+.arc-meta{font-family:'Share Tech Mono',monospace;font-size:8px;color:var(--t3);line-height:1.7;}
+.arc-meta .af{color:var(--teal);}
+.arc-meta .at{color:var(--yellow);}
+.arc-memo-row{grid-column:1/-1;display:flex;gap:6px;margin-top:4px;}
+.arc-memo-input{flex:1;background:#141414;border:1px solid #333;color:var(--t1);font-family:'Share Tech Mono',monospace;font-size:8px;padding:3px 6px;outline:none;}
+.arc-memo-input:focus{border-color:var(--teal);}
+.arc-memo-save{padding:2px 8px;background:var(--teal);color:#000;font-family:'Share Tech Mono',monospace;font-size:8px;font-weight:700;border:none;cursor:pointer;}
+.arc-side{text-align:right;font-family:'Share Tech Mono',monospace;font-size:8px;color:var(--t3);white-space:nowrap;line-height:1.8;}
+.arc-empty{padding:30px;text-align:center;color:#2a2a2a;font-family:'Share Tech Mono',monospace;font-size:9px;line-height:2.4;}
+
+/* STATUS BAR */
+.SBR{background:linear-gradient(180deg,#242424,#1c1c1c);border-top:1px solid var(--b0);padding:3px 10px;display:flex;align-items:center;gap:12px;font-family:'Share Tech Mono',monospace;font-size:8px;color:var(--t3);}
+.sd{width:6px;height:6px;border-radius:50%;background:#2a2a2a;}
+.sd.rdy{background:var(--green);box-shadow:0 0 5px var(--green);}
+.sd.act{background:var(--orange);box-shadow:0 0 5px var(--orange);animation:blink 1s infinite;}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.ssp{flex:1;}
+
+/* TOAST */
+.toast{position:fixed;bottom:16px;right:16px;background:#2a2a2a;border:1px solid var(--green);color:var(--green);font-family:'Share Tech Mono',monospace;font-size:9px;padding:8px 14px;display:none;z-index:999;}
+.toast.on{display:block;}.toast.err{border-color:var(--red);color:var(--red);}
+.toast.info{border-color:var(--blue);color:var(--blue);}
+
+::-webkit-scrollbar{width:5px;}
+::-webkit-scrollbar-track{background:#181818;}
+::-webkit-scrollbar-thumb{background:#363636;border-radius:3px;}
+::-webkit-scrollbar-thumb:hover{background:#484848;}
+</style>
+</head>
+<body>
+<div class="W">
+
+  <div class="TB">
+    <div class="d dr"></div><div class="d dy"></div><div class="d dg"></div>
+    <span class="TBT">ARCHIVE TAGGER — MXF PLAYER v2.0 &nbsp;|&nbsp; localhost:5000</span>
+  </div>
+
+  <div class="CT">
+    <div class="ct on" onclick="selCh(this,'B')"><span class="L">B</span>PLAY</div>
+    <div class="ct"    onclick="selCh(this,'D')"><span class="L">D</span>PLAY</div>
+    <div class="ct"    onclick="selCh(this,'F')"><span class="L">F</span>PLAY</div>
+    <div class="ct"    onclick="selCh(this,'H')"><span class="L">H</span>PLAY</div>
+    <div class="ct-exp on">📁 Explorer</div>
+    <div class="gear">⚙</div>
+  </div>
+
+  <div class="ML">
+
+    <!-- ══ PLAYER ══ -->
+    <div class="PP">
+      <div class="ST">
+        <div class="st">REMOTE</div>
+        <div class="st on">NFN</div>
+        <div class="st">PLAYER</div>
+      </div>
+      <div class="IB">
+        <span style="font-size:11px;color:var(--t3)">🔔</span>
+        <div class="ib">DF &nbsp;<span id="iF">—</span></div>
+        <div class="ib"><span id="iC">XDCAM</span></div>
+        <div class="ib"><span id="iS">HD422</span></div>
+        <div class="ib"><span id="iR">1080i</span></div>
+        <div class="ib"><span id="iFps">29.97</span></div>
+      </div>
+
+      <div class="VP" id="VP">
+        <video id="V" preload="auto"></video>
+        <div class="VPH" id="VPH">
+          <div class="vph-ico">▶</div>
+          <div class="vph-t">MXF / MP4 파일을 선택하세요</div>
+          <div class="vph-s">우측 Explorer → 📂 폴더 열기 → 클립 클릭</div>
+        </div>
+        <div class="SUB"><span class="sub-text" id="subText" style="display:none"></span></div>
+        <div class="SB stop" id="SB">STOP</div>
+        <div class="FB" id="FB"></div>
+        <div class="DB-IND" id="DBIND">✓ DB 저장됨</div>
+      </div>
+
+      <div class="TC">
+        <div class="tcm" id="tcM">00:00:00;00</div>
+        <div class="tcr">
+          <div class="tcrow"><span class="tcl">DUR</span><span class="tcv" id="tcD">00:00:00;00</span><div class="tcpm"><s>−</s><s>+</s></div></div>
+          <div class="tcrow"><span class="tcl">Remain</span><span class="tcv" id="tcR">00:00:00;00</span><div class="tcpm"><s>−</s><s>+</s></div></div>
+          <div class="tcrow">
+            <span class="tcl">IN</span>
+            <div class="tci"><div class="tib" onclick="setIn()">⬚</div><div class="tib" onclick="clrIn()">✕</div><div class="tib" onclick="gotoIn()">→</div></div>
+            <span class="tcv" id="tcI">01:00:00;00</span>
+          </div>
+          <div class="tcrow">
+            <span class="tcl">OUT</span>
+            <div class="tci"><div class="tib" onclick="setOut()">⬚</div><div class="tib" onclick="clrOut()">✕</div><div class="tib" onclick="gotoOut()">→</div></div>
+            <span class="tcv" id="tcO">01:00:00;00</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="PA">
+        <div class="PT" id="PT" onclick="seekClick(event)">
+          <div class="IM" id="IM"></div>
+          <div class="OM" id="OM"></div>
+          <div class="PF" id="PF"></div>
+          <div class="PH" id="PH"></div>
+        </div>
+      </div>
+
+      <div class="TR">
+        <div class="tej" onclick="openFolderDialog()" title="폴더 열기">⏏</div>
+        <div class="jog">JOG <span style="color:var(--t0)">x0</span></div>
+        <span style="font-size:9px;color:var(--t3);margin-left:2px;">Shut</span>
+        <div class="tsep"></div>
+        <div class="TB2" onclick="stepF(-1)">−1</div>
+        <div class="TB2" onclick="goS()">⏮</div>
+        <div class="TB2" onclick="rew()">⏪</div>
+        <div class="TB2" onclick="fwd()">⏩</div>
+        <div class="TB2" onclick="goE()">⏭</div>
+        <div class="TB2" onclick="stepF(1)">+1</div>
+        <div class="TB2 pl" id="PB2" onclick="togglePlay()">▶</div>
+        <div class="TB2 st2" onclick="doStop()">■</div>
+        <div class="CUE" onclick="doCue()">CUE</div>
+      </div>
+
+      <!-- AI CONTROL BAR -->
+      <div class="AI-BAR">
+        <button class="ai-btn stt disabled" id="btnSTT" onclick="startSTT()">🎙 STT 분석</button>
+        <button class="ai-btn scene disabled" id="btnScene" onclick="startScene()">🎬 씬 감지</button>
+        <div class="ai-status">
+          <div class="ai-dot" id="dotSTT"></div><span id="lblSTT">STT 대기</span>
+          &nbsp;&nbsp;
+          <div class="ai-dot" id="dotScene"></div><span id="lblScene">씬 대기</span>
+        </div>
+      </div>
+
+      <div class="CLT">
+        <div class="clb" onclick="openFileDialog()" title="파일 추가">+</div>
+        <div class="clb" onclick="remClip()" title="제거">−</div>
+        <div class="clb">↑</div><div class="clb">↓</div>
+        <div class="clb" onclick="saveInOut()" title="IN/OUT 저장">💾</div>
+        <div class="clb" onclick="openFolderDialog()" title="폴더 열기">📁</div>
+        <div class="clb" onclick="clearAll()" title="전체 삭제">🗑</div>
+      </div>
+      <div class="CL" id="CL"></div>
+    </div><!-- /PP -->
+
+    <!-- ══ RIGHT PANEL ══ -->
+    <div class="EP">
+      <div class="ET">
+        <div class="et on"   id="tab-exp" onclick="showTab('exp')">Local</div>
+        <div class="et tstt" id="tab-stt" onclick="showTab('stt')">🎙 자막</div>
+        <div class="et tscn" id="tab-scn" onclick="showTab('scn')">🎬 씬</div>
+        <div class="et tsch" id="tab-sch" onclick="showTab('sch')">🔍 검색</div>
+        <div class="et tarc" id="tab-arc" onclick="showTab('arc')">🗄 DB</div>
+      </div>
+
+      <!-- EXPLORER -->
+      <div class="TAB-PANEL on" id="panel-exp">
+        <div class="ETB">
+          <div class="eref" onclick="openFolderDialog()">↻</div>
+          <div class="RG">
+            <div class="ro on" id="rA" onclick="setF('A')"><div class="rd"></div>All</div>
+            <div class="ro"    id="rF" onclick="setF('F')"><div class="rd"></div>File</div>
+          </div>
+          <button class="fob"  onclick="openFolderDialog()">📂 폴더 열기</button>
+          <button class="fob2" onclick="openFileDialog()">📄 파일 추가</button>
+        </div>
+        <div class="PBR" id="PBR"><span>📁</span><span id="PT2">폴더를 선택하세요</span></div>
+        <div class="FL" id="FL">
+          <div class="fempty">NO FILES LOADED<br>📂 [폴더 열기] 버튼 클릭</div>
+        </div>
+        <div class="PRB" id="PRB"><div class="prb-g" id="PRBG"></div></div>
+      </div>
+
+      <!-- STT 자막 -->
+      <div class="TAB-PANEL" id="panel-stt">
+        <div class="stt-toolbar">
+          <input class="stt-search" id="sttSearch" type="text" placeholder="현재 클립 대사 검색..."
+            onkeydown="if(event.key==='Enter')searchCurrentStt();">
+          <button class="stt-sbtn" onclick="searchCurrentStt()">검색</button>
+        </div>
+        <div class="stt-list" id="sttList">
+          <div class="stt-empty">파일을 열고 [🎙 STT 분석] 버튼을 누르세요<br>NVIDIA GPU로 빠르게 분석됩니다</div>
+        </div>
+      </div>
+
+      <!-- 씬 감지 -->
+      <div class="TAB-PANEL" id="panel-scn">
+        <div class="scene-list" id="sceneList">
+          <div class="scene-empty">파일을 열고 [🎬 씬 감지] 버튼을 누르세요<br>FFmpeg로 컷 전환을 자동 감지합니다</div>
+        </div>
+      </div>
+
+      <!-- 전체 검색 -->
+      <div class="TAB-PANEL" id="panel-sch">
+        <div class="sch-wrap">
+          <div class="sch-label">전체 아카이브 대사 검색</div>
+          <input class="sch-input" id="schInput" type="text" placeholder="검색어를 입력하세요..."
+            onkeydown="if(event.key==='Enter')doGlobalSearch();">
+          <button class="sch-btn" onclick="doGlobalSearch()">🔍 검색</button>
+        </div>
+        <div class="sch-results" id="schResults"></div>
+      </div>
+
+      <!-- ARCHIVE DB -->
+      <div class="TAB-PANEL" id="panel-arc">
+        <div class="arc-toolbar">
+          <input class="arc-search" id="arcSearch" type="text" placeholder="파일명 검색..."
+            oninput="if(!this.value)loadArc();" onkeydown="if(event.key==='Enter')arcDoSearch();">
+          <button class="arc-btn rfs" onclick="arcDoSearch()">검색</button>
+          <button class="arc-btn rfs" onclick="loadArc()">↻</button>
+          <button class="arc-btn exp" onclick="exportCSV()">📥 CSV</button>
+          <span style="font-family:'Share Tech Mono',monospace;font-size:8px;color:var(--t3);">총 <span id="arcTotal" style="color:var(--teal)">0</span>개</span>
+        </div>
+        <div class="arc-list" id="arcList">
+          <div class="arc-empty">파일을 열면 자동으로 DB에 저장됩니다</div>
+        </div>
+      </div>
+
+    </div><!-- /EP -->
+  </div><!-- /ML -->
+
+  <div class="SBR">
+    <div class="sd rdy" id="SD"></div>
+    <span id="SS">READY</span>
+    <span>CH: <span id="SCH">B</span></span>
+    <span id="SFN" style="color:var(--t1)">—</span>
+    <div class="ssp"></div>
+    <span>DB: <span style="color:var(--teal)" id="dbCount">0</span>개</span>
+    <span>GPU: <span style="color:var(--green)">NVIDIA</span></span>
+    <span>ARCHIVE TAGGER v2.0</span>
+  </div>
+</div>
+<div class="toast" id="TOAST"></div>
+
+<script>
+// ── STATE ──────────────────────────────────────────────
+const S={play:false,fps:29.97,df:true,inPt:null,outPt:null,files:[],cur:null,folder:'',curId:null,segments:[],scenes:[]};
+let sttPoll=null, scenePoll=null;
+
+const V=document.getElementById('V');
+const tcM=document.getElementById('tcM'),tcD=document.getElementById('tcD');
+const tcR=document.getElementById('tcR'),tcI=document.getElementById('tcI'),tcO=document.getElementById('tcO');
+const PF=document.getElementById('PF'),PH=document.getElementById('PH');
+const SBdge=document.getElementById('SB'),FBdge=document.getElementById('FB'),VPH=document.getElementById('VPH');
+
+function s2tc(s,fps,df){
+  if(isNaN(s)||s<0)return'00:00:00;00';fps=fps||29.97;
+  const f=Math.round(s*fps),r=Math.round(fps),ff=f%r;
+  const ss=(f//r)%60,mm=(f//r//60)%60,hh=f//r//3600;
+  return`${p2(hh)}:${p2(mm)}:${p2(ss)}${df?';':':'}${p2(ff)}`;
+}
+// JS doesn't have // for integer div — use Math.floor
+function tc(s,fps,df){
+  if(isNaN(s)||s<0)return'00:00:00;00';fps=fps||29.97;
+  const totalF=Math.round(s*fps),r=Math.round(fps);
+  const ff=totalF%r,totalS=Math.floor(totalF/r);
+  const ss=totalS%60,mm=Math.floor(totalS/60)%60,hh=Math.floor(totalS/3600);
+  return`${p2(hh)}:${p2(mm)}:${p2(ss)}${df?';':':'}${p2(ff)}`;
+}
+const p2=n=>String(n).padStart(2,'0');
+function secFmt(s){return`${p2(Math.floor(s/60))}:${p2(Math.floor(s%60))}`;}
+
+// ── VIDEO ──────────────────────────────────────────────
+V.addEventListener('timeupdate',()=>{
+  const c=V.currentTime,d=V.duration||0;
+  tcM.textContent=tc(c,S.fps,S.df);
+  tcR.textContent=tc(d-c,S.fps,S.df);
+  const pct=d>0?(c/d)*100:0;
+  PF.style.width=pct+'%';PH.style.left=pct+'%';
+  updateSubtitle(c);
+});
+V.addEventListener('loadedmetadata',()=>{
+  tcD.textContent=tc(V.duration,S.fps,S.df);
+  tcR.textContent=tc(V.duration,S.fps,S.df);
+  VPH.classList.add('hide');V.classList.add('on');FBdge.classList.add('on');setStat('STOP');
+  renderSceneMarkers();
+});
+V.addEventListener('ended',()=>{S.play=false;setStat('STOP');document.getElementById('PB2').textContent='▶';});
+V.addEventListener('error',()=>{setStat('ERROR');toast('재생 오류',true);});
+V.addEventListener('waiting',()=>setStat('LOAD'));
+V.addEventListener('playing',()=>setStat('PLAY'));
+
+function updateSubtitle(t){
+  if(!S.segments.length){document.getElementById('subText').style.display='none';return;}
+  const seg=S.segments.find(s=>t>=s.start_sec&&t<=s.end_sec);
+  const el=document.getElementById('subText');
+  if(seg){el.textContent=seg.text;el.style.display='inline-block';}
+  else{el.style.display='none';}
+}
+
+// ── PLAYBACK ───────────────────────────────────────────
+function togglePlay(){
+  if(!V.src){openFolderDialog();return;}
+  if(S.play){V.pause();S.play=false;setStat('PAUSE');document.getElementById('PB2').textContent='▶';}
+  else{V.play();S.play=true;setStat('PLAY');document.getElementById('PB2').textContent='⏸';}
+}
+function doStop(){V.pause();V.currentTime=0;S.play=false;setStat('STOP');document.getElementById('PB2').textContent='▶';}
+function goS(){V.currentTime=0;}
+function goE(){if(V.duration)V.currentTime=V.duration-0.1;}
+function rew(){V.currentTime=Math.max(0,V.currentTime-10);}
+function fwd(){V.currentTime=Math.min(V.duration||0,V.currentTime+10);}
+function stepF(n){V.currentTime=Math.max(0,Math.min(V.duration||0,V.currentTime+n/S.fps));}
+function doCue(){V.currentTime=S.inPt!==null?S.inPt:0;}
+function setStat(s){
+  document.getElementById('SS').textContent=s;
+  SBdge.textContent=s;SBdge.className='SB '+s.toLowerCase();
+  document.getElementById('SD').className='sd '+(s==='PLAY'?'act':'rdy');
+}
+function setIn(){S.inPt=V.currentTime;tcI.textContent=tc(S.inPt,S.fps,S.df);updMark();}
+function clrIn(){S.inPt=null;tcI.textContent='01:00:00;00';document.getElementById('IM').style.display='none';}
+function setOut(){S.outPt=V.currentTime;tcO.textContent=tc(S.outPt,S.fps,S.df);updMark();}
+function clrOut(){S.outPt=null;tcO.textContent='01:00:00;00';document.getElementById('OM').style.display='none';}
+function gotoIn(){if(S.inPt!==null)V.currentTime=S.inPt;}
+function gotoOut(){if(S.outPt!==null)V.currentTime=S.outPt;}
+function updMark(){
+  const d=V.duration||1;
+  if(S.inPt!==null){const m=document.getElementById('IM');m.style.left=(S.inPt/d*100)+'%';m.style.display='block';}
+  if(S.outPt!==null){const m=document.getElementById('OM');m.style.left=(S.outPt/d*100)+'%';m.style.display='block';}
+}
+function seekClick(e){
+  if(!V.src)return;
+  const r=document.getElementById('PT').getBoundingClientRect();
+  V.currentTime=(e.clientX-r.left)/r.width*(V.duration||0);
+}
+async function saveInOut(){
+  if(!S.curId){toast('파일을 먼저 선택하세요',true);return;}
+  if(S.inPt===null&&S.outPt===null){toast('IN/OUT를 먼저 설정하세요',true);return;}
+  const body={clip_id:S.curId};
+  if(S.inPt!==null)body.tag_in=tc(S.inPt,S.fps,S.df);
+  if(S.outPt!==null)body.tag_out=tc(S.outPt,S.fps,S.df);
+  await fetch('/api/archive/inout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  toast('IN/OUT 저장됨 ✓');
+}
+
+// ── DIALOG ─────────────────────────────────────────────
+async function openFolderDialog(){
+  toast('📂 폴더 선택창을 열고 있습니다...',false,8000,'info');
+  try{
+    const res=await fetch('/api/dialog/folder');
+    const data=await res.json();
+    document.getElementById('TOAST').classList.remove('on');
+    if(data.cancelled)return;
+    S.folder=data.folder;
+    document.getElementById('PT2').textContent=data.folder;
+    S.files=data.files||[];
+    renderFL();renderCL();
+    if(S.files.length>0)loadClip(S.files[0]);
+    else toast('해당 폴더에 영상 파일이 없습니다',true);
+  }catch(e){toast('서버 연결 실패',true);}
+}
+async function openFileDialog(){
+  toast('📄 파일 선택창을 열고 있습니다...',false,8000,'info');
+  try{
+    const res=await fetch('/api/dialog/file');
+    const data=await res.json();
+    document.getElementById('TOAST').classList.remove('on');
+    if(data.cancelled)return;
+    const nf=data.files||[];
+    nf.forEach(f=>{if(!S.files.find(x=>x.filepath===f.filepath))S.files.push(f);});
+    renderFL();renderCL();
+    if(nf.length>0)loadClip(nf[0]);
+  }catch(e){toast('서버 연결 실패',true);}
+}
+
+// ── LOAD CLIP ──────────────────────────────────────────
+async function loadClip(item){
+  S.cur=item;S.curId=null;S.segments=[];S.scenes=[];
+  clearSceneMarkers();
+  document.getElementById('subText').style.display='none';
+  V.src=`/api/stream?path=${encodeURIComponent(item.filepath)}`;
+  V.load();
+  S.inPt=null;S.outPt=null;
+  tcI.textContent='01:00:00;00';tcO.textContent='01:00:00;00';
+  document.getElementById('IM').style.display='none';
+  document.getElementById('OM').style.display='none';
+  PF.style.width='0%';PH.style.left='0%';
+  tcM.textContent='00:00:00;00';
+  S.play=false;document.getElementById('PB2').textContent='▶';
+  document.getElementById('SFN').textContent=item.name;
+  document.getElementById('iF').textContent=item.ext;
+  FBdge.textContent=`${item.ext} · 29.97 · 8CH`;
+  document.getElementById('DBIND').classList.remove('on');
+  // AI 버튼 활성화
+  document.getElementById('btnSTT').classList.remove('disabled');
+  document.getElementById('btnScene').classList.remove('disabled');
+  // AI 상태 초기화
+  setAiStat('stt','idle');setAiStat('scene','idle');
+  renderFL();renderCL();
+
+  try{
+    const res=await fetch('/api/probe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filepath:item.filepath})});
+    const info=await res.json();
+    if(!info.error){
+      applyProbe(info);
+      if(info.saved){
+        S.curId=info.clip_id;
+        const ind=document.getElementById('DBIND');
+        ind.classList.add('on');setTimeout(()=>ind.classList.remove('on'),2500);
+        updateDbCount();
+        // 이미 STT/씬 데이터 있으면 로드
+        loadExistingData(info.clip_id);
+      }
+    }
+  }catch(e){}
+}
+
+async function loadExistingData(clipId){
+  // STT 결과 로드
+  try{
+    const r=await fetch(`/api/stt/result/${clipId}`);
+    const d=await r.json();
+    if(d.segments&&d.segments.length>0){
+      S.segments=d.segments;
+      renderSTT(d.segments);
+      setAiStat('stt','done');
+    }
+  }catch(e){}
+  // 씬 결과 로드
+  try{
+    const r=await fetch(`/api/scene/result/${clipId}`);
+    const d=await r.json();
+    if(d.scenes&&d.scenes.length>0){
+      S.scenes=d.scenes;
+      renderScenes(d.scenes);
+      renderSceneMarkers();
+      setAiStat('scene','done');
+    }
+  }catch(e){}
+}
+
+function applyProbe(info){
+  S.fps=info.fps||29.97;
+  document.getElementById('iC').textContent=info.codec||'XDCAM';
+  document.getElementById('iR').textContent=info.height?(info.height+'i'):'1080i';
+  document.getElementById('iFps').textContent=S.fps.toFixed(2);
+  FBdge.textContent=`${info.format_short} · ${S.fps.toFixed(2)} · ${info.channels||8}CH`;
+  tcD.textContent=tc(info.duration,S.fps,S.df);
+  const PRB=document.getElementById('PRB');PRB.classList.add('on');
+  const rows=[
+    ['파일명',info.filename],['포맷',info.format_short],['코덱',info.codec],
+    ['해상도',`${info.width}×${info.height}`],['FPS',S.fps.toFixed(3)],
+    ['채널수',(info.channels||8)+'CH'],['길이',tc(info.duration,S.fps,S.df)],
+    ['타임코드',info.timecode||'—'],['크기',(info.size/1024/1024).toFixed(1)+'MB'],
+    ['비트레이트',info.bit_rate?(info.bit_rate/1000/1000).toFixed(1)+'Mbps':'—'],
+  ];
+  document.getElementById('PRBG').innerHTML=rows.map(([k,v])=>
+    `<div class="prb-r"><span class="prb-k">${k}</span><span class="prb-v${k==='타임코드'?' g':''}">${v||'—'}</span></div>`
+  ).join('');
+  setTimeout(()=>{
+    const el=document.querySelector('.fi.on .fth');
+    if(el)loadThumb(el,S.cur.filepath);
+  },600);
+}
+
+function loadThumb(el,fp){
+  const img=el.querySelector('img'),ni=el.querySelector('.ni');
+  if(!img)return;
+  img.src=`/api/thumbnail?path=${encodeURIComponent(fp)}&t=2`;
+  img.onload=()=>{img.style.display='block';if(ni)ni.style.display='none';};
+  img.onerror=()=>{img.style.display='none';if(ni)ni.style.display='';};
+}
+
+// ── AI: STT ────────────────────────────────────────────
+async function startSTT(){
+  if(!S.curId){toast('파일을 먼저 선택하세요',true);return;}
+  if(document.getElementById('btnSTT').classList.contains('disabled'))return;
+  try{
+    const res=await fetch('/api/stt/start',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({clip_id:S.curId,filepath:S.cur.filepath,fps:S.fps})});
+    const data=await res.json();
+    if(data.status==='started'||data.status==='running'){
+      setAiStat('stt','running');
+      showTab('stt');
+      document.getElementById('sttList').innerHTML=`<div class="stt-empty">🎙 분석 중입니다...<br>NVIDIA GPU로 처리 중<br><br><span style="color:var(--t3);font-size:8px;">파일 길이에 따라 1~5분 소요</span></div>`;
+      sttPoll=setInterval(pollSTT,2000);
+    }
+  }catch(e){toast('STT 시작 실패',true);}
+}
+async function pollSTT(){
+  if(!S.curId)return;
+  try{
+    const r=await fetch(`/api/stt/status/${S.curId}`);
+    const d=await r.json();
+    if(d.status==='done'){
+      clearInterval(sttPoll);sttPoll=null;
+      setAiStat('stt','done');
+      toast(`🎙 STT 완료 — ${d.segment_count}개 세그먼트`);
+      // 결과 로드
+      const r2=await fetch(`/api/stt/result/${S.curId}`);
+      const d2=await r2.json();
+      S.segments=d2.segments||[];
+      renderSTT(S.segments);
+      renderCL();
+    }else if(d.status==='error'){
+      clearInterval(sttPoll);sttPoll=null;
+      setAiStat('stt','error');
+      toast('STT 오류 — Whisper 설치 확인: pip install faster-whisper',true);
+    }
+  }catch(e){}
+}
+function renderSTT(segs, keyword=''){
+  const el=document.getElementById('sttList');
+  if(!segs||!segs.length){
+    el.innerHTML=`<div class="stt-empty">자막 데이터가 없습니다</div>`;return;
+  }
+  el.innerHTML=segs.map((s,i)=>{
+    let txt=s.text;
+    if(keyword){
+      const re=new RegExp(`(${keyword.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, 'gi');
+      txt=txt.replace(re,'<em>$1</em>');
+    }
+    return`<div class="stt-item" onclick="seekToSec(${s.start_sec})">
+      <div class="stt-tc">${s.tc_in} <span style="color:var(--t3)">→</span> ${s.tc_out}</div>
+      <div class="stt-text">${txt}</div>
+    </div>`;
+  }).join('');
+}
+function searchCurrentStt(){
+  const kw=document.getElementById('sttSearch').value.trim();
+  if(!kw){renderSTT(S.segments);return;}
+  const filtered=S.segments.filter(s=>s.text.includes(kw));
+  renderSTT(filtered, kw);
+  toast(`"${kw}" — ${filtered.length}개 결과`);
+}
+
+// ── AI: SCENE ──────────────────────────────────────────
+async function startScene(){
+  if(!S.curId){toast('파일을 먼저 선택하세요',true);return;}
+  if(document.getElementById('btnScene').classList.contains('disabled'))return;
+  try{
+    const res=await fetch('/api/scene/start',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({clip_id:S.curId,filepath:S.cur.filepath,fps:S.fps})});
+    const data=await res.json();
+    if(data.status==='started'||data.status==='running'){
+      setAiStat('scene','running');
+      showTab('scn');
+      document.getElementById('sceneList').innerHTML=`<div class="scene-empty">🎬 씬 감지 중...<br>FFmpeg로 컷 전환 분석 중</div>`;
+      scenePoll=setInterval(pollScene,2000);
+    }
+  }catch(e){toast('씬 감지 시작 실패',true);}
+}
+async function pollScene(){
+  if(!S.curId)return;
+  try{
+    const r=await fetch(`/api/scene/status/${S.curId}`);
+    const d=await r.json();
+    if(d.status==='done'){
+      clearInterval(scenePoll);scenePoll=null;
+      setAiStat('scene','done');
+      toast(`🎬 씬 감지 완료 — ${d.scene_count}개 씬`);
+      const r2=await fetch(`/api/scene/result/${S.curId}`);
+      const d2=await r2.json();
+      S.scenes=d2.scenes||[];
+      renderScenes(S.scenes);
+      renderSceneMarkers();
+      renderCL();
+    }else if(d.status==='error'){
+      clearInterval(scenePoll);scenePoll=null;
+      setAiStat('scene','error');
+      toast('씬 감지 오류',true);
+    }
+  }catch(e){}
+}
+function renderScenes(scenes){
+  const el=document.getElementById('sceneList');
+  if(!scenes||!scenes.length){
+    el.innerHTML=`<div class="scene-empty">씬 데이터가 없습니다</div>`;return;
+  }
+  el.innerHTML=`<div style="background:#161b22;padding:4px 10px;font-family:'Share Tech Mono',monospace;font-size:8px;color:var(--t3);border-bottom:1px solid var(--b0);">총 ${scenes.length}개 씬 감지됨</div>`+
+  scenes.map(s=>
+    `<div class="scene-item" onclick="seekToSec(${s.start_sec})">
+      <div class="sc-num">#${String(s.index+1).padStart(2,'0')}</div>
+      <div class="sc-tc">${s.tc_in}</div>
+      <div style="font-family:'Share Tech Mono',monospace;font-size:8px;color:var(--t3);">${secFmt(s.start_sec)}</div>
+      <div class="sc-go">▶ 이동</div>
+    </div>`
+  ).join('');
+}
+function renderSceneMarkers(){
+  // 프로그레스바에 씬 마커 표시
+  const pt=document.getElementById('PT');
+  pt.querySelectorAll('.scene-mark').forEach(e=>e.remove());
+  const d=V.duration||0;
+  if(!d||!S.scenes.length)return;
+  S.scenes.forEach(s=>{
+    const m=document.createElement('div');
+    m.className='scene-mark';
+    m.style.left=(s.start_sec/d*100)+'%';
+    m.title=`씬 #${s.index+1} — ${s.tc_in}`;
+    pt.appendChild(m);
+  });
+}
+function clearSceneMarkers(){
+  document.getElementById('PT').querySelectorAll('.scene-mark').forEach(e=>e.remove());
+}
+function seekToSec(sec){V.currentTime=sec;if(!S.play)V.play();}
+
+// ── 전체 검색 ──────────────────────────────────────────
+async function doGlobalSearch(){
+  const kw=document.getElementById('schInput').value.trim();
+  if(!kw){toast('검색어를 입력하세요',true);return;}
+  try{
+    const res=await fetch('/api/stt/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keyword:kw})});
+    const data=await res.json();
+    const el=document.getElementById('schResults');
+    if(!data.results||!data.results.length){
+      el.innerHTML=`<div class="stt-empty">"${kw}" 검색 결과 없음<br>STT 분석이 완료된 파일만 검색됩니다</div>`;return;
+    }
+    const re=new RegExp(`(${kw.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, 'gi');
+    el.innerHTML=data.results.map(r=>{
+      const txt=r.text.replace(re,'<em>$1</em>');
+      return`<div class="sch-item" onclick="playFromSearch('${r.filepath.replace(/'/g,"\\'")}',${r.start_sec})">
+        <div class="sch-fn">📄 ${r.filename}</div>
+        <div class="sch-tc">🕐 ${r.tc_in}</div>
+        <div class="sch-txt">${txt}</div>
+      </div>`;
+    }).join('');
+    toast(`"${kw}" — ${data.count}개 결과`);
+  }catch(e){toast('검색 오류',true);}
+}
+async function playFromSearch(fp,sec){
+  const item={name:fp.split('\\').pop()||fp.split('/').pop(),filepath:fp,size:0,ext:fp.split('.').pop().toUpperCase(),stem:''};
+  await loadClip(item);
+  setTimeout(()=>{V.currentTime=sec;V.play();},800);
+  showTab('exp');
+}
+
+// ── AI STATUS ──────────────────────────────────────────
+function setAiStat(type, status){
+  const dot=document.getElementById('dot'+type.charAt(0).toUpperCase()+type.slice(1)+'');
+  const lbl=document.getElementById('lbl'+type.charAt(0).toUpperCase()+type.slice(1)+'');
+  const dotEl=document.getElementById(type==='stt'?'dotSTT':'dotScene');
+  const lblEl=document.getElementById(type==='stt'?'lblSTT':'lblScene');
+  if(!dotEl||!lblEl)return;
+  dotEl.className='ai-dot'+(status==='running'?' run':status==='done'?' done':status==='error'?' err':'');
+  const labels={idle:'대기',running:'분석 중...',done:'완료',error:'오류'};
+  lblEl.textContent=(type==='stt'?'STT ':'씬 ')+(labels[status]||status);
+}
+
+// ── ARCHIVE ────────────────────────────────────────────
+async function loadArc(){
+  try{
+    const res=await fetch('/api/archive');
+    const data=await res.json();
+    renderArc(data.clips||[]);
+    document.getElementById('dbCount').textContent=data.total||0;
+    document.getElementById('arcTotal').textContent=data.total||0;
+  }catch(e){}
+}
+async function arcDoSearch(){
+  const kw=document.getElementById('arcSearch').value.trim();
+  if(!kw){loadArc();return;}
+  const res=await fetch('/api/archive/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keyword:kw})});
+  const data=await res.json();
+  renderArc(data.clips||[]);
+  document.getElementById('arcTotal').textContent=data.total||0;
+}
+function renderArc(clips){
+  const el=document.getElementById('arcList');
+  if(!clips.length){el.innerHTML=`<div class="arc-empty">결과 없음</div>`;return;}
+  el.innerHTML=clips.map(c=>{
+    const dt=(c.created_at||'').slice(0,16).replace('T',' ');
+    const sttBadge=c.stt_done?`<span style="color:var(--purple);font-size:8px;font-family:'Share Tech Mono',monospace;">STT✓</span>`:'';
+    const scnBadge=c.scene_done?`<span style="color:#AA44FF;font-size:8px;font-family:'Share Tech Mono',monospace;margin-left:4px;">씬✓</span>`:'';
+    return`<div class="arc-item">
+      <div>
+        <div class="arc-name">${c.filename} ${sttBadge}${scnBadge}</div>
+        <div class="arc-meta"><span class="af">${c.format_short||'—'}</span> · ${c.codec||'—'} · ${c.width||0}×${c.height||0} · ${(c.fps||29.97).toFixed(2)}fps<br>
+        길이: ${secFmt(c.duration||0)} &nbsp;|&nbsp; <span class="at">TC: ${c.timecode||'—'}</span></div>
+        <div class="arc-memo-row">
+          <input class="arc-memo-input" type="text" placeholder="메모..." value="${c.memo||''}" id="memo_${c.id}">
+          <button class="arc-memo-save" onclick="saveMemo('${c.id}')">저장</button>
+        </div>
+      </div>
+      <div class="arc-side">${dt}<br>${((c.file_size||0)/1024/1024).toFixed(0)}MB<br>
+        <span style="color:var(--blue);cursor:pointer" onclick="playFromSearch('${c.filepath.replace(/'/g,"\\'")}',0)">▶ 재생</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+async function saveMemo(id){
+  const memo=document.getElementById('memo_'+id).value;
+  await fetch('/api/archive/memo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clip_id:id,memo})});
+  toast('메모 저장됨 ✓');
+}
+function exportCSV(){window.location='/api/archive/export';toast('CSV 다운로드 시작');}
+async function updateDbCount(){
+  try{const r=await fetch('/api/archive');const d=await r.json();document.getElementById('dbCount').textContent=d.total||0;}catch(e){}
+}
+
+// ── RENDER ─────────────────────────────────────────────
+function renderFL(){
+  const FL=document.getElementById('FL');
+  if(!S.files.length){FL.innerHTML=`<div class="fempty">NO FILES LOADED<br>📂 [폴더 열기] 클릭</div>`;return;}
+  FL.innerHTML=S.files.map((f,i)=>{
+    const on=S.cur&&S.cur.filepath===f.filepath;
+    return`<div class="fi${on?' on':''}" onclick="loadClip(S.files[${i}])">
+      <div class="fth"><img src=""><div class="ni">No<br>Image</div></div>
+      <div class="fin">
+        <div class="fnm">${f.stem||f.name}</div>
+        <div class="fmt2"><span class="fc">${f.ext}</span> · .${f.name.split('.').pop().toLowerCase()} / 8CH<br>29.97 / 1080i</div>
+      </div>
+      <div class="fsd">—<br>${f.ext}<br>${((f.size||0)/1024/1024).toFixed(0)}MB</div>
+    </div>`;
+  }).join('');
+}
+function renderCL(){
+  document.getElementById('CL').innerHTML=S.files.map((f,i)=>{
+    const on=S.cur&&S.cur.filepath===f.filepath;
+    return`<div class="cli${on?' on':''}" onclick="loadClip(S.files[${i}])">
+      <div class="clic">${on?'✓':''}</div>
+      <div style="min-width:0">
+        <div class="clin">${f.name}</div>
+        <div class="clim">${f.ext} · 29.97</div>
+      </div>
+      <div class="cli-badges"></div>
+    </div>`;
+  }).join('');
+}
+function remClip(){
+  if(!S.cur)return;
+  S.files=S.files.filter(f=>f.filepath!==S.cur.filepath);
+  S.cur=null;S.curId=null;V.src='';V.classList.remove('on');VPH.classList.remove('hide');
+  document.getElementById('PRB').classList.remove('on');
+  renderFL();renderCL();
+}
+function clearAll(){
+  S.files=[];S.cur=null;S.curId=null;V.src='';V.classList.remove('on');VPH.classList.remove('hide');
+  document.getElementById('PRB').classList.remove('on');
+  tcM.textContent='00:00:00;00';renderFL();renderCL();
+}
+
+// ── TAB ────────────────────────────────────────────────
+function showTab(t){
+  ['exp','stt','scn','sch','arc'].forEach(id=>{
+    document.getElementById('panel-'+id).classList.toggle('on',id===t);
+    document.getElementById('tab-'+id).classList.toggle('on',id===t);
+  });
+  if(t==='arc')loadArc();
+  if(t==='stt'&&S.segments.length)renderSTT(S.segments);
+  if(t==='scn'&&S.scenes.length)renderScenes(S.scenes);
+}
+
+// ── UI HELPERS ─────────────────────────────────────────
+function selCh(el,ch){document.querySelectorAll('.ct').forEach(t=>t.classList.remove('on'));el.classList.add('on');document.getElementById('SCH').textContent=ch;}
+function setF(f){['rA','rF'].forEach(id=>document.getElementById(id).classList.remove('on'));document.getElementById('r'+f).classList.add('on');}
+function toast(msg,err=false,d=3000,type=''){
+  const t=document.getElementById('TOAST');
+  t.textContent=msg;
+  t.className='toast on'+(err?' err':type==='info'?' info':'');
+  clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('on'),d);
+}
+
+// ── KEYBOARD ───────────────────────────────────────────
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT')return;
+  if(e.code==='Space'){e.preventDefault();togglePlay();}
+  else if(e.code==='ArrowLeft')stepF(-1);
+  else if(e.code==='ArrowRight')stepF(1);
+  else if(e.code==='Home')goS();
+  else if(e.code==='End')goE();
+  else if(e.key==='i'||e.key==='I')setIn();
+  else if(e.key==='o'||e.key==='O')setOut();
+  else if(e.key==='f'||e.key==='F')openFolderDialog();
+  else if(e.key==='Escape'){}
+});
+
+// ── INIT ───────────────────────────────────────────────
+showTab('exp');
+updateDbCount();
+</script>
+</body>
+</html>

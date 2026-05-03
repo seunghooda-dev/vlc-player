@@ -1,0 +1,1770 @@
+"""
+video_panel.py — 메인 비디오 플레이어 패널
+VideoPanel: 재생/타임코드/트랜스코드/IN-OUT/블랙검출/오디오미터
+"""
+import sys, os, json, hashlib, subprocess
+from pathlib import Path
+from datetime import datetime
+from PyQt6.QtWidgets import (
+    QApplication,
+    QWidget, QHBoxLayout, QVBoxLayout, QGridLayout, QFrame, QSizePolicy,
+    QLabel, QSlider, QPushButton, QProgressBar, QCheckBox, QButtonGroup,
+    QLineEdit, QTextEdit, QScrollBar, QTabBar, QTabWidget,
+    QAbstractButton, QAbstractSpinBox,
+    QFileDialog, QMessageBox,
+    QListWidget, QListWidgetItem,
+    QAbstractItemView,
+    QGraphicsView, QGraphicsScene, QGraphicsProxyWidget,
+)
+from PyQt6.QtCore import (
+    Qt, QTimer, QUrl, pyqtSignal, QSize, QSizeF, QRectF, QObject
+)
+from PyQt6.QtGui   import QColor, QFont, QDragEnterEvent, QDropEvent
+from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
+from PyQt6.QtMultimediaWidgets import QGraphicsVideoItem
+
+from constants  import C, FFMPEG, FFPROBE, VIDEO_EXTS, TMP_DIR, BASE_DIR, log
+from db_models  import probe, save_clip, sec_to_tc, is_df_fps
+from threads    import TranscodeThread
+from meters     import SideMeter, SafeAreaItem, LoudnessMeter, MeterController, mk_btn, mk_label, separator
+
+
+class VlcAudioAdapter:
+    def __init__(self, player):
+        self.player = player
+
+    def setVolume(self, value):
+        try:
+            self.player.audio_set_volume(int(max(0.0, min(1.0, value)) * 100))
+        except Exception as e:
+            log.debug(f'vlc volume: {e}')
+
+
+class AudioMixPlayer(QObject):
+    """FFmpeg mixes checked MXF mono channels; ffplay outputs the audio only."""
+    def __init__(self):
+        super().__init__()
+        self.filepath = None
+        self.channels = [1, 2]
+        self.volume = 0.8
+        self.rate = 1.0
+        self.audio_stream_count = 0
+        self.channel_count = 2
+        self._ffmpeg = None
+        self._ffplay = None
+        self._playing = False
+        # FFmpeg/ffplay has a small startup/buffer delay after VLC video starts.
+        # Seeking the external audio slightly ahead keeps MXF playback closer.
+        self.start_lead_sec = 0.20
+
+    def set_file(self, filepath, audio_stream_count=0, channel_count=2):
+        self.filepath = filepath
+        self.audio_stream_count = int(audio_stream_count or 0)
+        self.channel_count = max(1, int(channel_count or 2))
+
+    def set_channels(self, channels):
+        cleaned = []
+        for ch in channels or [1, 2]:
+            try:
+                n = int(ch)
+            except Exception:
+                continue
+            if 1 <= n <= 8 and n not in cleaned:
+                cleaned.append(n)
+        self.channels = cleaned or [1, 2]
+
+    def set_volume(self, value):
+        self.volume = max(0.0, min(1.0, float(value)))
+
+    def set_rate(self, rate):
+        try:
+            self.rate = max(0.5, min(2.0, float(rate)))
+        except Exception:
+            self.rate = 1.0
+
+    def stop(self):
+        self._playing = False
+        for proc in (self._ffplay, self._ffmpeg):
+            if proc and proc.poll() is None:
+                try:
+                    proc.kill()
+                except Exception as e:
+                    log.debug(f'audio mix kill: {e}')
+        for proc in (self._ffplay, self._ffmpeg):
+            if proc:
+                try:
+                    proc.wait(timeout=1)
+                except Exception:
+                    pass
+        self._ffplay = None
+        self._ffmpeg = None
+
+    def restart(self, pos_sec=0.0):
+        self.stop()
+        self.play(pos_sec)
+
+    def play(self, pos_sec=0.0):
+        if not self.filepath or not Path(self.filepath).exists():
+            return
+        self.stop()
+        fc = self._build_filter()
+        start_sec = max(0.0, float(pos_sec) + self.start_lead_sec)
+        ffmpeg_cmd = [
+            FFMPEG, '-hide_banner', '-loglevel', 'error',
+            '-ss', f'{start_sec:.3f}',
+            '-i', self.filepath,
+            '-filter_complex', fc,
+            '-map', '[aout]',
+            '-vn',
+            '-f', 's16le',
+            '-acodec', 'pcm_s16le',
+            '-ar', '48000',
+            '-ac', '2',
+            'pipe:1',
+        ]
+        ffplay_cmd = [
+            'ffplay',
+            '-nodisp',
+            '-autoexit',
+            '-loglevel', 'quiet',
+            '-fflags', 'nobuffer',
+            '-flags', 'low_delay',
+            '-probesize', '32',
+            '-analyzeduration', '0',
+            '-f', 's16le',
+            '-sample_rate', '48000',
+            '-ch_layout', 'stereo',
+            '-volume', str(int(self.volume * 100)),
+            '-i', '-',
+        ]
+        try:
+            self._ffmpeg = subprocess.Popen(
+                ffmpeg_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                creationflags=0x08000000
+            )
+            self._ffplay = subprocess.Popen(
+                ffplay_cmd,
+                stdin=self._ffmpeg.stdout,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=0x08000000
+            )
+            if self._ffmpeg.stdout:
+                self._ffmpeg.stdout.close()
+            self._playing = True
+        except Exception as e:
+            log.error(f'audio mix start failed: {e}')
+            self.stop()
+
+    def _source_for_channel(self, ch, idx):
+        ch = max(1, min(8, int(ch)))
+        if self.audio_stream_count > 1:
+            return f'0:a:{ch - 1}', ''
+        label = f'mono{idx}'
+        return label, f'[0:a]pan=mono|c0=c{ch - 1}[{label}]'
+
+    def _tail_filters(self):
+        filters = []
+        if abs(self.rate - 1.0) > 0.001:
+            filters.append(f'atempo={self.rate:.3f}')
+        return ','.join(filters) if filters else 'anull'
+
+    def _build_filter(self):
+        channels = self.channels or [1, 2]
+        setup = []
+        if len(channels) == 1:
+            src, prep = self._source_for_channel(channels[0], 0)
+            if prep:
+                setup.append(prep)
+            tail = self._tail_filters()
+            return ';'.join(setup + [f'[{src}]pan=stereo|c0=c0|c1=c0,{tail}[aout]'])
+
+        stereo_labels = []
+        for i, ch in enumerate(channels):
+            src, prep = self._source_for_channel(ch, i)
+            if prep:
+                setup.append(prep)
+            out = f'sel{i}'
+            if ch % 2:
+                pan = f'[{src}]pan=stereo|c0=c0|c1=0*c0[{out}]'
+            else:
+                pan = f'[{src}]pan=stereo|c0=0*c0|c1=c0[{out}]'
+            setup.append(pan)
+            stereo_labels.append(f'[{out}]')
+        tail = self._tail_filters()
+        mix = ''.join(stereo_labels) + f'amix=inputs={len(stereo_labels)}:normalize=0,{tail}[aout]'
+        return ';'.join(setup + [mix])
+
+
+class VlcPlayerAdapter(QObject):
+    positionChanged = pyqtSignal(int)
+    durationChanged = pyqtSignal(int)
+    playbackStateChanged = pyqtSignal(object)
+    errorOccurred = pyqtSignal(object, str)
+    mediaStatusChanged = pyqtSignal(object)
+
+    def __init__(self, video_widget):
+        super().__init__()
+        vlc_dir = r'C:\Program Files\VideoLAN\VLC'
+        if hasattr(os, 'add_dll_directory') and Path(vlc_dir).exists():
+            os.add_dll_directory(vlc_dir)
+        import vlc
+        self._vlc = vlc
+        self._instance = vlc.Instance('--no-video-title-show', '--quiet')
+        self._player = self._instance.media_player_new()
+        self._video_widget = video_widget
+        self._state = QMediaPlayer.PlaybackState.StoppedState
+        self._selected_audio_channel = 1
+        self._audio_apply_attempts = 0
+        self._timer = QTimer(self)
+        self._timer.setInterval(80)
+        self._timer.timeout.connect(self._tick)
+
+    def _bind_hwnd(self):
+        try:
+            hwnd = int(self._video_widget.winId())
+            self._player.set_hwnd(hwnd)
+        except Exception as e:
+            log.error(f'vlc set_hwnd failed: {e}')
+
+    def setSource(self, url):
+        self.stop()
+        if not url or not url.isValid():
+            return
+        path = url.toLocalFile()
+        if not path:
+            return
+        self._bind_hwnd()
+        media = self._instance.media_new(path)
+        self._player.set_media(media)
+        self._audio_apply_attempts = 0
+        self.mediaStatusChanged.emit(QMediaPlayer.MediaStatus.LoadedMedia)
+        QTimer.singleShot(300, self._emit_duration)
+        QTimer.singleShot(500, self._apply_audio_channel)
+
+    def _emit_duration(self):
+        length = self._player.get_length()
+        if length and length > 0:
+            self.durationChanged.emit(length)
+
+    def play(self):
+        self._bind_hwnd()
+        rc = self._player.play()
+        if rc == -1:
+            self.errorOccurred.emit(QMediaPlayer.Error.FormatError, 'VLC could not play this file')
+            return
+        self._state = QMediaPlayer.PlaybackState.PlayingState
+        self.playbackStateChanged.emit(self._state)
+        self._timer.start()
+        QTimer.singleShot(500, self._emit_duration)
+        self._audio_apply_attempts = 0
+        QTimer.singleShot(200, self._apply_audio_channel)
+        QTimer.singleShot(700, self._apply_audio_channel)
+        QTimer.singleShot(1200, self._apply_audio_channel)
+
+    def pause(self):
+        self._player.pause()
+        self._state = QMediaPlayer.PlaybackState.PausedState
+        self.playbackStateChanged.emit(self._state)
+
+    def show_first_frame(self, ms=0):
+        target = max(0, int(ms))
+        try:
+            self._bind_hwnd()
+            self._player.audio_set_volume(0)
+            rc = self._player.play()
+            if rc == -1:
+                self.errorOccurred.emit(QMediaPlayer.Error.FormatError, 'VLC could not preroll this file')
+                return
+        except Exception as e:
+            log.debug(f'vlc preroll play: {e}')
+            return
+
+        def _freeze():
+            try:
+                self._player.set_time(target)
+                self._player.pause()
+            except Exception as e:
+                log.debug(f'vlc preroll freeze: {e}')
+            self._state = QMediaPlayer.PlaybackState.PausedState
+            self.positionChanged.emit(target)
+            self.playbackStateChanged.emit(self._state)
+            self._emit_duration()
+
+        QTimer.singleShot(160, _freeze)
+        QTimer.singleShot(420, lambda: self.setPosition(target))
+
+    def stop(self):
+        self._timer.stop()
+        try:
+            self._player.stop()
+        except Exception:
+            pass
+        self._state = QMediaPlayer.PlaybackState.StoppedState
+        self.playbackStateChanged.emit(self._state)
+        self.positionChanged.emit(0)
+
+    def setPosition(self, ms):
+        try:
+            self._player.set_time(int(ms))
+            self.positionChanged.emit(max(0, int(ms)))
+        except Exception as e:
+            log.debug(f'vlc setPosition: {e}')
+
+    def position(self):
+        try:
+            return max(0, int(self._player.get_time()))
+        except Exception:
+            return 0
+
+    def playbackState(self):
+        return self._state
+
+    def setPlaybackRate(self, rate):
+        try:
+            self._player.set_rate(float(rate))
+        except Exception as e:
+            log.debug(f'vlc set rate: {e}')
+
+    def audio_set_volume(self, value):
+        self._player.audio_set_volume(value)
+
+    def set_audio_channel(self, channel_no):
+        try:
+            self._selected_audio_channel = max(1, min(8, int(channel_no)))
+        except Exception:
+            self._selected_audio_channel = 1
+        self._audio_apply_attempts = 0
+        self._apply_audio_channel()
+
+    def _iter_audio_track_ids(self):
+        tracks = []
+        try:
+            desc = self._player.audio_get_track_description()
+            if isinstance(desc, list):
+                for item in desc:
+                    if isinstance(item, tuple) and item:
+                        tid = int(item[0])
+                        if tid >= 0:
+                            tracks.append(tid)
+                return tracks
+            node = desc
+            guard = 0
+            while node is not None and guard < 64:
+                tid = None
+                for attr in ('id', 'i_id'):
+                    if hasattr(node, attr):
+                        tid = getattr(node, attr)
+                        break
+                if tid is not None and int(tid) >= 0:
+                    tracks.append(int(tid))
+                node = getattr(node, 'next', None)
+                guard += 1
+        except Exception as e:
+            log.debug(f'vlc audio tracks: {e}')
+        return tracks
+
+    def _apply_audio_channel(self):
+        try:
+            tracks = self._iter_audio_track_ids()
+            if tracks:
+                idx = min(max(self._selected_audio_channel - 1, 0), len(tracks) - 1)
+                target = tracks[idx]
+                self._player.audio_set_track(target)
+                current = self._player.audio_get_track()
+                if current != target and self._audio_apply_attempts < 6:
+                    self._audio_apply_attempts += 1
+                    QTimer.singleShot(250, self._apply_audio_channel)
+            else:
+                self._player.audio_set_track(self._selected_audio_channel)
+        except Exception as e:
+            log.debug(f'vlc set audio channel: {e}')
+
+    def _tick(self):
+        pos = self.position()
+        self.positionChanged.emit(pos)
+        length = self._player.get_length()
+        if length and length > 0:
+            self.durationChanged.emit(length)
+        state = self._player.get_state()
+        if state in (self._vlc.State.Ended, self._vlc.State.Stopped):
+            if self._state != QMediaPlayer.PlaybackState.StoppedState:
+                self._state = QMediaPlayer.PlaybackState.StoppedState
+                self.playbackStateChanged.emit(self._state)
+                self.mediaStatusChanged.emit(QMediaPlayer.MediaStatus.EndOfMedia)
+                self._timer.stop()
+
+class VideoPanel(QWidget):
+    file_loaded   = pyqtSignal(dict, str)   # info, clip_id
+    status_changed= pyqtSignal(str)
+
+    def __init__(self):
+        super().__init__()
+        self.fps=29.97; self.df=True; self.tc_offset=0.0; self.duration=0.0
+        self._source_duration = 0.0
+        self._using_preview = False
+        self._selected_chs = [1, 2]
+        self.in_pt=None; self.out_pt=None
+        self._loop=False
+        self.cur_file=None; self.cur_info={}; self.cur_id=None
+        self._seeking=False
+        self._tc_thread=None
+        self._dead_threads = []   # abort된 스레드 보관 (GC 소멸 방지)
+        self._routing_gen  = 0    # 라우팅 세대 ID (stale 시그널 무시용)
+        self.setAcceptDrops(True)
+        self._build_ui()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0,0,0,0)
+        layout.setSpacing(0)
+
+        # INFO BAR
+        ib = QWidget(); ib.setFixedHeight(28)
+        ib.setStyleSheet(f"background:{C['panel2']};border-bottom:1px solid {C['border']};")
+        ibl = QHBoxLayout(ib); ibl.setContentsMargins(12,0,12,0); ibl.setSpacing(0)
+
+        # 재생 LED (깜빡임)
+        self.led = QLabel("●")
+        self.led.setFixedWidth(18)
+        self.led.setStyleSheet(f"color:{C['text3']};font-size:10px;background:transparent;")
+        self.led.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ibl.addWidget(self.led)
+        ibl.addSpacing(6)
+        self._led_timer = QTimer(); self._led_timer.setInterval(600)
+        self._led_on = False
+        def _blink():
+            self._led_on = not self._led_on
+            self.led.setStyleSheet(
+                f"color:{C['green']};font-size:10px;background:transparent;"
+                if self._led_on else
+                f"color:transparent;font-size:10px;background:transparent;"
+            )
+        self._led_timer.timeout.connect(_blink)
+
+        def _sep_dot():
+            l = mk_label("·", C['text3'], "Consolas", 10)
+            l.setContentsMargins(6,0,6,0)
+            return l
+
+        self.lbl_fmt  = mk_label("—", C['text2'], "Consolas", 11)
+        self.lbl_cod  = mk_label("—", C['text2'], "Consolas", 11)
+        self.lbl_res  = mk_label("—", C['text2'], "Consolas", 11)
+        self.lbl_fps  = mk_label("—", C['orange'], "Consolas", 11, bold=True)
+        self.lbl_df   = mk_label("",  C['teal'],   "Consolas", 10)
+        self.lbl_ch   = mk_label("—", C['text2'],  "Consolas", 11)
+        for i,l in enumerate([self.lbl_fmt, self.lbl_cod, self.lbl_res,
+                               self.lbl_fps, self.lbl_df, self.lbl_ch]):
+            if i > 0: ibl.addWidget(_sep_dot())
+            ibl.addWidget(l)
+        ibl.addStretch()
+        self.lbl_dbsaved = mk_label("", C['green'], "Consolas", 11)
+        ibl.addWidget(self.lbl_dbsaved)
+        layout.addWidget(ib)
+
+        # ── 비디오 + 미터 오버레이 ──
+        # QGraphicsView 방식: HWND 없는 순수 Qt 렌더링 → z-order 완전 제어 가능
+        # QGraphicsVideoItem(비디오) 위에 QGraphicsProxyWidget(미터)를 scene에 추가
+
+        self._scene = QGraphicsScene(self)
+        self._scene.setBackgroundBrush(QColor('#000'))
+
+        # 비디오 아이템 — IgnoreAspectRatio로 뷰어에 꽉 차게
+        from PyQt6.QtCore import Qt as _Qt
+        self._video_item = QGraphicsVideoItem()
+        self._video_item.setAspectRatioMode(_Qt.AspectRatioMode.KeepAspectRatio)
+        self._scene.addItem(self._video_item)
+
+        # 빈화면 라벨 (비디오 없을 때)
+        self.empty_label = QLabel("▶\n\nMXF / MP4 파일을 열어주세요\n\n⏏ 파일을 드래그하거나 CUE 버튼을 누르세요")
+        self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_label.setStyleSheet(
+            f"color:{C['text3']};font-family:Consolas;font-size:14px;background:#000;")
+        self._empty_proxy = self._scene.addWidget(self.empty_label)
+        self._empty_proxy.setZValue(1)
+
+        # 미터 위젯 → GraphicsProxy로 scene에 추가 (z-order 완전 제어)
+        self.side_left  = SideMeter(left=True)
+        self.side_right = SideMeter(left=False)
+        self.loud_meter = LoudnessMeter()
+
+        self._proxy_left  = self._scene.addWidget(self.side_left)
+        self._proxy_right = self._scene.addWidget(self.side_right)
+        self._proxy_loud  = self._scene.addWidget(self.loud_meter)
+        self._proxy_left.setZValue(10)
+        self._proxy_right.setZValue(10)
+        self._proxy_loud.setZValue(10)
+
+        # Safe Area 가이드라인
+        self._safe_area = SafeAreaItem(self._scene)
+
+        # 해상도 오버레이 텍스트 (좌측 하단)
+        from PyQt6.QtGui import QFont as _QFont
+        self._res_text = self._scene.addText("")
+        self._res_text.setDefaultTextColor(QColor(255, 255, 255, 160))
+        self._res_text.setFont(_QFont("Consolas", 9, _QFont.Weight.Bold))
+        self._res_text.setZValue(15)
+
+        # QGraphicsView
+        self.video_view = QGraphicsView(self._scene)
+        self.video_view.setMinimumSize(320, 180)
+        self.video_view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.video_view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.video_view.setStyleSheet("background:#000; border:none;")
+        self.video_view.setFrameShape(QFrame.Shape.NoFrame)
+        self.video_view.viewport().setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
+        self.video_view.mousePressEvent = lambda e: self.toggle_play()
+
+        # VLC renders into a native HWND. Keep meters outside the video surface
+        # as stable broadcast rails so playback cannot cover or move them.
+        self.vlc_side_left  = SideMeter(left=True, channel_numbers=[1,3,5,7])
+        self.vlc_side_right = SideMeter(left=False, channel_numbers=[2,4,6,8])
+        self.vlc_loud_meter = LoudnessMeter()
+        self.vlc_side_left.setFixedWidth(116)
+        self.vlc_side_right.setFixedWidth(116)
+        self.vlc_side_left.setFixedHeight(74)
+        self.vlc_side_right.setFixedHeight(74)
+        self.vlc_loud_meter.setFixedWidth(54)
+        self.vlc_loud_meter.setFixedHeight(208)
+        for w in (self.vlc_side_left, self.vlc_side_right, self.vlc_loud_meter):
+            w.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+            w.show()
+        self._proxy_left.hide()
+        self._proxy_right.hide()
+        self._proxy_loud.hide()
+
+        # video_view resizeEvent
+        def _calc_video_rect(W, H):
+            # 16:9 비율 유지 — 실제 영상 콘텐츠 영역 계산
+            ns = self._video_item.nativeSize()
+            if ns.width() > 0 and ns.height() > 0:
+                vr = ns.width() / ns.height()
+            else:
+                vr = 16 / 9
+            wr = W / H if H > 0 else vr
+            if wr > vr:
+                vh = H; vw = H * vr
+                ox = (W - vw) / 2; oy = 0
+            else:
+                vw = W; vh = W / vr
+                ox = 0; oy = (H - vh) / 2
+            return vw, vh, ox, oy
+
+        def _place_meters(W, H):
+            from PyQt6.QtCore import QRectF
+            vw, vh, ox, oy = _calc_video_rect(W, H)
+            self._proxy_left.setPos(ox, oy)
+            self._proxy_right.setPos(ox + vw - self.side_right.width(), oy)
+            self._proxy_loud.setPos(ox + vw - self.loud_meter.width(), oy + vh - self.loud_meter.height())
+            # Safe Area 리사이즈
+            self._safe_area.resize(W, H)
+            # 해상도 텍스트 좌측 하단
+            rth = self._res_text.boundingRect().height()
+            self._res_text.setPos(8, H - rth - 6)
+
+        def _on_view_resize(evt):
+            from PyQt6.QtCore import QSizeF, QRectF
+            QGraphicsView.resizeEvent(self.video_view, evt)
+            W = evt.size().width()
+            H = evt.size().height()
+            self._scene.setSceneRect(0, 0, W, H)
+            self._video_item.setSize(QSizeF(W, H))
+            self._empty_proxy.setGeometry(QRectF(0, 0, W, H))
+            _place_meters(W, H)
+
+        self._place_meters = _place_meters
+        self.video_view.resizeEvent = _on_view_resize
+        # 영상 로드 후 nativeSize 확정 시 미터 위치 재계산
+        self._video_item.nativeSizeChanged.connect(
+            lambda s: _place_meters(self.video_view.width(), self.video_view.height()))
+
+        self.video_widget = self.video_view
+        self.video_shell = QWidget()
+        self.video_shell.setStyleSheet("background:#000;")
+        shell_grid = QGridLayout(self.video_shell)
+        shell_grid.setContentsMargins(0,0,0,0)
+        shell_grid.setHorizontalSpacing(0)
+        shell_grid.setVerticalSpacing(0)
+
+        self.video_stage = QWidget()
+        self.video_stage.setStyleSheet("background:#000;")
+        self.video_view.setParent(self.video_stage)
+        self.video_overlay = QWidget(self.video_view.viewport())
+        self.video_overlay.setStyleSheet("background:transparent;")
+        self.video_overlay.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.video_overlay.hide()
+        self.vlc_side_left.setParent(self.video_stage)
+        self.vlc_side_right.setParent(self.video_stage)
+        self.vlc_loud_meter.setParent(self.video_stage)
+
+        shell_grid.addWidget(self.video_stage, 0, 0, Qt.AlignmentFlag.AlignCenter)
+        def _resize_video_stage(evt):
+            QWidget.resizeEvent(self.video_shell, evt)
+            W = max(1, evt.size().width())
+            H = max(1, evt.size().height())
+            left_w = self.vlc_side_left.width()
+            right_w = self.vlc_side_right.width()
+            loud_w = self.vlc_loud_meter.width()
+            left_gap = 4
+            right_gap = 6
+            right_col_w = max(right_w, loud_w) + right_gap
+            left_col_w = left_w + left_gap
+            top_pad = 0
+            bottom_pad = 0
+            shell_left, _, shell_right, _ = shell_grid.getContentsMargins()
+            max_video_w = max(320, W - shell_left - shell_right - left_col_w - right_col_w)
+            max_video_h = max(180, H - top_pad - bottom_pad)
+            video_h = min(max_video_h, int(max_video_w * 9 / 16))
+            video_w = int(video_h * 16 / 9)
+            if video_w > max_video_w:
+                video_w = max_video_w
+                video_h = int(video_w * 9 / 16)
+            stage_h = max(video_h, self.vlc_loud_meter.height() + 16)
+            stage_w = video_w + left_col_w + right_col_w
+            self.video_stage.setFixedSize(stage_w, stage_h)
+            video_y = max(0, (stage_h - video_h) // 2)
+            video_x = left_col_w
+            self.video_view.setGeometry(video_x, video_y, video_w, video_h)
+
+            audio_y = video_y + 2
+            left_x = 0
+            right_x = video_x + video_w + 2
+            loud_x = video_x + video_w + (right_col_w - loud_w) // 2
+            loud_y = stage_h - self.vlc_loud_meter.height() - 2
+
+            self.vlc_side_left.move(left_x, audio_y)
+            self.vlc_side_right.move(right_x, audio_y)
+            self.vlc_loud_meter.move(loud_x, loud_y)
+            self.vlc_side_left.raise_()
+            self.vlc_side_right.raise_()
+            self.vlc_loud_meter.raise_()
+        self.video_shell.resizeEvent = _resize_video_stage
+        layout.addWidget(self.video_shell, 3)   # stretch 3: 화면 크게
+
+        # 미터 컨트롤러
+        self.meter_ctrl = MeterController(self.vlc_side_left, self.vlc_side_right, self.vlc_loud_meter)
+        self.audio_mix = AudioMixPlayer()
+        self._playback_rate = 1.0
+
+        # MEDIA PLAYER
+        self.player = VlcPlayerAdapter(self.video_view.viewport())
+        self.player.audio_set_volume(0)
+        self.audio_mix.set_volume(0.8)
+        self.player.positionChanged.connect(self._on_pos)
+        self.player.durationChanged.connect(self._on_dur)
+        self.player.playbackStateChanged.connect(self._on_state)
+        self.player.errorOccurred.connect(self._on_player_error)
+        self.player.mediaStatusChanged.connect(self._on_media_status)
+
+        # TIMECODE DISPLAY
+        tc_w = QWidget(); tc_w.setFixedHeight(88)
+        tc_w.setStyleSheet(f"background:{C['panel2']};border-top:1px solid {C['border']};border-bottom:1px solid {C['border']};")
+        tcl = QHBoxLayout(tc_w); tcl.setContentsMargins(16,6,16,6); tcl.setSpacing(0)
+        self.tc_main = QLabel('00:00:00;00')
+        self.tc_main.setStyleSheet(f"color:{C['yellow']};font-family:Consolas;font-size:36px;font-weight:300;letter-spacing:4px;background:transparent;")
+        self.tc_main.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        tcl.addWidget(self.tc_main, 3)
+        div = QFrame(); div.setFrameShape(QFrame.Shape.VLine)
+        div.setStyleSheet(f"color:{C['border']};"); tcl.addWidget(div)
+        tcl.addSpacing(14)
+        sg = QGridLayout(); sg.setSpacing(1); sg.setContentsMargins(0,0,0,0)
+        sg.setColumnMinimumWidth(0, 36); sg.setColumnMinimumWidth(1, 128)
+        self.tc_dur  = QLabel('——:——:——;——')
+        self.tc_rem  = QLabel('——:——:——;——')
+        self.tc_in_l = QLabel('——:——:——;——')
+        self.tc_out_l= QLabel('——:——:——;——')
+        for row,(k,v,c) in enumerate([
+            ('DUR',  self.tc_dur,   C['text1']),
+            ('REM',  self.tc_rem,   C['text1']),
+            ('IN',   self.tc_in_l,  C['teal']),
+            ('OUT',  self.tc_out_l, C['orange']),
+        ]):
+            kl = mk_label(k, C['text3'], 'Consolas', 10, bold=True); kl.setFixedWidth(36)
+            v.setStyleSheet(f'color:{c};font-family:Consolas;font-size:14px;background:transparent;letter-spacing:1px;')
+            v.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            sg.addWidget(kl, row, 0); sg.addWidget(v, row, 1)
+        tcl.addLayout(sg, 2)
+        layout.addWidget(tc_w)
+
+        # PROGRESS SLIDER
+        pw = QWidget(); pw.setFixedHeight(18)
+        pw.setStyleSheet(f"background:{C['panel2']};")
+        pbl = QHBoxLayout(pw); pbl.setContentsMargins(0,0,0,0)
+        self.slider = QSlider(Qt.Orientation.Horizontal)
+        self.slider.setRange(0,1000)
+        self.slider.setStyleSheet("QSlider::groove:horizontal{height:4px;background:#252528;border-radius:2px;}QSlider::sub-page:horizontal{background:#4A9EFF;border-radius:2px;}QSlider::handle:horizontal{width:14px;height:14px;margin:-5px 0;background:#4A9EFF;border-radius:7px;}QSlider::handle:horizontal:hover{background:#6ab4ff;}")
+        self.slider.sliderPressed.connect(lambda: setattr(self,'_seeking',True))
+        self.slider.sliderReleased.connect(self._on_slider_release)
+        # 클릭 위치로 즉시 점프 (드래그 없이 클릭만 해도 이동)
+        def _slider_click(e):
+            if e.button() == Qt.MouseButton.LeftButton:
+                ratio = e.position().x() / self.slider.width()
+                val   = int(ratio * self.slider.maximum())
+                self.slider.setValue(val)
+                self._seeking = True
+                self._on_slider_release()
+            QSlider.mousePressEvent(self.slider, e)
+        self.slider.mousePressEvent = _slider_click
+        pbl.addWidget(self.slider)
+        layout.addWidget(pw)
+
+        # TRANSPORT
+        tr = QWidget(); tr.setFixedHeight(72)
+        tr.setStyleSheet(f"background:{C['panel']};border-bottom:1px solid {C['border']};")
+        trl = QHBoxLayout(tr); trl.setContentsMargins(10,8,10,8); trl.setSpacing(4)
+
+        BTN_W  = 50
+        BTN_H  = 52
+        PLAY_W = 62
+
+        TR_STYLE = (
+            f"QPushButton{{background:{C['panel2']};color:{C['text1']};border:1px solid {C['border']};"
+            f"border-radius:6px;font-size:18px;font-weight:400;min-width:{BTN_W}px;}}"
+            f"QPushButton:hover{{background:#222228;color:{C['text0']};border-color:#38383F;}}"
+            f"QPushButton:pressed{{background:{C['panel2']};padding-top:2px;}}"
+        )
+
+        # ⏏ EJECT
+        self.btn_folder = QPushButton("EJECT")
+        self.btn_folder.setFixedSize(BTN_W+10, BTN_H)
+        self.btn_folder.setToolTip("EJECT — 현재 파일을 화면에서 내립니다")
+        self.btn_folder.setStyleSheet(TR_STYLE + "QPushButton{font-size:11px;font-family:Consolas;font-weight:700;letter-spacing:1px;}")
+
+        # 순수 ASCII 심볼 — 이모지 컬러 렌더링 없음
+        self.btn_m1  = QPushButton("-1");    self.btn_m1.setFixedSize(BTN_W, BTN_H); self.btn_m1.setToolTip("-1 프레임  (← 방향키)")
+        self.btn_gos = QPushButton("|<<");   self.btn_gos.setFixedSize(BTN_W, BTN_H); self.btn_gos.setToolTip("처음으로  (Home)")
+        self.btn_rew = QPushButton("<<");    self.btn_rew.setFixedSize(BTN_W, BTN_H); self.btn_rew.setToolTip("10초 뒤로")
+        self.btn_play= QPushButton("▶");     self.btn_play.setFixedSize(PLAY_W, BTN_H); self.btn_play.setToolTip("재생 / 일시정지  (Space)")
+        self.btn_stop= QPushButton("■");     self.btn_stop.setFixedSize(BTN_W, BTN_H); self.btn_stop.setToolTip("정지")
+        self.btn_fwd = QPushButton(">>");    self.btn_fwd.setFixedSize(BTN_W, BTN_H); self.btn_fwd.setToolTip("10초 앞으로")
+        self.btn_goe = QPushButton(">>|");   self.btn_goe.setFixedSize(BTN_W, BTN_H); self.btn_goe.setToolTip("끝으로  (End)")
+        self.btn_p1  = QPushButton("+1");    self.btn_p1.setFixedSize(BTN_W, BTN_H); self.btn_p1.setToolTip("+1 프레임  (→ 방향키)")
+
+        _mono = "font-family:Consolas;font-size:14px;font-weight:700;"
+        for b in [self.btn_m1,self.btn_gos,self.btn_rew,self.btn_stop,
+                  self.btn_fwd,self.btn_goe,self.btn_p1]:
+            b.setStyleSheet(TR_STYLE + f"QPushButton{{{_mono}}}")
+
+        self.btn_play.setStyleSheet(TR_STYLE + "QPushButton{color:#dddddd;font-size:24px;background:#1e1e1e;border-color:#333333;}")
+
+        self.btn_cue = QPushButton('CUE')
+        self.btn_cue.setFixedHeight(BTN_H)
+        self.btn_cue.setToolTip('CUE\n선택한 파일을 플레이어에 올립니다\n이미 로드된 파일이면 IN 포인트로 이동합니다')
+        self.btn_cue.setStyleSheet(
+            "QPushButton{background:#222222;color:#eeeeee;border:1px solid #3a3a3a;"
+            "border-radius:6px;font-family:Consolas;font-weight:700;font-size:14px;"
+            "letter-spacing:2px;padding:0 22px;}"
+            "QPushButton:hover{background:#2e2e2e;border-color:#484848;color:#ffffff;}"
+            "QPushButton:pressed{padding-top:2px;background:#181818;}"
+        )
+
+        # Safe Area 토글 버튼
+        self.btn_safe = QPushButton("SAFE")
+        self.btn_safe.setFixedSize(66, BTN_H)
+        self.btn_safe.setCheckable(True)
+        self.btn_safe.setToolTip("세이프 에어리어  ON / OFF\n방송용 안전 영역 가이드라인을 표시합니다\n  · 액션 세이프  90%  (바깥쪽 회색선)\n  · 타이틀 세이프  80%  (안쪽 회색선)")
+        safe_style = (
+            "QPushButton{background:#1a1a1a;color:#888888;border:1px solid #2a2a2a;"
+            "border-radius:6px;font-family:Consolas;font-size:11px;font-weight:700;"
+            "letter-spacing:1px;padding:0 8px;}"
+            "QPushButton:checked{background:#242424;color:#cccccc;border-color:#444444;}"
+            "QPushButton:hover{background:#242424;color:#aaaaaa;}"
+        )
+        self.btn_safe.setStyleSheet(safe_style)
+
+        self.btn_folder.clicked.connect(self.eject_clip)
+        self.btn_m1.clicked.connect(lambda: self._step(-1))
+        self.btn_p1.clicked.connect(lambda: self._step(1))
+        self.btn_gos.clicked.connect(lambda: self._set_position(0))
+        self.btn_goe.clicked.connect(lambda: self._set_position(max(0,int(self.duration*1000)-100)))
+        self.btn_rew.clicked.connect(lambda: self._set_position(max(0,self.player.position()-10000)))
+        self.btn_fwd.clicked.connect(lambda: self._set_position(min(int(self.duration*1000),self.player.position()+10000)))
+        self.btn_play.clicked.connect(self.toggle_play)
+        self.btn_stop.clicked.connect(self.stop)
+        self.btn_cue.clicked.connect(self._cue)
+
+        self.btn_safe.clicked.connect(self._toggle_safe_area)
+        for w in [self.btn_folder,separator(),self.btn_m1,self.btn_gos,self.btn_rew,
+                  self.btn_play,self.btn_stop,self.btn_fwd,self.btn_goe,self.btn_p1]:
+            trl.addWidget(w)
+        trl.addStretch()
+
+        # 볼륨 슬라이더
+        vol_lbl = QLabel('VOL')
+        vol_lbl.setStyleSheet('color:#555;font-family:Consolas;font-size:10px;font-weight:700;')
+        self.vol_slider = QSlider(Qt.Orientation.Horizontal)
+        self.vol_slider.setRange(0, 100)
+        self.vol_slider.setValue(80)
+        self.vol_slider.setFixedWidth(80)
+        self.vol_slider.setFixedHeight(BTN_H)
+        self.vol_slider.setToolTip('볼륨 조절 (0~100%)')
+        self.vol_slider.setStyleSheet(
+            'QSlider::groove:horizontal{height:3px;background:#2a2a2a;border-radius:2px;}'
+            'QSlider::sub-page:horizontal{background:#888888;border-radius:2px;}'
+            'QSlider::handle:horizontal{width:12px;height:12px;margin:-5px 0;'
+            'background:#aaaaaa;border-radius:6px;}'
+            'QSlider::handle:horizontal:hover{background:#dddddd;}'
+        )
+        self.vol_pct = QLabel('80%')
+        self.vol_pct.setStyleSheet('color:#555;font-family:Consolas;font-size:10px;min-width:30px;')
+        self.vol_pct.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        def _on_vol(v):
+            self.player.audio_set_volume(0)
+            self.audio_mix.set_volume(v / 100.0)
+            if self.cur_file and self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+                self._restart_audio_mix()
+            self.vol_pct.setText(f'{v}%')
+        self.vol_slider.valueChanged.connect(_on_vol)
+
+        trl.addSpacing(8)
+        trl.addWidget(vol_lbl)
+        trl.addSpacing(4)
+        trl.addWidget(self.vol_slider)
+        trl.addWidget(self.vol_pct)
+        trl.addSpacing(12)
+        trl.addWidget(self.btn_safe)
+        trl.addWidget(self.btn_cue)
+        layout.addWidget(tr)
+
+        # AUDIO CHANNEL SELECT BAR
+        ch_bar = QWidget(); ch_bar.setFixedHeight(34)
+        ch_bar.setStyleSheet(f"background:{C['panel2']};border-bottom:1px solid {C['border']};")
+        chl = QHBoxLayout(ch_bar); chl.setContentsMargins(12,4,12,4); chl.setSpacing(6)
+        ch_lbl = QLabel("CH"); ch_lbl.setStyleSheet(f"color:{C['text3']};font-family:Consolas;font-size:10px;font-weight:700;letter-spacing:1px;")
+        ch_lbl.setFixedWidth(20)
+        chl.addWidget(ch_lbl)
+
+        self._ch_checks = []   # (checkbox, channel_no) list
+        self._ch_group  = QButtonGroup(self); self._ch_group.setExclusive(False)
+
+        CH_STYLE = (
+            f"QCheckBox{{color:{C['text2']};font-family:Consolas;font-size:10px;spacing:4px;}}"
+            f"QCheckBox:checked{{color:{C['teal']};font-weight:bold;}}"
+            f"QCheckBox::indicator{{width:11px;height:11px;border:1px solid {C['border']};border-radius:2px;background:{C['panel']};}}"
+            f"QCheckBox::indicator:checked{{background:{C['teal']};border-color:{C['teal']};}}"
+        )
+        for i in range(8):
+            ch_no = i + 1
+            cb = QCheckBox(f"{ch_no}")
+            cb.setStyleSheet(CH_STYLE)
+            cb.setChecked(i in (0, 1))   # 기본: 1/2ch 동시 선택
+            self._ch_checks.append((cb, ch_no))
+            self._ch_group.addButton(cb)
+            chl.addWidget(cb)
+        # 각 체크박스에 직접 연결 (단일 선택)
+        for cb, _ in self._ch_checks:
+            cb.clicked.connect(self._on_ch_select)
+            cb.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # Space 토글 방지
+        chl.addStretch()
+        layout.addWidget(ch_bar)
+
+        # AI BAR
+        ai = QWidget(); ai.setFixedHeight(46)
+        ai.setStyleSheet(f"background:{C['panel']};border-bottom:1px solid {C['border']};")
+        ail = QHBoxLayout(ai); ail.setContentsMargins(10,6,10,6); ail.setSpacing(6)
+
+        def _ai_btn(label, tooltip):
+            b = QPushButton(label); b.setFixedHeight(30); b.setEnabled(False)
+            b.setToolTip(tooltip)
+            b.setStyleSheet(
+                "QPushButton{background:#1c1c1c;color:#909090;border:1px solid #2e2e2e;"
+                "border-radius:4px;font-size:11px;font-weight:600;padding:0 12px;}"
+                "QPushButton:hover{background:#252525;color:#cccccc;border-color:#3a3a3a;}"
+                "QPushButton:enabled{color:#bbbbbb;}"
+                "QPushButton:disabled{color:#444444;border-color:#222222;background:#161616;}"
+            )
+            return b
+
+        self.btn_black = _ai_btn('⬛  블랙', '1프레임 이상 검정 화면 구간 검출')
+        self.btn_audio = _ai_btn('🔇  뮤트', '1초 이상 무음 구간 수동 검출 + 피크 측정')
+
+        self.prog_ai = QProgressBar()
+        self.prog_ai.setFixedHeight(4); self.prog_ai.setRange(0,0); self.prog_ai.hide()
+        self.prog_ai.setStyleSheet(
+            f"QProgressBar{{background:{C['panel2']};border:none;border-radius:2px;}}"
+            f"QProgressBar::chunk{{background:{C['blue']};border-radius:2px;}}"
+        )
+        self.ai_lbl = mk_label('파일을 열면 AI 분석을 시작할 수 있습니다', C['text3'], 'Consolas', 10)
+        self.ai_time_lbl = mk_label('', C['yellow'], 'Consolas', 10, bold=True)
+        self.ai_time_lbl.setFixedWidth(104)
+        self.ai_time_lbl.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.ai_time_lbl.hide()
+
+        self.btn_black.clicked.connect(self.start_black_detect)
+        self.btn_audio.clicked.connect(self.start_audio_analyze)
+        ail.addWidget(self.btn_black); ail.addWidget(self.btn_audio)
+        ail.addSpacing(8)
+        ail.addWidget(self.prog_ai)
+        ail.addWidget(self.ai_lbl)
+        ail.addWidget(self.ai_time_lbl)
+        ail.addStretch()
+
+        # 배속 버튼
+        spd_lbl = QLabel('SPEED')
+        spd_lbl.setStyleSheet('color:#555;font-family:Consolas;font-size:10px;font-weight:700;')
+        ail.addWidget(spd_lbl)
+        ail.addSpacing(4)
+        self._speed_btns = {}
+        for rate, label in [(0.5,'0.5×'), (1.0,'1×'), (1.5,'1.5×'), (2.0,'2×')]:
+            b = QPushButton(label)
+            b.setFixedHeight(28)
+            b.setCheckable(True)
+            b.setChecked(rate == 1.0)
+            b.setStyleSheet(
+                'QPushButton{background:#1a1a1a;color:#666;border:1px solid #2a2a2a;'
+                'border-radius:3px;font-family:Consolas;font-size:11px;font-weight:700;padding:0 8px;}'
+                'QPushButton:checked{background:#2a2a2a;color:#dddddd;border-color:#444;}'
+                'QPushButton:hover{background:#222;color:#aaa;}'
+            )
+            def _set_speed(checked, r=rate):
+                if not checked: return
+                self._playback_rate = r
+                self.player.setPlaybackRate(r)
+                self.audio_mix.set_rate(r)
+                if self.cur_file and self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+                    self._restart_audio_mix()
+                for rr, bb in self._speed_btns.items():
+                    bb.setChecked(rr == r)
+            b.clicked.connect(_set_speed)
+            self._speed_btns[rate] = b
+            ail.addWidget(b)
+        layout.addWidget(ai)
+
+        # IN/OUT BAR
+        io = QWidget(); io.setFixedHeight(36)
+        io.setStyleSheet(f"background:{C['panel']};border-bottom:1px solid {C['border']};")
+        iol = QHBoxLayout(io); iol.setContentsMargins(10,3,10,3); iol.setSpacing(4)
+        _io_style = (
+            "QPushButton{background:#1c1c1c;color:#909090;border:1px solid #2e2e2e;"
+            "border-radius:4px;font-family:'맑은 고딕';font-size:11px;padding:0 10px;height:28px;}"
+            "QPushButton:hover{background:#252525;color:#cccccc;border-color:#3a3a3a;}"
+            "QPushButton:pressed{padding-top:1px;background:#141414;}"
+        )
+        _io_in_style  = _io_style
+        _io_out_style = _io_style
+        for txt,cb,tip,st in [
+            ('[ I ]  IN', self._set_in, 'IN 포인트 설정  (I 키)', _io_in_style),
+            ('[ O ]  OUT', self._set_out, 'OUT 포인트 설정  (O 키)', _io_out_style),
+            ('IN 해제', self._clr_in, 'IN 포인트 해제', _io_style),
+            ('OUT 해제', self._clr_out, 'OUT 포인트 해제', _io_style),
+            ('IN → 재생', self._cue, 'IN 포인트로 이동 후 재생', _io_style),
+        ]:
+            b = QPushButton(txt); b.setFixedHeight(28)
+            b.setStyleSheet(st); b.setToolTip(tip)
+            b.clicked.connect(cb); iol.addWidget(b)
+        # 루프 버튼
+        self.btn_loop = QPushButton('LOOP')
+        self.btn_loop.setFixedHeight(28)
+        self.btn_loop.setCheckable(True)
+        self.btn_loop.setToolTip('IN→OUT 구간 반복 재생  (IN/OUT 설정 후 활성화)')
+        self.btn_loop.setStyleSheet(
+            'QPushButton{background:#1c1c1c;color:#555;border:1px solid #2a2a2a;'
+            'border-radius:4px;font-family:Consolas;font-size:11px;font-weight:700;'
+            'letter-spacing:1px;padding:0 12px;height:28px;}'
+            'QPushButton:checked{background:#242424;color:#cccccc;border-color:#444;}'
+            'QPushButton:hover{background:#222;color:#999;}'
+        )
+        def _toggle_loop(checked):
+            self._loop = checked
+            if checked and self.in_pt is not None:
+                self._set_position(int(self.in_pt * 1000))
+                self.player.play()
+        self.btn_loop.clicked.connect(_toggle_loop)
+        iol.addWidget(self.btn_loop)
+        iol.addStretch()
+        layout.addWidget(io)
+
+        # 클립 목록 (숨김 — Explorer 탭에서 관리)
+        self.clip_list = QListWidget()   # 내부 호환용 (화면 미표시)
+        self._files = []
+
+    def _raise_vlc_meters(self):
+        self.video_overlay.raise_()
+        for w in (self.vlc_side_left, self.vlc_side_right, self.vlc_loud_meter):
+            w.show()
+            w.raise_()
+
+    # ── 파일 열기 ────────────────────────────────────────
+    def _load_last_dir(self):
+        try:
+            import json as _j
+            p = BASE_DIR / 'last_dir.json'
+            return _j.loads(p.read_text()).get('folder', 'C:/')
+        except: return 'C:/'
+
+    def _save_last_dir(self, folder):
+        try:
+            import json as _j
+            (BASE_DIR / 'last_dir.json').write_text(_j.dumps({'folder': folder}))
+        except Exception as e: log.warning(f'last_dir 저장 실패: {e}')
+
+    def _on_clip_selected(self, item):
+        """클립 단일클릭 — 상태바에 파일명 표시, 아직 CUE 안 함"""
+        fp = item.data(Qt.ItemDataRole.UserRole)
+        name = Path(fp).name if fp else ""
+        self.status_changed.emit(f"  📄 {name}  —  CUE 버튼으로 화면에 올리세요  |  더블클릭으로 바로 CUE")
+
+    def eject_clip(self):
+        """⏏ 현재 파일 초기화 — 재생 중지, IN/OUT 해제, 타임코드 리셋"""
+        self._stop_all()
+        self.cur_file = None
+        self.cur_id   = None
+        self.cur_info = {}
+        self.fps=29.97; self.df=True; self.tc_offset=0.0
+        self.duration = 0.0
+        self._source_duration = 0.0
+        self._using_preview = False
+        self.in_pt    = None
+        self.out_pt   = None
+        self._loop    = False
+        if hasattr(self,'btn_loop'): self.btn_loop.setChecked(False)
+
+        # 타임코드 초기화
+        self.tc_main.setText("00:00:00;00")
+        self.tc_dur.setText("00:00:00;00")
+        self.tc_rem.setText("00:00:00;00")
+        self.tc_in_l.setText("—")
+        self.tc_out_l.setText("—")
+        self.tc_in_l.setStyleSheet(f"color:{C['text0']};font-family:Consolas;font-size:16px;background:transparent;")
+        self.tc_out_l.setStyleSheet(f"color:{C['text0']};font-family:Consolas;font-size:16px;background:transparent;")
+
+        # 슬라이더 초기화
+        self.slider.setValue(0)
+
+        # 재생버튼 초기화
+        self.btn_play.setText("▶")
+
+        # 메타 정보 초기화
+        self.lbl_fmt.setText("—"); self.lbl_cod.setText("—")
+        self.lbl_res.setText("—"); self.lbl_fps.setText("—"); self.lbl_ch.setText("—")
+        self._res_text.setPlainText("")
+
+        # 화면 초기화
+        self._video_item.hide()
+        self.empty_label.setText("▶\n\nMXF / MP4 파일을 열어주세요\n\n파일 추가 버튼 또는 파일 드래그로 불러오세요")
+        self._empty_proxy.show()
+
+        # AI 버튼 비활성화
+        self.btn_black.setEnabled(False)
+        self.btn_audio.setEnabled(False)
+        self.ai_lbl.setText("파일을 열면 AI 분석을 시작할 수 있습니다")
+
+        # 클립 리스트 선택 해제
+        self.clip_list.clearSelection()
+        if hasattr(self, '_right_panel'):
+            self._right_panel.refresh_explorer()
+
+        self.meter_ctrl.set_playing(False)
+        self.audio_mix.stop()
+        self.status_changed.emit("  ⏏ EJECT — 파일 초기화됨")
+
+    def _evict_tc_cache(self, max_files=10, max_gb=2.0):
+        """tmp 캐시 정리 — 파일 수/용량 초과 시 오래된 것 삭제"""
+        if not hasattr(self, '_tc_cache_order'):
+            self._tc_cache_order = []   # 삽입 순서 추적
+        # 유효한 파일만 남김
+        valid = [(fp, tp) for fp, tp in self._tc_cache.items()
+                 if tp and Path(tp).exists()]
+        # 용량 계산
+        total_bytes = sum(Path(tp).stat().st_size for _, tp in valid)
+        # 파일 수 또는 용량 초과 시 오래된 것부터 제거
+        order = [fp for fp in self._tc_cache_order if fp in dict(valid)]
+        while (len(order) > max_files or
+               total_bytes > max_gb * 1024**3) and order:
+            oldest_fp = order.pop(0)
+            oldest_tp = self._tc_cache.pop(oldest_fp, None)
+            if oldest_tp:
+                for p in [oldest_tp, oldest_tp.replace('.mp4','_preview.mp4')]:
+                    try: Path(p).unlink(missing_ok=True)
+                    except Exception as e: log.warning(f'evict unlink {p}: {e}')
+                try:
+                    sz = Path(oldest_tp).stat().st_size if Path(oldest_tp).exists() else 0
+                except Exception: sz = 0
+                total_bytes -= sz
+        self._tc_cache_order = order
+
+    def _preconvert(self, filepath):
+        # MXF 파일을 백그라운드에서 미리 변환해 캐시
+        if not hasattr(self, '_tc_cache'):
+            self._tc_cache = {}
+        if not hasattr(self, '_tc_cache_order'):
+            self._tc_cache_order = []
+        if not hasattr(self, '_preconvert_threads'):
+            self._preconvert_threads = []   # GC 방지: 스레드 참조 보관
+        if not hasattr(self, '_preconvert_jobs'):
+            self._preconvert_jobs = {}
+
+        if filepath in self._tc_cache:
+            return  # 이미 변환됨 또는 진행 중
+
+        self._tc_cache[filepath] = None  # 변환 중 마킹
+        pairs = self._get_selected_ch_pairs()
+        t = TranscodeThread(filepath, pairs)
+
+        def _on_done(tmp_path, fp=filepath, thread=t):
+            if hasattr(self, '_tc_cache'):
+                self._tc_cache[fp] = tmp_path
+                if hasattr(self, '_tc_cache_order') and fp not in self._tc_cache_order:
+                    self._tc_cache_order.append(fp)
+                self._evict_tc_cache()  # 용량 초과 시 정리
+            # 완료된 스레드를 보관 목록에서 제거
+            if hasattr(self, '_preconvert_threads') and thread in self._preconvert_threads:
+                self._preconvert_threads.remove(thread)
+            if hasattr(self, '_preconvert_jobs'):
+                self._preconvert_jobs.pop(fp, None)
+            self.ai_lbl.setText(f"✓ 사전변환 완료: {Path(fp).name}")
+
+        def _on_err(err, fp=filepath, thread=t):
+            if hasattr(self, '_tc_cache') and fp in self._tc_cache:
+                del self._tc_cache[fp]   # 실패 시 캐시 제거
+            if hasattr(self, '_preconvert_threads') and thread in self._preconvert_threads:
+                self._preconvert_threads.remove(thread)
+            if hasattr(self, '_preconvert_jobs'):
+                self._preconvert_jobs.pop(fp, None)
+
+        t.ready_full.connect(_on_done)
+        t.error.connect(_on_err)
+
+        # ★ self에 보관 → GC 소멸 방지 (이게 없으면 함수 종료 즉시 크래시)
+        self._preconvert_threads.append(t)
+        self._preconvert_jobs[filepath] = t
+        t.start()
+        self.ai_lbl.setText(f"⏳ 백그라운드 변환 중: {Path(filepath).name}")
+
+    def add_files(self):
+        start = self._load_last_dir()
+        files,_ = QFileDialog.getOpenFileNames(self,"파일 선택", start,
+            "Video Files (*.mxf *.mp4 *.mov *.mts *.m2ts *.mkv *.avi);;All Files (*)")
+        if files:
+            self._save_last_dir(str(Path(files[0]).parent))
+        new_files = []
+        for f in files:
+            if f not in [x["filepath"] for x in self._files]:
+                info = {"name":Path(f).name,"filepath":f,
+                        "size":Path(f).stat().st_size,
+                        "ext":Path(f).suffix.upper().lstrip(".")}
+                self._files.append(info)
+                new_files.append(f)
+        self._refresh_clip_list()
+        # MXF만 즉시 백그라운드 변환 (CUE 전에 미리 준비)
+        for f in new_files:
+            if Path(f).suffix.lower() not in ('.mp4','.mov','.m4v','.mkv','.avi','.mts','.m2ts'):
+                self._preconvert(f)
+        # Explorer 목록 즉시 갱신
+        if hasattr(self, '_right_panel'):
+            self._right_panel.refresh_explorer()
+
+    def _refresh_clip_list(self):
+        self.clip_list.clear()
+        for f in self._files:
+            item = QListWidgetItem(f"  {f['name']}  —  {f['ext']}  {f['size']//1024//1024}MB")
+            item.setData(Qt.ItemDataRole.UserRole, f["filepath"])
+            self.clip_list.addItem(item)
+        # Explorer도 항상 동기화
+        if hasattr(self, '_right_panel'):
+            self._right_panel.refresh_explorer()
+
+    def clear_clips(self):
+        self._files=[]; self.clip_list.clear()
+        self.audio_mix.stop()
+        self.player.stop(); self._video_item.hide(); self._empty_proxy.show()
+
+    def _retire_tc(self):
+        """_tc_thread를 abort 후 dead_threads로 이동.
+        finished 시그널로 완전 종료 시점에 자동 제거 → isRunning() 타이밍 충돌 방지"""
+        if self._tc_thread:
+            t = self._tc_thread
+            self._tc_thread = None
+            # finished 시그널: 스레드가 완전히 종료된 시점에 dead_threads에서 제거
+            def _on_finished(thread=t):
+                try:
+                    self._dead_threads.remove(thread)
+                    log.debug(f'dead_thread 제거: {thread} (finished)')
+                except ValueError:
+                    pass  # 이미 제거됐으면 무시
+            t.finished.connect(_on_finished)
+            self._dead_threads.append(t)
+            t.abort()   # abort는 finished 시그널 연결 후 호출 (순서 중요)
+
+    def _stop_all(self):
+        if hasattr(self, 'meter_ctrl'):
+            self.meter_ctrl.set_playing(False)
+        if hasattr(self, 'audio_mix'):
+            self.audio_mix.stop()
+        self._retire_tc()
+        try:
+            self.player.stop()
+            self.player.setSource(QUrl())
+        except Exception as e: log.debug(f'player stop/clear: {e}')
+
+    def load_file(self, filepath):
+        if not filepath or not Path(filepath).exists():
+            log.warning(f'load_file: 파일 없음 또는 None — {filepath}')
+            self.ai_lbl.setText(f'⚠ 파일 없음: {Path(filepath).name if filepath else "?"}')
+            return
+        log.info(f'load_file: {Path(filepath).name}')
+        self._stop_all()
+        self._loading = True   # 로딩 중 플래그 — 체크박스 이벤트 차단
+        self.cur_file = filepath
+        self.cur_id   = None
+        self.in_pt=None; self.out_pt=None
+        self._loop=False
+        # 이전 에러 상태(빨간 LED 등) 초기화
+        self.led.setStyleSheet(f"color:{C['text3']};font-size:10px;background:transparent;")
+        self.empty_label.setStyleSheet(
+            f"color:{C['text3']};font-family:Consolas;font-size:14px;background:#000;")
+        self.tc_in_l.setText("—"); self.tc_out_l.setText("—")
+        self.tc_in_l.setStyleSheet(f"color:{C['text0']};font-family:Consolas;font-size:16px;background:transparent;")
+        self.tc_out_l.setStyleSheet(f"color:{C['text0']};font-family:Consolas;font-size:16px;background:transparent;")
+
+        # 클립 리스트 선택 표시
+        for i in range(self.clip_list.count()):
+            item = self.clip_list.item(i)
+            if item.data(Qt.ItemDataRole.UserRole) == filepath:
+                self.clip_list.setCurrentItem(item)
+                break
+
+        # 메타데이터 probe
+        info = probe(filepath)
+        if not info: info = {"filename":Path(filepath).name,"filepath":filepath,"fps":29.97,"duration":0,"size":0}
+        self.cur_info = info
+        self.fps       = info.get("fps", 29.97)
+        self.df        = info.get("df", is_df_fps(self.fps))
+        self.tc_offset = info.get("tc_offset", 0.0)
+        self.duration  = info.get("duration", 0)
+        self._source_duration = self.duration
+        self._using_preview = False
+
+        self.lbl_fmt.setText(info.get("format_short","—"))
+        self.lbl_cod.setText(info.get("codec","—") or "—")
+        h = info.get("height",0)
+        w = info.get("width", 0)
+        res_str = ("4K" if w >= 3840 else "HD" if w >= 1920 else f"{h}p") if h else "—"
+        self.lbl_res.setText(res_str)
+        # FPS 표시: 29.97DF / 59.94DF / 25NDF 등
+        fps_str = f"{self.fps:.2f}"
+        self.lbl_fps.setText(fps_str)
+        df_label = "DF" if self.df else "NDF"
+        df_color = C['teal'] if self.df else C['text2']
+        self.lbl_df.setText(df_label)
+        self.lbl_df.setStyleSheet(f"color:{df_color};font-family:Consolas;font-size:11px;")
+        ch_count = info.get('channels', 0)
+        stream_count = info.get('audio_stream_count', 0) or ch_count
+        self.lbl_ch.setText(f"{stream_count}CH")
+        # 파일 채널 수에 따라 체크박스 활성화/비활성화
+        first_enabled = None
+        for cb, ch_no in self._ch_checks:
+            enabled = ch_no <= stream_count
+            cb.setEnabled(enabled)
+            if enabled and first_enabled is None:
+                first_enabled = cb
+        # 기본 모니터링은 1/2CH 동시 출력
+        for cb, _ in self._ch_checks:
+            cb.setChecked(False)
+        default_selected = []
+        for cb, ch_no in self._ch_checks:
+            if cb.isEnabled() and ch_no in (1, 2):
+                cb.setChecked(True)
+                default_selected.append(ch_no)
+        if not default_selected and first_enabled:
+            first_enabled.setChecked(True)
+            default_selected = [1]
+        self._selected_chs = default_selected or [1, 2]
+        self.tc_dur.setText(sec_to_tc(self.duration, self.fps, self.df))
+        vw = info.get('width',0); vh_px = info.get('height',0)
+        self._res_text.setPlainText(f"{vw}\u00d7{vh_px}" if vw and vh_px else "")
+
+        # DB 저장
+        self.cur_id = save_clip(info)
+        self.lbl_dbsaved.setText("✓ DB 저장됨")
+        QTimer.singleShot(2500, lambda: self.lbl_dbsaved.setText(""))
+
+        self.btn_black.setEnabled(True)
+        self.btn_audio.setEnabled(True)
+        self.ai_lbl.setText("AI 분석 준비됨")
+
+        # 실시간 오디오 미터 시작 (채널 수 전달)
+        ch_count = info.get('channels', 2)
+        self.meter_ctrl.start_file(
+            filepath, ch_count, self.player, (1, 2),
+            info.get('audio_stream_count', 0)
+        )
+        self.audio_mix.set_file(
+            filepath,
+            info.get('audio_stream_count', 0),
+            ch_count
+        )
+        self.audio_mix.set_channels(self._selected_chs)
+
+        if Path(filepath).suffix.lower() == '.mxf':
+            self.empty_label.setText('⏳  VLC로 MXF 원본 로딩 중...')
+            self._empty_proxy.show(); self._video_item.hide()
+            try:
+                self.player.setSource(QUrl.fromLocalFile(filepath))
+                self.player.audio_set_volume(0)
+                self._empty_proxy.hide(); self._video_item.show()
+                self.player.pause()
+                QTimer.singleShot(120, lambda: self._show_cue_first_frame(0))
+                self.ai_lbl.setText("✓ VLC 원본 MXF CUE 완료 — ▶ 재생버튼을 누르세요")
+            except Exception as e:
+                self.empty_label.setText(f'⚠ VLC 로드 실패\n{e}')
+                self.ai_lbl.setText('⚠ VLC 로드 오류')
+            self._loading = False
+            self.status_changed.emit(f"  ▌CUE  {Path(filepath).name}  |  VLC MXF 원본 재생  —  ▶ 재생버튼을 누르세요")
+            self.file_loaded.emit(self.cur_info, self.cur_id or "")
+            return
+
+        # CUE — 캐시 확인 후 즉시 또는 변환 후 player에 올림
+        cache = getattr(self, '_tc_cache', {})
+        cached_tmp = cache.get(filepath)
+        pre_job = getattr(self, '_preconvert_jobs', {}).pop(filepath, None)
+        if pre_job and pre_job.isRunning():
+            try:
+                pre_job.abort()
+            except Exception as e:
+                log.debug(f'preconvert abort for cue: {e}')
+            if hasattr(self, '_preconvert_threads') and pre_job in self._preconvert_threads:
+                self._preconvert_threads.remove(pre_job)
+            if filepath in cache:
+                del cache[filepath]
+            cached_tmp = None
+        if cached_tmp and '_preview' in Path(cached_tmp).stem:
+            del cache[filepath]
+            cached_tmp = None
+        if cached_tmp and Path(cached_tmp).exists():
+            # 사전 변환 캐시 있음 → 즉시 올림
+            self.empty_label.setText('⏳  로딩 중...')
+            self._empty_proxy.show(); self._video_item.hide()
+            QTimer.singleShot(50, lambda t=cached_tmp: self._on_transcode_ready(t))
+        else:
+            # 캐시 없음 → 변환 시작
+            ext = Path(filepath).suffix.lower()
+            msg = '⏳  파일 변환 중...' if ext in ('.mp4','.mov','.m4v','.mkv','.avi','.mts','.m2ts') \
+                  else "⏳  MXF 변환 중...\n잠시만 기다려주세요"
+            self.empty_label.setText(msg)
+            self._empty_proxy.show(); self._video_item.hide()
+            self._tc_thread = TranscodeThread(filepath, self._get_selected_ch_pairs())
+            self._tc_thread.ready.connect(self._on_transcode_ready)
+            self._tc_thread.ready_full.connect(self._on_transcode_full)
+            # 진행률 표시
+            self.prog_ai.setRange(0, 100)
+            self.prog_ai.setValue(0)
+            self.prog_ai.show()
+            def _tc_progress(pct):
+                self.prog_ai.setValue(pct)
+                if pct < 100:
+                    self.ai_lbl.setText(f'⏳ 변환 중... {pct}%')
+                else:
+                    self.ai_lbl.setText('✓ 변환 완료')
+                    self.prog_ai.hide()
+                    self.prog_ai.setRange(0, 0)  # indeterminate로 복원
+            self._tc_thread.progress.connect(_tc_progress)
+            def _tc_err(msg, el=self.empty_label, ai=self.ai_lbl):
+                el.setText(f'⚠ 변환 실패\n{msg[:80]}')
+                ai.setText(f'⚠ 변환 오류 — FFmpeg 로그 확인 필요')
+                self.prog_ai.hide(); self.prog_ai.setRange(0, 0)
+            self._tc_thread.error.connect(_tc_err)
+            self._tc_thread.start()
+
+        # 미터 위치 갱신
+
+        self._loading = False   # 로딩 완료, 이벤트 재활성화
+        self.status_changed.emit(f"  ▌CUE  {Path(filepath).name}  |  {info.get('format_short','—')}  {info.get('width',0)}×{info.get('height',0)}  —  ▶ 재생버튼을 누르세요")
+        self.file_loaded.emit(self.cur_info, self.cur_id or "")
+
+    def _show_cue_first_frame(self, ms=0):
+        ms = max(0, int(ms))
+        self.audio_mix.stop()
+        self.player.audio_set_volume(0)
+        self.tc_main.setText(sec_to_tc(ms / 1000 + self.tc_offset, self.fps, self.df))
+        self.tc_rem.setText(sec_to_tc(max(0, self.duration - ms / 1000), self.fps, self.df))
+        self.slider.setValue(0 if self.duration <= 0 else int((ms / 1000) / self.duration * 1000))
+        if hasattr(self.player, 'show_first_frame'):
+            self.player.show_first_frame(ms)
+        else:
+            self.player.setPosition(ms)
+
+    def _on_transcode_ready(self, tmp):
+        if not self.cur_file or getattr(self, '_loading', False): return
+        import os
+        if not os.path.exists(tmp): return
+        try:
+            is_preview = 'preview' in tmp
+            self._using_preview = is_preview
+            self.player.setSource(QUrl.fromLocalFile(tmp))
+            self._empty_proxy.hide(); self._video_item.show()
+            self.player.pause()
+            QTimer.singleShot(120, lambda: self._show_cue_first_frame(0))
+            self.ai_lbl.setText(
+                "⏳ 전체 변환 중... (재생 가능)" if is_preview
+                else "✓ CUE 완료 — ▶ 재생버튼을 누르세요")
+            ch_count = self.cur_info.get('channels', 2)
+            self.meter_ctrl.start_file(
+                self.cur_file, ch_count, self.player, (1, 2),
+                self.cur_info.get('audio_stream_count', 0))
+        except Exception as e:
+            # setSource 실패해도 프로그램 유지
+            self.ai_lbl.setText(f"⚠ 로드 오류 (프로그램 유지): {e}")
+
+    def _on_transcode_full(self, tmp):
+        if not self.cur_file or getattr(self, '_loading', False): return
+        import os
+        if not os.path.exists(tmp): return
+        try:
+            self._using_preview = False
+            pos = self.player.position()
+            was_playing = self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
+            self.player.pause()
+            self.player.setSource(QUrl.fromLocalFile(tmp))
+            self._empty_proxy.hide(); self._video_item.show()
+            self.player.pause()
+            QTimer.singleShot(200, lambda: self.player.setPosition(pos))
+            if was_playing:
+                QTimer.singleShot(350, lambda: self.player.play())
+            else:
+                QTimer.singleShot(350, lambda p=pos: self._show_cue_first_frame(p))
+            if self.cur_file:
+                if not hasattr(self, '_tc_cache'):
+                    self._tc_cache = {}
+                if not hasattr(self, '_tc_cache_order'):
+                    self._tc_cache_order = []
+                self._tc_cache[self.cur_file] = tmp
+                if self.cur_file not in self._tc_cache_order:
+                    self._tc_cache_order.append(self.cur_file)
+                self._evict_tc_cache()
+            self.ai_lbl.setText("✓ CUE 완료 — ▶ 재생버튼을 누르세요")
+        except Exception as e:
+            self.ai_lbl.setText(f"⚠ 전체파일 교체 오류 (프로그램 유지): {e}")
+
+    # ── 재생 제어 ────────────────────────────────────────
+    def _get_selected_ch_pair(self):
+        # 레거시 경로용: 선택 채널을 인접 쌍으로 매핑
+        ch = self._get_selected_audio_channels()[0]
+        if ch % 2 == 1:
+            return (ch, min(ch + 1, 8))
+        return (max(1, ch - 1), ch)
+
+    def _get_selected_ch_pairs(self):
+        return [self._get_selected_ch_pair()]
+
+    def _get_selected_audio_channels(self):
+        selected = [
+            channel_no for cb, channel_no in self._ch_checks
+            if cb.isChecked() and cb.isEnabled()
+        ]
+        return selected or [1, 2]
+
+    def _on_ch_select(self):
+        if getattr(self, '_loading', False): return
+        selected = [
+            ch for cb, ch in self._ch_checks
+            if cb.isChecked() and cb.isEnabled()
+        ]
+        if not selected:
+            for cb, ch_no in self._ch_checks:
+                cb.setChecked(ch_no in (1, 2) and cb.isEnabled())
+            selected = self._get_selected_audio_channels()
+        self._selected_chs = selected
+        if hasattr(self, 'meter_ctrl'):
+            if self.cur_file:
+                ch_count = self.cur_info.get('channels', 2)
+                self.meter_ctrl.start_file(
+                    self.cur_file, ch_count, self.player, (1, 2),
+                    self.cur_info.get('audio_stream_count', 0))
+        if self.cur_file:
+            self.player.audio_set_volume(0)
+            self.audio_mix.set_channels(selected)
+            if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+                self._restart_audio_mix()
+            label = "/".join(str(ch) for ch in selected)
+            self.ai_lbl.setText(f"✓ CH {label} 믹스 출력  |  LKFS 기준은 1/2CH")
+
+    def _apply_audio_channel(self):
+        return
+
+    def _on_ch_routed(self, tmp, pos, was_playing):
+        if not self.cur_file: return
+        import os
+        if not os.path.exists(tmp): return
+        try:
+            self.player.setSource(QUrl.fromLocalFile(tmp))
+            self._empty_proxy.hide(); self._video_item.show()
+            self.player.pause()
+            QTimer.singleShot(300, lambda: self.player.setPosition(pos))
+            if was_playing:
+                QTimer.singleShot(400, lambda: self.player.play())
+            ch_pair = self._get_selected_ch_pair()
+            self.ai_lbl.setText(f"✓ {ch_pair[0]}/{ch_pair[1]}CH 출력 중")
+        except Exception as e:
+            self.ai_lbl.setText(f"⚠ 채널 라우팅 오류 (프로그램 유지): {e}")
+
+    def _start_audio_mix(self):
+        if not self.cur_file:
+            return
+        if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+            return
+        self.player.audio_set_volume(0)
+        self.audio_mix.set_file(
+            self.cur_file,
+            self.cur_info.get('audio_stream_count', 0),
+            self.cur_info.get('channels', 2)
+        )
+        self.audio_mix.set_channels(self._get_selected_audio_channels())
+        self.audio_mix.set_rate(self._playback_rate)
+        self.audio_mix.play(max(0.0, self.player.position() / 1000.0))
+
+    def _restart_audio_mix(self, pos_ms=None):
+        if not self.cur_file:
+            return
+        if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+            return
+        pos = self.player.position() if pos_ms is None else int(pos_ms)
+        self.player.audio_set_volume(0)
+        self.audio_mix.set_channels(self._get_selected_audio_channels())
+        self.audio_mix.set_rate(self._playback_rate)
+        self.audio_mix.restart(max(0.0, pos / 1000.0))
+
+    def _set_position(self, ms):
+        ms = max(0, min(int(self.duration * 1000), int(ms))) if self.duration > 0 else max(0, int(ms))
+        self.player.setPosition(ms)
+        if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+            self.audio_mix.stop()
+            QTimer.singleShot(80, lambda m=ms: self._restart_audio_mix(m))
+
+    def _toggle_safe_area(self):
+        W = self.video_view.width(); H = self.video_view.height()
+        on = self._safe_area.toggle(W, H)
+        self.btn_safe.setChecked(on)
+
+    def toggle_play(self):
+        if self.player.playbackState()==QMediaPlayer.PlaybackState.PlayingState:
+            self.player.pause()
+        else: self.player.play()
+
+    def stop(self):
+        self.audio_mix.stop()
+        self.player.stop(); self.player.setPosition(0)
+        self.meter_ctrl.set_playing(False)
+
+    def _step(self, frames):
+        ms = int(frames/self.fps*1000)
+        self._set_position(max(0,min(int(self.duration*1000),self.player.position()+ms)))
+
+    def _cue(self):
+        # CUE 버튼: Explorer 선택 파일을 player에 올림
+        # 이미 같은 파일이 올라와 있으면 IN 포인트로 이동
+        sel = None
+        if hasattr(self, '_right_panel'):
+            sel_items = self._right_panel.exp_list.selectedItems()
+            if sel_items:
+                sel = sel_items[0].data(Qt.ItemDataRole.UserRole)
+        # Explorer 선택 없으면 clip_list fallback
+        if not sel:
+            ci = self.clip_list.currentItem()
+            if ci: sel = ci.data(Qt.ItemDataRole.UserRole)
+        if not sel: return
+
+        if sel == self.cur_file:
+            # 이미 같은 파일 → IN 포인트로 이동
+            if self.in_pt is not None:
+                self._set_position(int(self.in_pt * 1000))
+        else:
+            self.load_file(sel)
+
+    def seek_to(self, sec):
+        self._set_position(int(sec*1000))
+        if self.player.playbackState()!=QMediaPlayer.PlaybackState.PlayingState:
+            self.player.play()
+
+    def _on_slider_release(self):
+        self._seeking=False
+        if self.duration>0:
+            self._set_position(int(self.slider.value()/1000*self.duration*1000))
+
+    # ── IN / OUT ─────────────────────────────────────────
+    def _set_in(self):
+        self.in_pt=self.player.position()/1000
+        self.tc_in_l.setText(sec_to_tc(self.in_pt,self.fps,self.df))
+        self.tc_in_l.setStyleSheet(f"color:{C['yellow']};font-family:Consolas;font-size:16px;background:transparent;")
+
+    def _clr_in(self):
+        self.in_pt=None; self.tc_in_l.setText("—")
+        self.tc_in_l.setStyleSheet(f"color:{C['text0']};font-family:Consolas;font-size:16px;background:transparent;")
+
+    def _set_out(self):
+        self.out_pt=self.player.position()/1000
+        self.tc_out_l.setText(sec_to_tc(self.out_pt,self.fps,self.df))
+        self.tc_out_l.setStyleSheet(f"color:{C['orange']};font-family:Consolas;font-size:16px;background:transparent;")
+
+    def _clr_out(self):
+        self.out_pt=None; self.tc_out_l.setText("—")
+        self.tc_out_l.setStyleSheet(f"color:{C['text0']};font-family:Consolas;font-size:16px;background:transparent;")
+
+
+    # ── 이벤트 ───────────────────────────────────────────
+    def _on_pos(self, ms):
+        self._raise_vlc_meters()
+        sec = ms/1000
+        self.tc_main.setText(sec_to_tc(sec + self.tc_offset, self.fps, self.df))
+        self.tc_rem.setText(sec_to_tc(max(0,self.duration-sec),self.fps,self.df))
+        if self.duration>0 and not self._seeking:
+            self.slider.setValue(int(sec/self.duration*1000))
+        # 루프 재생: OUT 포인트 넘으면 IN 으로 복귀
+        if self._loop and self.out_pt is not None and sec >= self.out_pt:
+            in_ms = int(self.in_pt * 1000) if self.in_pt is not None else 0
+            self._set_position(in_ms)
+
+    def _on_dur(self, ms):
+        media_duration = ms / 1000
+        if self._using_preview and self._source_duration > media_duration:
+            self.duration = self._source_duration
+        else:
+            self.duration = media_duration or self._source_duration
+        self.tc_dur.setText(sec_to_tc(self.duration,self.fps,self.df))
+
+    def _on_state(self, state):
+        self._raise_vlc_meters()
+        playing = state == QMediaPlayer.PlaybackState.PlayingState
+        self.btn_play.setText("||" if playing else "▶")
+        # LED 깜빡임 제어
+        if playing:
+            self._led_timer.start()
+            self.player.audio_set_volume(0)
+            QTimer.singleShot(60, self._start_audio_mix)
+        else:
+            self.audio_mix.stop()
+            self._led_timer.stop()
+            self.led.setStyleSheet(f"color:{C['text3']};font-size:10px;background:transparent;")
+            self._led_on = False
+        if playing and self.cur_file:
+            if not self.meter_ctrl._thread.isRunning():
+                ch = self.cur_info.get('channels', 2)
+                self.meter_ctrl.start_file(
+                    self.cur_file, ch, self.player, (1, 2),
+                    self.cur_info.get('audio_stream_count', 0))
+        else:
+            self.meter_ctrl.set_playing(playing)
+
+    def _on_player_error(self, error, error_string):
+        """QMediaPlayer 재생 오류 핸들러"""
+        if error == QMediaPlayer.Error.NoError:
+            return
+        # 에러 종류별 메시지
+        msg_map = {
+            QMediaPlayer.Error.ResourceError:    '파일을 열 수 없습니다 (손상/삭제)',
+            QMediaPlayer.Error.FormatError:      '지원하지 않는 포맷입니다',
+            QMediaPlayer.Error.NetworkError:     '네트워크 오류',
+            QMediaPlayer.Error.AccessDeniedError:'파일 접근 권한 없음',
+        }
+        friendly = msg_map.get(error, f'재생 오류 (코드 {error})')
+        detail   = error_string or ''
+        # UI 상태 복원
+        self._led_timer.stop()
+        self.led.setStyleSheet(f"color:{C['red']};font-size:10px;background:transparent;")
+        self.ai_lbl.setText(f'⚠ {friendly}')
+        self.btn_play.setText('▶')
+        # 빈 화면 표시
+        self.empty_label.setText(f'⚠ {friendly}\n\n{detail[:120]}')
+        self.empty_label.setStyleSheet(
+            f"color:{C['red']};font-family:Consolas;font-size:13px;background:#000;")
+        self._empty_proxy.setVisible(True)
+        # 로그
+        log.error(f'[PLAYER ERROR] {friendly} | {detail}')
+
+    def _on_media_status(self, status):
+        """미디어 로드 상태 추적 — InvalidMedia 별도 처리"""
+        S = QMediaPlayer.MediaStatus
+        if status == S.InvalidMedia:
+            self._on_player_error(
+                QMediaPlayer.Error.FormatError,
+                f'재생 불가: {Path(self.cur_file).name if self.cur_file else "알 수 없는 파일"}')
+        elif status == S.LoadedMedia:
+            # 정상 로드 — 빨간 LED 초기화
+            self.led.setStyleSheet(
+                f"color:{C['text3']};font-size:10px;background:transparent;")
+        elif status == S.BufferingMedia:
+            self.ai_lbl.setText('버퍼링 중...')
+        elif status == S.EndOfMedia:
+            # 재생 끝 — LED 끄기
+            self.audio_mix.stop()
+            self._led_timer.stop()
+            self.led.setStyleSheet(
+                f"color:{C['text3']};font-size:10px;background:transparent;")
+            self._led_on = False
+
+    def dragEnterEvent(self, e):
+        if e.mimeData().hasUrls(): e.accept()
+
+    def dropEvent(self, e):
+        for url in e.mimeData().urls():
+            fp = url.toLocalFile()
+            if Path(fp).suffix.lower() in VIDEO_EXTS:
+                if fp not in [x["filepath"] for x in self._files]:
+                    self._files.append({"name":Path(fp).name,"filepath":fp,
+                                        "size":Path(fp).stat().st_size,
+                                        "ext":Path(fp).suffix.upper().lstrip(".")})
+                self._refresh_clip_list(); self.load_file(fp); break
+
+    def keyPressEvent(self, e):
+        k=e.key()
+        # Space: 재생/일시정지 전용
+        # 텍스트 입력창, 버튼류 포커스 시 무시 → player만 동작
+        focused = QApplication.focusWidget()
+        from PyQt6.QtWidgets import QLineEdit, QTextEdit, QAbstractButton, QAbstractSpinBox
+        if k==Qt.Key.Key_Space:
+            from PyQt6.QtWidgets import QTabBar, QTabWidget, QScrollBar
+            # 입력/버튼/탭/스크롤 위젯 포커스 시 Space 무시
+            if isinstance(focused, (QLineEdit, QTextEdit, QAbstractButton,
+                                    QAbstractSpinBox, QTabBar, QTabWidget,
+                                    QScrollBar, QListWidget)):
+                e.ignore(); return
+            self.toggle_play()
+            e.accept(); return
+        elif k==Qt.Key.Key_Left:     self._step(-1)
+        elif k==Qt.Key.Key_Right:    self._step(1)
+        elif k==Qt.Key.Key_Home:     self._set_position(0)
+        elif k==Qt.Key.Key_End:      self._set_position(max(0,int(self.duration*1000)-100))
+        elif k==Qt.Key.Key_I:        self._set_in()
+        elif k==Qt.Key.Key_O:        self._set_out()
+        e.ignore()
+
+    # ── AI ───────────────────────────────────────────────
+    def start_audio_analyze(self):
+        """AI바 뮤트감지 버튼 → 오른쪽 오디오 탭으로 포워드"""
+        if not self.cur_file:
+            return
+        rp = getattr(self, '_right_panel', None)
+        if rp and hasattr(rp, '_run_audio_analyze'):
+            try:
+                if hasattr(rp, 'tabs'):
+                    audio_page = rp.mute_list.parentWidget() if hasattr(rp, 'mute_list') else None
+                    if audio_page:
+                        rp.tabs.setCurrentWidget(audio_page)
+                rp._run_audio_analyze()
+                return
+            except Exception as e:
+                log.warning(f'audio analyze forward failed: {e}')
+        self.ai_lbl.setText("⚠ 오른쪽 오디오 탭을 사용할 수 없습니다")
+
+    def start_black_detect(self):
+        """AI바 블랙 버튼 → 오른쪽 블랙 탭 분석 실행"""
+        if not self.cur_file:
+            return
+        rp = getattr(self, '_right_panel', None)
+        if rp and hasattr(rp, '_run_black_detect'):
+            try:
+                if hasattr(rp, 'tabs'):
+                    black_page = rp.black_list.parentWidget() if hasattr(rp, 'black_list') else None
+                    if black_page:
+                        rp.tabs.setCurrentWidget(black_page)
+                rp._run_black_detect()
+                return
+            except Exception as e:
+                log.warning(f'black detect forward failed: {e}')
+        self.ai_lbl.setText("⚠ 오른쪽 블랙 탭을 사용할 수 없습니다")
+
+# ══════════════════════════════════════════════════════════
+# 오른쪽: 탭 패널
+# ══════════════════════════════════════════════════════════
