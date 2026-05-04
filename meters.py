@@ -3,7 +3,7 @@ meters.py — 오디오 미터 위젯 및 레벨 측정 스레드
 SideMeter, SafeAreaItem, LoudnessMeter, AudioLevelThread, MeterController
 유틸 위젯: mk_btn, mk_label, separator
 """
-import sys, re, subprocess
+import sys, re, subprocess, math
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QWidget, QLabel, QPushButton, QFrame,
@@ -19,6 +19,17 @@ from constants import (
     C, FFMPEG, FFPROBE, log,
     register_child_process, unregister_child_process, terminate_child_process,
 )
+
+NUM_RE = r'([+-]?(?:\d+(?:\.\d*)?|\.\d+|inf|nan))'
+
+
+def _finite_float(text):
+    try:
+        value = float(text)
+    except (TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) else None
+
 
 def mk_btn(text, w=None, h=26, color=None, bg=None):
     b = QPushButton(text)
@@ -411,14 +422,14 @@ class AudioLevelThread(QThread):
                 # ── 채널별 RMS 파싱 ──
                 rms_levels = [0.0] * 16
                 ch_vals = {}
-                for m in re.finditer(r'lavfi\.astats\.(\d+)\.RMS_level=([-\d.]+)', out):
+                for m in re.finditer(rf'lavfi\.astats\.(\d+)\.RMS_level={NUM_RE}', out, re.IGNORECASE):
                     ci = int(m.group(1)) - 1
-                    try:
-                        val = float(m.group(2))
-                        if 0 <= ci < 16:
-                            if ci not in ch_vals or val > ch_vals[ci]:
-                                ch_vals[ci] = val
-                    except Exception as e: log.debug(f'meter ch_vals: {e}')
+                    val = _finite_float(m.group(2))
+                    if val is None:
+                        continue
+                    if 0 <= ci < 16:
+                        if ci not in ch_vals or val > ch_vals[ci]:
+                            ch_vals[ci] = val
                 for ci, db in ch_vals.items():
                     rms_levels[ci] = max(0.0, min(1.0, (db + 60.0) / 60.0))
 
@@ -426,14 +437,14 @@ class AudioLevelThread(QThread):
                 lkfs_m = -99.0
                 true_peak_db = -99.0
                 # M과 true_peak 정규식 완전 분리 — 혼용 버그 방지
-                for m in re.finditer(r'lavfi\.r128\.M=([-\d.]+)', out):
-                    try: lkfs_m = float(m.group(1))  # 마지막값으로 덮어쓰기
-                    except Exception as e: log.debug(f'lkfs_m parse: {e}')
-                for m in re.finditer(r'lavfi\.r128\.true_peak=([-\d.]+)', out):
-                    try:
-                        val = float(m.group(1))
-                        if val > true_peak_db: true_peak_db = val
-                    except Exception as e: log.debug(f'true_peak parse: {e}')
+                for m in re.finditer(rf'lavfi\.r128\.M={NUM_RE}', out, re.IGNORECASE):
+                    val = _finite_float(m.group(1))
+                    if val is not None:
+                        lkfs_m = val  # 마지막값으로 덮어쓰기
+                for m in re.finditer(rf'lavfi\.r128\.true_peak={NUM_RE}', out, re.IGNORECASE):
+                    val = _finite_float(m.group(1))
+                    if val is not None and val > true_peak_db:
+                        true_peak_db = val
 
                 # ── Integrated LUFS (BS.1770 게이팅) ──
                 if lkfs_m > -70.0:
