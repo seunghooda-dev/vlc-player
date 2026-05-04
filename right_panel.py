@@ -255,7 +255,9 @@ class RightPanel(QWidget):
         self.meta_labels["res"].setText(f"{w}×{h}" if w else "—")
         self.meta_labels["fps"].setText(f"{info.get('fps',0):.3f}")
         self.meta_labels["channels"].setText(f"{info.get('channels',0)}CH")
-        self.meta_labels["duration"].setText(sec_to_tc(info.get("duration",0),info.get("fps",29.97)))
+        self.meta_labels["duration"].setText(
+            sec_to_tc(info.get("duration",0), info.get("fps",29.97), info.get("df"))
+        )
         self.meta_labels["timecode"].setText(info.get("timecode","—") or "—")
         sz = info.get("size",0)
         self.meta_labels["size"].setText(f"{sz/1024/1024:.1f} MB" if sz else "—")

@@ -1035,6 +1035,17 @@ class VideoPanel(QWidget):
     def _nominal_fps(self):
         return max(1, int(round(self._media_fps())))
 
+    def _drop_frame_enabled(self):
+        nom = self._nominal_fps()
+        if nom not in (30, 60):
+            return False
+        return bool(self.df) and abs(self._media_fps() - nom) > 0.01
+
+    def _drop_frames_per_minute(self):
+        if not self._drop_frame_enabled():
+            return 0
+        return 2 if self._nominal_fps() == 30 else 4
+
     def _duration_frames(self):
         if self.duration <= 0:
             return 0
@@ -1051,14 +1062,19 @@ class VideoPanel(QWidget):
 
     def _parse_tc_offset_frames(self, tc):
         if not tc:
-            return int(round(float(self.tc_offset or 0.0) * self._nominal_fps()))
+            return int(round(float(self.tc_offset or 0.0) * self._media_fps()))
         try:
             parts = str(tc).replace(';', ':').split(':')
             if len(parts) != 4:
                 return 0
             h, m, s, f = [int(x) for x in parts]
             nom = self._nominal_fps()
-            return ((h * 3600 + m * 60 + s) * nom) + f
+            total_f = ((h * 3600 + m * 60 + s) * nom) + f
+            drop = self._drop_frames_per_minute()
+            if drop:
+                total_minutes = h * 60 + m
+                total_f -= drop * (total_minutes - total_minutes // 10)
+            return max(0, total_f)
         except Exception as e:
             log.debug(f'tc offset frame parse: {e}')
             return 0
@@ -1068,11 +1084,19 @@ class VideoPanel(QWidget):
         total_f = max(0, int(frame))
         if include_offset:
             total_f += max(0, int(getattr(self, '_tc_offset_frames', 0)))
+        drop = self._drop_frames_per_minute()
+        if drop:
+            frames_per_10min = nom * 60 * 10 - drop * 9
+            frames_per_min = nom * 60 - drop
+            ten_min_blocks = total_f // frames_per_10min
+            remainder = total_f % frames_per_10min
+            dropped_minutes = max(0, (remainder - drop) // frames_per_min)
+            total_f += drop * (9 * ten_min_blocks + dropped_minutes)
         ff = total_f % nom
         ss = (total_f // nom) % 60
         mm = (total_f // nom // 60) % 60
         hh = total_f // nom // 3600
-        sep = ';' if self.df else ':'
+        sep = ';' if drop else ':'
         return f"{hh:02d}:{mm:02d}:{ss:02d}{sep}{ff:02d}"
 
     def _set_display_frame(self, frame, update_slider=True):
@@ -1367,7 +1391,7 @@ class VideoPanel(QWidget):
         if not info: info = {"filename":Path(filepath).name,"filepath":filepath,"fps":29.97,"duration":0,"size":0}
         self.cur_info = info
         self.fps       = info.get("fps", 29.97)
-        self.df        = False
+        self.df        = bool(info.get("df", False)) and self._nominal_fps() in (30, 60)
         self.tc_offset = info.get("tc_offset", 0.0)
         self._tc_offset_frames = self._parse_tc_offset_frames(info.get("timecode", ""))
         self._display_frame = 0
@@ -1385,11 +1409,10 @@ class VideoPanel(QWidget):
         w = info.get("width", 0)
         res_str = ("4K" if w >= 3840 else "HD" if w >= 1920 else f"{h}p") if h else "—"
         self.lbl_res.setText(res_str)
-        # FPS 표시: 표시용 타임코드는 프레임 번호가 건너뛰지 않도록 NDF 고정
         fps_str = f"{self.fps:.2f}"
         self.lbl_fps.setText(fps_str)
-        df_label = "NDF"
-        df_color = C['text2']
+        df_label = "DF" if self._drop_frame_enabled() else "NDF"
+        df_color = C['teal'] if self._drop_frame_enabled() else C['text2']
         self.lbl_df.setText(df_label)
         self.lbl_df.setStyleSheet(f"color:{df_color};font-family:Consolas;font-size:11px;")
         ch_count = info.get('channels', 0)

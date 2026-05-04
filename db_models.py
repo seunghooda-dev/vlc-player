@@ -76,10 +76,11 @@ def is_df_fps(fps):
     return abs(fps - round(fps)) > 0.01
 
 def sec_to_tc(sec, fps=29.97, df=None):
-    # Player display timecode. Keep frame numbers visible without DF skips.
+    # Player display timecode. DF uses SMPTE drop-frame numbering for 29.97/59.94.
     if sec is None or sec < 0: sec = 0.0
-    if df is None: df = False
     nom = round(fps)  # 명목 FPS: 29.97->30, 59.94->60
+    if df is None:
+        df = nom in (30, 60) and is_df_fps(fps)
     if df and nom in (30, 60):
         # Drop Frame 보정 (SMPTE 12M)
         # 29.97DF: 매분 2프레임 드롭, 10분 단위 제외
