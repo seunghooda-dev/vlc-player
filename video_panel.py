@@ -23,7 +23,10 @@ from PyQt6.QtGui   import QColor, QFont, QDragEnterEvent, QDropEvent
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtMultimediaWidgets import QGraphicsVideoItem
 
-from constants  import C, FFMPEG, FFPROBE, FFPLAY, VLC_DIR, VIDEO_EXTS, TMP_DIR, BASE_DIR, log
+from constants  import (
+    C, FFMPEG, FFPROBE, FFPLAY, VLC_DIR, VIDEO_EXTS, TMP_DIR, BASE_DIR, log,
+    register_child_process, terminate_child_process,
+)
 from db_models  import probe, save_clip, sec_to_tc
 from threads    import TranscodeThread
 from meters     import SideMeter, SafeAreaItem, LoudnessMeter, MeterController, mk_btn, mk_label, separator
@@ -85,21 +88,7 @@ class AudioMixPlayer(QObject):
     def stop(self):
         self._playing = False
         for proc in (self._ffplay, self._ffmpeg):
-            if proc and proc.poll() is None:
-                try:
-                    proc.terminate()
-                except Exception as e:
-                    log.debug(f'audio mix terminate: {e}')
-        for proc in (self._ffplay, self._ffmpeg):
-            if proc:
-                try:
-                    proc.wait(timeout=0.5)
-                except Exception:
-                    try:
-                        proc.kill()
-                        proc.wait(timeout=0.5)
-                    except Exception as e:
-                        log.debug(f'audio mix kill: {e}')
+            terminate_child_process(proc, 'audio mix')
         self._ffplay = None
         self._ffmpeg = None
 
@@ -148,6 +137,7 @@ class AudioMixPlayer(QObject):
                 stderr=subprocess.DEVNULL,
                 creationflags=0x08000000
             )
+            register_child_process(self._ffmpeg, 'audio mix ffmpeg')
             self._ffplay = subprocess.Popen(
                 ffplay_cmd,
                 stdin=self._ffmpeg.stdout,
@@ -155,6 +145,7 @@ class AudioMixPlayer(QObject):
                 stderr=subprocess.DEVNULL,
                 creationflags=0x08000000
             )
+            register_child_process(self._ffplay, 'audio mix ffplay')
             if self._ffmpeg.stdout:
                 self._ffmpeg.stdout.close()
             self._playing = True

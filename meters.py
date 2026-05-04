@@ -15,7 +15,10 @@ from PyQt6.QtCore  import Qt, QTimer, QThread, pyqtSignal, QObject, QRectF
 from PyQt6.QtGui   import QColor, QPainter, QPen, QBrush, QFont, QLinearGradient
 from PyQt6.QtMultimediaWidgets import QGraphicsVideoItem
 
-from constants import C, FFMPEG, FFPROBE, log
+from constants import (
+    C, FFMPEG, FFPROBE, log,
+    register_child_process, unregister_child_process, terminate_child_process,
+)
 
 def mk_btn(text, w=None, h=26, color=None, bg=None):
     b = QPushButton(text)
@@ -327,11 +330,7 @@ class AudioLevelThread(QThread):
             p = self._proc
             self._proc = None
         if p and p.poll() is None:
-            try:
-                p.kill()
-                p.wait(timeout=2)
-            except Exception:
-                pass   # 이미 종료됐거나 권한 없으면 무시
+            terminate_child_process(p, 'audio meter ffmpeg')
 
     def run(self):
         import re
@@ -387,20 +386,21 @@ class AudioLevelThread(QThread):
                        '-map','[rms]','-map','[lufs]',
                        '-f','null','-']
 
-                proc = subprocess.Popen(
+                proc = register_child_process(subprocess.Popen(
                     cmd,
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                     creationflags=0x08000000
-                )
+                ), 'audio meter ffmpeg')
                 with self._lock:
                     self._proc = proc
 
                 try:
                     _, raw = proc.communicate(timeout=4)
                 except subprocess.TimeoutExpired:
-                    proc.kill(); proc.wait()
+                    terminate_child_process(proc, 'audio meter ffmpeg')
                     continue
                 finally:
+                    unregister_child_process(proc)
                     with self._lock:
                         if self._proc is proc:
                             self._proc = None

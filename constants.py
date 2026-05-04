@@ -7,7 +7,7 @@ Archive Tagger - PyQt6 완전판
 파일 탐색 + 비디오 플레이어 + DB + STT + 씬감지 + 검색
 """
 
-import sys, os, json, subprocess, hashlib, csv, shutil
+import sys, os, json, subprocess, hashlib, csv, shutil, threading, atexit
 from pathlib import Path
 from datetime import datetime
 
@@ -358,6 +358,63 @@ def check_runtime_environment():
         'missing': missing,
     }
 
+# ── 보조 프로세스 추적/정리 ──────────────────────────────
+_CHILD_PROCS = {}
+_CHILD_PROC_LOCK = threading.RLock()
+
+def _safe_proc_log(level, message):
+    try:
+        globals().get('log').log(level, message)
+    except Exception:
+        pass
+
+def register_child_process(proc, label='process'):
+    if not proc:
+        return proc
+    try:
+        with _CHILD_PROC_LOCK:
+            _CHILD_PROCS[int(proc.pid)] = (proc, label)
+    except Exception:
+        pass
+    return proc
+
+def unregister_child_process(proc):
+    if not proc:
+        return
+    try:
+        with _CHILD_PROC_LOCK:
+            _CHILD_PROCS.pop(int(proc.pid), None)
+    except Exception:
+        pass
+
+def terminate_child_process(proc, label='process', timeout=0.7):
+    if not proc:
+        return
+    try:
+        if proc.poll() is None:
+            try:
+                proc.terminate()
+            except Exception as e:
+                _safe_proc_log(_logging.DEBUG if '_logging' in globals() else 10,
+                               f'{label} terminate failed: {e}')
+            try:
+                proc.wait(timeout=timeout)
+            except Exception:
+                try:
+                    proc.kill()
+                    proc.wait(timeout=timeout)
+                except Exception as e:
+                    _safe_proc_log(_logging.DEBUG if '_logging' in globals() else 10,
+                                   f'{label} kill failed: {e}')
+    finally:
+        unregister_child_process(proc)
+
+def cleanup_child_processes():
+    with _CHILD_PROC_LOCK:
+        procs = list(_CHILD_PROCS.values())
+    for proc, label in procs:
+        terminate_child_process(proc, label)
+
 # ── 로거 ──────────────────────────────────────────────
 import logging as _logging
 from logging.handlers import TimedRotatingFileHandler as _TRFHandler
@@ -388,6 +445,7 @@ def _make_logger():
     return logger
 
 log = _make_logger()
+atexit.register(cleanup_child_processes)
 
 def _log_exc(label, exc=None):
     """예외를 ERROR 레벨로 기록. except 블록에서 호출"""

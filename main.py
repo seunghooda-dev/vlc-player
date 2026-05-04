@@ -10,7 +10,10 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore    import Qt
 from PyQt6.QtGui     import QColor, QPalette
 
-from constants    import C, STYLE, LOG_DIR, TMP_DIR, BASE_DIR, log, check_runtime_environment
+from constants    import (
+    C, STYLE, LOG_DIR, TMP_DIR, BASE_DIR, log,
+    check_runtime_environment, cleanup_child_processes,
+)
 from video_panel  import VideoPanel
 from right_panel  import RightPanel
 
@@ -210,11 +213,17 @@ class MainWindow(QMainWindow):
 
             # 플레이어 정지
             try:
-                if hasattr(vp, 'audio_mix'):
+                if hasattr(vp, '_cancel_audio_mix'):
+                    vp._cancel_audio_mix()
+                elif hasattr(vp, 'audio_mix'):
                     vp.audio_mix.stop()
             except Exception as e: log.debug(f'audio_mix stop: {e}')
             try: vp.player.stop()
             except Exception as e: log.debug(f'player stop: {e}')
+            try:
+                cleanup_child_processes()
+            except Exception as e:
+                log.debug(f'cleanup child processes: {e}')
 
             # tmp 파일 정리
             _cleanup_tmp_files()
@@ -314,6 +323,7 @@ def main():
     win.show()
     win.show_runtime_status(runtime)
     ret = app.exec()
+    cleanup_child_processes()
     log.info('Archive Tagger 종료')
     sys.exit(ret)
 

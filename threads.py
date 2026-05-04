@@ -8,7 +8,10 @@ import sys, re, json, subprocess, threading as _th, hashlib, math, os
 from pathlib import Path
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from constants import FFMPEG, FFPROBE, TMP_DIR, log
+from constants import (
+    FFMPEG, FFPROBE, TMP_DIR, log,
+    register_child_process, unregister_child_process, terminate_child_process,
+)
 from db_models import sec_to_tc
 
 class TranscodeThread(QThread):
@@ -34,8 +37,7 @@ class TranscodeThread(QThread):
     def abort(self):
         self._abort = True
         if self._proc and self._proc.poll() is None:
-            try: self._proc.kill()
-            except Exception as e: log.debug(f'proc.kill: {e}')
+            terminate_child_process(self._proc, 'transcode ffmpeg')
 
     def _build_filter(self, audio_streams, pairs):
         n_streams  = len(audio_streams)
@@ -83,10 +85,10 @@ class TranscodeThread(QThread):
         """FFmpeg 실행 + 진행률 파싱 + stderr 안전 처리"""
         import threading as _th, re as _re
         try:
-            self._proc = subprocess.Popen(
+            self._proc = register_child_process(subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 creationflags=0x08000000
-            )
+            ), 'transcode ffmpeg')
             # stderr를 별도 스레드에서 읽음 → 버퍼 블록 방지 (버그 3번 해결)
             self._stderr_buf = []
             def _read_stderr():
@@ -107,8 +109,7 @@ class TranscodeThread(QThread):
             t.start()
             while True:
                 if self._abort:
-                    try: self._proc.kill()
-                    except Exception as e: log.debug(f'proc.kill abort: {e}')
+                    terminate_child_process(self._proc, 'transcode ffmpeg')
                     return False
                 if self._proc.poll() is not None:
                     break
@@ -124,6 +125,8 @@ class TranscodeThread(QThread):
             if not self._abort:
                 self.error.emit(str(e))
             return False
+        finally:
+            unregister_child_process(self._proc)
 
     def run(self):
         try:
@@ -201,29 +204,29 @@ class AudioAnalyzeThread(QThread):
     def abort(self):
         self._abort = True
         if self._proc and self._proc.poll() is None:
-            try:
-                self._proc.kill()
-            except Exception as e:
-                log.debug(f'audio analyze proc.kill: {e}')
+            terminate_child_process(self._proc, 'audio analyze ffmpeg')
 
     def _run_ffmpeg_capture(self, cmd, timeout=300):
-        self._proc = subprocess.Popen(
+        self._proc = register_child_process(subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            creationflags=0x08000000, encoding='utf-8', errors='replace')
-        waited = 0
-        while self._proc.poll() is None:
-            if self._abort:
-                self.abort()
-                return ''
-            if waited >= timeout * 10:
-                self.abort()
-                raise TimeoutError('FFmpeg audio analyze timeout')
-            self.msleep(100)
-            waited += 1
-        out, err = self._proc.communicate(timeout=2)
-        if self._proc.returncode != 0 and not self._abort:
-            log.warning(f'audio analyze ffmpeg rc={self._proc.returncode}: {err[-500:]}')
-        return err or ''
+            creationflags=0x08000000, encoding='utf-8', errors='replace'), 'audio analyze ffmpeg')
+        try:
+            waited = 0
+            while self._proc.poll() is None:
+                if self._abort:
+                    self.abort()
+                    return ''
+                if waited >= timeout * 10:
+                    self.abort()
+                    raise TimeoutError('FFmpeg audio analyze timeout')
+                self.msleep(100)
+                waited += 1
+            out, err = self._proc.communicate(timeout=2)
+            if self._proc.returncode != 0 and not self._abort:
+                log.warning(f'audio analyze ffmpeg rc={self._proc.returncode}: {err[-500:]}')
+            return err or ''
+        finally:
+            unregister_child_process(self._proc)
 
     def _audio_12_filter(self, audio_streams, out_label='aud'):
         """분석 속도를 위해 QC 기준 채널인 1/2CH만 추출한다."""
@@ -286,63 +289,66 @@ class AudioAnalyzeThread(QThread):
             '-ac', str(ch_count),
             'pipe:1'
         ]
-        self._proc = subprocess.Popen(
+        self._proc = register_child_process(subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            creationflags=0x08000000)
+            creationflags=0x08000000), 'audio index ffmpeg')
 
-        levels = []
-        buf = bytearray()
-        processed_windows = 0
-        next_emit_sec = 0.0
-        assert self._proc.stdout is not None
-        while True:
-            if self._abort:
-                self.abort()
-                return []
-            chunk = self._proc.stdout.read(262144)
-            if not chunk:
-                break
-            buf.extend(chunk)
-            while len(buf) >= bytes_per_window:
-                block = bytes(buf[:bytes_per_window])
-                del buf[:bytes_per_window]
-                arr = _np.frombuffer(block, dtype=_np.int16).astype(_np.float32)
-                if ch_count > 1:
-                    arr = arr.reshape(-1, ch_count)
-                    rms = _np.sqrt(_np.mean(arr * arr, axis=0)).max()
-                else:
-                    rms = float(_np.sqrt(_np.mean(arr * arr)))
-                db = 20.0 * math.log10(max(float(rms) / 32768.0, 1e-12))
-                levels.append(round(db, 1))
-                processed_windows += 1
-                pos_sec = processed_windows * window_sec
-                if pos_sec >= next_emit_sec:
-                    self.progress.emit(
-                        f'{source_ch_count}ch 파일 — {basis} 100ms 레벨 인덱스 생성 중... {sec_to_tc(pos_sec, self.fps)}')
-                    next_emit_sec += 30.0
-
-        if len(buf) >= ch_count * 2:
-            usable = len(buf) - (len(buf) % (ch_count * 2))
-            arr = _np.frombuffer(bytes(buf[:usable]), dtype=_np.int16).astype(_np.float32)
-            if arr.size:
-                if ch_count > 1:
-                    arr = arr.reshape(-1, ch_count)
-                    rms = _np.sqrt(_np.mean(arr * arr, axis=0)).max()
-                else:
-                    rms = float(_np.sqrt(_np.mean(arr * arr)))
-                db = 20.0 * math.log10(max(float(rms) / 32768.0, 1e-12))
-                levels.append(round(db, 1))
-
-        err = b''
         try:
-            err = self._proc.stderr.read() if self._proc.stderr else b''
-        except Exception:
-            pass
-        rc = self._proc.wait()
-        if rc != 0 and not self._abort:
-            tail = err.decode('utf-8', 'replace')[-500:]
-            raise RuntimeError(f'오디오 인덱스 생성 실패 (rc={rc}): {tail}')
-        return levels
+            levels = []
+            buf = bytearray()
+            processed_windows = 0
+            next_emit_sec = 0.0
+            assert self._proc.stdout is not None
+            while True:
+                if self._abort:
+                    self.abort()
+                    return []
+                chunk = self._proc.stdout.read(262144)
+                if not chunk:
+                    break
+                buf.extend(chunk)
+                while len(buf) >= bytes_per_window:
+                    block = bytes(buf[:bytes_per_window])
+                    del buf[:bytes_per_window]
+                    arr = _np.frombuffer(block, dtype=_np.int16).astype(_np.float32)
+                    if ch_count > 1:
+                        arr = arr.reshape(-1, ch_count)
+                        rms = _np.sqrt(_np.mean(arr * arr, axis=0)).max()
+                    else:
+                        rms = float(_np.sqrt(_np.mean(arr * arr)))
+                    db = 20.0 * math.log10(max(float(rms) / 32768.0, 1e-12))
+                    levels.append(round(db, 1))
+                    processed_windows += 1
+                    pos_sec = processed_windows * window_sec
+                    if pos_sec >= next_emit_sec:
+                        self.progress.emit(
+                            f'{source_ch_count}ch 파일 — {basis} 100ms 레벨 인덱스 생성 중... {sec_to_tc(pos_sec, self.fps)}')
+                        next_emit_sec += 30.0
+
+            if len(buf) >= ch_count * 2:
+                usable = len(buf) - (len(buf) % (ch_count * 2))
+                arr = _np.frombuffer(bytes(buf[:usable]), dtype=_np.int16).astype(_np.float32)
+                if arr.size:
+                    if ch_count > 1:
+                        arr = arr.reshape(-1, ch_count)
+                        rms = _np.sqrt(_np.mean(arr * arr, axis=0)).max()
+                    else:
+                        rms = float(_np.sqrt(_np.mean(arr * arr)))
+                    db = 20.0 * math.log10(max(float(rms) / 32768.0, 1e-12))
+                    levels.append(round(db, 1))
+
+            err = b''
+            try:
+                err = self._proc.stderr.read() if self._proc.stderr else b''
+            except Exception:
+                pass
+            rc = self._proc.wait()
+            if rc != 0 and not self._abort:
+                tail = err.decode('utf-8', 'replace')[-500:]
+                raise RuntimeError(f'오디오 인덱스 생성 실패 (rc={rc}): {tail}')
+            return levels
+        finally:
+            unregister_child_process(self._proc)
 
     def _mutes_from_levels(self, levels, window_sec):
         mutes = []
@@ -458,10 +464,7 @@ class BlackDetectThread(QThread):
     def abort(self):
         self._abort = True
         if self._proc and self._proc.poll() is None:
-            try:
-                self._proc.kill()
-            except Exception as e:
-                log.debug(f'blackdetect proc.kill: {e}')
+            terminate_child_process(self._proc, 'black detect ffmpeg')
 
     def _flush_segment(self, out, seg):
         if not seg:
@@ -494,11 +497,11 @@ class BlackDetectThread(QThread):
                 '-vf', f'blackframe=amount={self.amount}:threshold={self.threshold}',
                 '-f', 'null', '-'
             ]
-            self._proc = subprocess.Popen(
+            self._proc = register_child_process(subprocess.Popen(
                 cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                 encoding='utf-8', errors='replace',
                 creationflags=0x08000000
-            )
+            ), 'black detect ffmpeg')
 
             ranges = []
             seg = None
@@ -560,3 +563,5 @@ class BlackDetectThread(QThread):
             log.error(f'BlackDetectThread 오류: {e}')
             if not self._abort:
                 self.error.emit(str(e))
+        finally:
+            unregister_child_process(self._proc)
