@@ -273,17 +273,42 @@ QProgressBar::chunk {{
 }}
 """
 
-FFMPEG     = "ffmpeg"
-FFPROBE    = "ffprobe"
-FFPLAY     = "ffplay"
 VIDEO_EXTS = {'.mxf','.mp4','.mov','.mts','.m2ts','.mkv','.avi'}
-BASE_DIR   = Path(__file__).parent
+
+def _runtime_app_dir():
+    if getattr(sys, 'frozen', False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+def _runtime_resource_dir():
+    return Path(getattr(sys, '_MEIPASS', _runtime_app_dir())).resolve()
+
+APP_DIR      = _runtime_app_dir()
+RESOURCE_DIR = _runtime_resource_dir()
+BASE_DIR     = APP_DIR
 DB_PATH    = BASE_DIR / "archive.db"
 SETTINGS_PATH = BASE_DIR / "settings.json"
 LOG_DIR    = BASE_DIR / "logs"
 TMP_DIR    = BASE_DIR / "tmp"
-LOG_DIR.mkdir(exist_ok=True)
-TMP_DIR.mkdir(exist_ok=True)
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+TMP_DIR.mkdir(parents=True, exist_ok=True)
+
+def _tool_candidates(name):
+    exe_name = f'{name}.exe' if os.name == 'nt' and not name.lower().endswith('.exe') else name
+    for root in (APP_DIR, APP_DIR / 'tools', APP_DIR / 'bin', RESOURCE_DIR, RESOURCE_DIR / 'tools', RESOURCE_DIR / 'bin'):
+        yield root / name
+        yield root / exe_name
+
+def resolve_tool_command(name):
+    for path in _tool_candidates(name):
+        if path.exists():
+            return str(path)
+    found = shutil.which(name)
+    return found or name
+
+FFMPEG     = resolve_tool_command("ffmpeg")
+FFPROBE    = resolve_tool_command("ffprobe")
+FFPLAY     = resolve_tool_command("ffplay")
 
 DEFAULT_SETTINGS = {
     'volume': 80,
@@ -342,6 +367,13 @@ def _candidate_vlc_dirs():
         raw = os.environ.get(env_name)
         if raw:
             candidates.append(Path(raw))
+    for root in (APP_DIR, RESOURCE_DIR):
+        candidates.extend([
+            root,
+            root / 'VLC',
+            root / 'vlc',
+            root / 'VideoLAN' / 'VLC',
+        ])
     for env_name in ('ProgramFiles', 'ProgramFiles(x86)'):
         raw = os.environ.get(env_name)
         if raw:
@@ -364,13 +396,13 @@ def resolve_vlc_dir():
 VLC_DIR = resolve_vlc_dir()
 
 def _check_command(name, command):
-    exe = shutil.which(command)
+    exe = str(command) if Path(str(command)).exists() else shutil.which(command)
     if not exe:
         return {
             'name': name,
             'ok': False,
             'path': '',
-            'message': f'{command} 실행 파일을 PATH에서 찾을 수 없습니다.',
+            'message': f'{command} 실행 파일을 PATH 또는 앱 폴더/tools에서 찾을 수 없습니다.',
         }
     try:
         proc = subprocess.run(

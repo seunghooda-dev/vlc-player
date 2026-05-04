@@ -2,6 +2,7 @@ PyQt6==6.10.2
 SQLAlchemy==2.0.46
 pyinstaller==6.19.0
 python-vlc==3.0.21203
+numpy==2.4.1
 
 # Legacy Flask web prototype (app.py)
 flask==3.1.3
