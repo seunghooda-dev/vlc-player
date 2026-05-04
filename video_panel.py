@@ -1126,8 +1126,48 @@ class VideoPanel(QWidget):
 
     def _save_last_dir(self, folder):
         try:
-            self._settings = save_settings(last_dir=folder)
+            self._remember_recent_dir(folder)
         except Exception as e: log.warning(f'last_dir 저장 실패: {e}')
+
+    def _remember_recent_dir(self, folder, limit=8):
+        try:
+            if not folder:
+                return
+            p = Path(folder)
+            if not p.exists() or not p.is_dir():
+                return
+            folder = str(p)
+            recent_dirs = [d for d in self._settings.get('recent_dirs', []) if d and d != folder]
+            recent_dirs.insert(0, folder)
+            self._settings = save_settings(last_dir=folder, recent_dirs=recent_dirs[:limit])
+        except Exception as e:
+            log.debug(f'recent dir save: {e}')
+
+    def _remember_recent_file(self, filepath, limit=12):
+        try:
+            if not filepath:
+                return
+            p = Path(filepath)
+            if not p.exists() or p.suffix.lower() not in VIDEO_EXTS:
+                return
+            fp = str(p)
+            recent_files = [f for f in self._settings.get('recent_files', []) if f and f != fp]
+            recent_files.insert(0, fp)
+            recent_files = [f for f in recent_files if Path(f).exists()][:limit]
+            self._settings = save_settings(recent_files=recent_files)
+            self._remember_recent_dir(str(p.parent))
+        except Exception as e:
+            log.debug(f'recent file save: {e}')
+
+    def _add_file_to_list(self, filepath):
+        if not filepath or not Path(filepath).exists():
+            return False
+        if filepath not in [x["filepath"] for x in self._files]:
+            self._files.append(self._new_file_record(filepath))
+            self._remember_recent_file(filepath)
+            return True
+        self._remember_recent_file(filepath)
+        return False
 
     def _new_file_record(self, filepath):
         p = Path(filepath)
@@ -1314,16 +1354,15 @@ class VideoPanel(QWidget):
         t.start()
         self.ai_lbl.setText(f"⏳ 백그라운드 변환 중: {Path(filepath).name}")
 
-    def add_files(self):
-        start = self._load_last_dir()
+    def add_files(self, start_dir=None):
+        start = start_dir or self._load_last_dir()
         files,_ = QFileDialog.getOpenFileNames(self,"파일 선택", start,
             "Video Files (*.mxf *.mp4 *.mov *.mts *.m2ts *.mkv *.avi);;All Files (*)")
         if files:
             self._save_last_dir(str(Path(files[0]).parent))
         new_files = []
         for f in files:
-            if f not in [x["filepath"] for x in self._files]:
-                self._files.append(self._new_file_record(f))
+            if self._add_file_to_list(f):
                 new_files.append(f)
         self._refresh_clip_list()
         # MXF만 즉시 백그라운드 변환 (CUE 전에 미리 준비)
@@ -1332,6 +1371,19 @@ class VideoPanel(QWidget):
                 self._preconvert(f)
         # Explorer 목록 즉시 갱신
         if hasattr(self, '_right_panel'):
+            self._right_panel.refresh_explorer()
+
+    def add_recent_file(self, filepath, cue=True):
+        if not filepath or not Path(filepath).exists():
+            self.status_changed.emit(f"  ⚠ 최근 파일을 찾을 수 없습니다: {filepath or '?'}")
+            return
+        is_new = self._add_file_to_list(filepath)
+        self._refresh_clip_list()
+        if is_new and Path(filepath).suffix.lower() not in ('.mp4','.mov','.m4v','.mkv','.avi','.mts','.m2ts'):
+            self._preconvert(filepath)
+        if cue:
+            self.load_file(filepath)
+        elif hasattr(self, '_right_panel'):
             self._right_panel.refresh_explorer()
 
     def _refresh_clip_list(self):
@@ -1384,6 +1436,7 @@ class VideoPanel(QWidget):
             log.warning(f'load_file: 파일 없음 또는 None — {filepath}')
             self.ai_lbl.setText(f'⚠ 파일 없음: {Path(filepath).name if filepath else "?"}')
             return
+        self._remember_recent_file(filepath)
         log.info(f'load_file: {Path(filepath).name}')
         self._stop_all()
         self._loading = True   # 로딩 중 플래그 — 체크박스 이벤트 차단
@@ -1964,8 +2017,7 @@ class VideoPanel(QWidget):
         for url in e.mimeData().urls():
             fp = url.toLocalFile()
             if Path(fp).suffix.lower() in VIDEO_EXTS:
-                if fp not in [x["filepath"] for x in self._files]:
-                    self._files.append(self._new_file_record(fp))
+                self._add_file_to_list(fp)
                 self._refresh_clip_list(); self.load_file(fp); break
 
     def keyPressEvent(self, e):

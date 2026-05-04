@@ -319,6 +319,8 @@ DEFAULT_SETTINGS = {
     'mute_threshold': '-50',
     'mute_duration': '1.0',
     'last_dir': 'C:/',
+    'recent_files': [],
+    'recent_dirs': [],
     'window_size': [1400, 980],
     'splitter_sizes': [980, 420],
 }

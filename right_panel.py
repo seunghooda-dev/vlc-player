@@ -70,6 +70,12 @@ class RightPanel(QWidget):
         btn_file.setFocusPolicy(Qt.FocusPolicy.NoFocus)   # Space 버블링 차단
         btn_file.clicked.connect(self.vp.add_files)
         tbl.addWidget(btn_file)
+        btn_recent = QPushButton("↺  최근"); btn_recent.setFixedHeight(32)
+        btn_recent.setToolTip("최근 파일 / 최근 폴더")
+        btn_recent.setStyleSheet(_exp_btn_style)
+        btn_recent.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        btn_recent.clicked.connect(self._show_recent_menu)
+        tbl.addWidget(btn_recent)
         tbl.addStretch()
 
         # 정렬 버튼
@@ -162,6 +168,84 @@ class RightPanel(QWidget):
         l.addWidget(self.meta_panel)
         return w
 
+    def _menu_style(self):
+        return (
+            f"QMenu{{background:{C['panel']};color:{C['text1']};border:1px solid {C['border2']};"
+            "font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';font-size:13px;padding:5px 0;border-radius:6px;}"
+            "QMenu::item{padding:6px 20px;}"
+            f"QMenu::item:selected{{background:rgba(90,167,255,35);color:{C['text0']};}}"
+            f"QMenu::item:disabled{{color:{C['text3']};}}"
+            f"QMenu::separator{{height:1px;background:{C['border']};margin:3px 0;}}"
+        )
+
+    def _show_recent_menu(self):
+        settings = load_settings()
+        recent_files = []
+        for fp in settings.get('recent_files', []):
+            try:
+                p = Path(fp)
+                if p.exists() and p.suffix.lower() in VIDEO_EXTS and str(p) not in recent_files:
+                    recent_files.append(str(p))
+            except Exception:
+                pass
+        recent_dirs = []
+        for folder in settings.get('recent_dirs', []):
+            try:
+                p = Path(folder)
+                if p.exists() and p.is_dir() and str(p) not in recent_dirs:
+                    recent_dirs.append(str(p))
+            except Exception:
+                pass
+        if recent_files != settings.get('recent_files', []) or recent_dirs != settings.get('recent_dirs', []):
+            self._settings = save_settings(recent_files=recent_files, recent_dirs=recent_dirs)
+            self.vp._settings = load_settings()
+
+        menu = QMenu(self)
+        menu.setStyleSheet(self._menu_style())
+        if recent_files:
+            file_header = menu.addAction("최근 파일")
+            file_header.setEnabled(False)
+            for fp in recent_files[:8]:
+                act = menu.addAction(f"  {Path(fp).name}")
+                act.setToolTip(fp)
+                act.setData(("file", fp))
+        else:
+            empty = menu.addAction("최근 파일 없음")
+            empty.setEnabled(False)
+
+        menu.addSeparator()
+        if recent_dirs:
+            dir_header = menu.addAction("최근 폴더")
+            dir_header.setEnabled(False)
+            for folder in recent_dirs[:6]:
+                act = menu.addAction(f"  {Path(folder).name or folder}")
+                act.setToolTip(folder)
+                act.setData(("dir", folder))
+        else:
+            empty = menu.addAction("최근 폴더 없음")
+            empty.setEnabled(False)
+
+        menu.addSeparator()
+        clear_act = menu.addAction("최근 목록 비우기")
+        clear_act.setData(("clear", ""))
+        sender = self.sender()
+        popup_pos = sender.mapToGlobal(sender.rect().bottomLeft()) if sender else self.mapToGlobal(self.rect().topLeft())
+        action = menu.exec(popup_pos)
+        if not action:
+            return
+        data = action.data()
+        if not data:
+            return
+        kind, value = data
+        if kind == "file":
+            self.vp.add_recent_file(value, cue=True)
+        elif kind == "dir":
+            self.vp.add_files(value)
+        elif kind == "clear":
+            self._settings = save_settings(recent_files=[], recent_dirs=[])
+            self.vp._settings = load_settings()
+            self.vp.status_changed.emit("  ↺ 최근 파일 / 폴더 목록을 비웠습니다")
+
     def _on_exp_clicked(self, item):
         fp = item.data(Qt.ItemDataRole.UserRole)
         if not fp:
@@ -203,13 +287,7 @@ class RightPanel(QWidget):
         fp = item.data(Qt.ItemDataRole.UserRole)
         if not fp: return
         menu = QMenu(self.exp_list)
-        menu.setStyleSheet(
-            f"QMenu{{background:{C['panel']};color:{C['text1']};border:1px solid {C['border2']};"
-            "font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';font-size:13px;padding:5px 0;border-radius:6px;}"
-            "QMenu::item{padding:6px 20px;}"
-            f"QMenu::item:selected{{background:rgba(90,167,255,35);color:{C['text0']};}}"
-            f"QMenu::separator{{height:1px;background:{C['border']};margin:3px 0;}}"
-        )
+        menu.setStyleSheet(self._menu_style())
         act_cue = menu.addAction("▶   CUE  —  화면에 올리기")
         menu.addSeparator()
         act_del = menu.addAction("✕   목록에서 제거")
