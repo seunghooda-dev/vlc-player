@@ -87,15 +87,19 @@ class AudioMixPlayer(QObject):
         for proc in (self._ffplay, self._ffmpeg):
             if proc and proc.poll() is None:
                 try:
-                    proc.kill()
+                    proc.terminate()
                 except Exception as e:
-                    log.debug(f'audio mix kill: {e}')
+                    log.debug(f'audio mix terminate: {e}')
         for proc in (self._ffplay, self._ffmpeg):
             if proc:
                 try:
-                    proc.wait(timeout=1)
+                    proc.wait(timeout=0.5)
                 except Exception:
-                    pass
+                    try:
+                        proc.kill()
+                        proc.wait(timeout=0.5)
+                    except Exception as e:
+                        log.debug(f'audio mix kill: {e}')
         self._ffplay = None
         self._ffmpeg = None
 
@@ -647,6 +651,7 @@ class VideoPanel(QWidget):
         self.meter_ctrl = MeterController(self.vlc_side_left, self.vlc_side_right, self.vlc_loud_meter)
         self.audio_mix = AudioMixPlayer()
         self._playback_rate = 1.0
+        self._audio_mix_seq = 0
 
         # MEDIA PLAYER
         self.player = VlcPlayerAdapter(self.video_view.viewport())
@@ -814,7 +819,7 @@ class VideoPanel(QWidget):
             self.player.audio_set_volume(0)
             self.audio_mix.set_volume(v / 100.0)
             if self.cur_file and self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
-                self._restart_audio_mix()
+                self._schedule_audio_mix(delay_ms=120, restart=True)
             self.vol_pct.setText(f'{v}%')
         self.vol_slider.valueChanged.connect(_on_vol)
 
@@ -924,7 +929,7 @@ class VideoPanel(QWidget):
                 self.player.setPlaybackRate(r)
                 self.audio_mix.set_rate(r)
                 if self.cur_file and self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
-                    self._restart_audio_mix()
+                    self._schedule_audio_mix(delay_ms=120, restart=True)
                 for rr, bb in self._speed_btns.items():
                     bb.setChecked(rr == r)
             b.clicked.connect(_set_speed)
@@ -1057,7 +1062,7 @@ class VideoPanel(QWidget):
             self._right_panel.refresh_explorer()
 
         self.meter_ctrl.set_playing(False)
-        self.audio_mix.stop()
+        self._cancel_audio_mix()
         self.status_changed.emit("  ⏏ EJECT — 파일 초기화됨")
 
     def _evict_tc_cache(self, max_files=10, max_gb=2.0):
@@ -1168,7 +1173,7 @@ class VideoPanel(QWidget):
 
     def clear_clips(self):
         self._files=[]; self.clip_list.clear()
-        self.audio_mix.stop()
+        self._cancel_audio_mix()
         self.player.stop(); self._video_item.hide(); self._empty_proxy.show()
 
     def _retire_tc(self):
@@ -1192,7 +1197,7 @@ class VideoPanel(QWidget):
         if hasattr(self, 'meter_ctrl'):
             self.meter_ctrl.set_playing(False)
         if hasattr(self, 'audio_mix'):
-            self.audio_mix.stop()
+            self._cancel_audio_mix()
         self._retire_tc()
         try:
             self.player.stop()
@@ -1376,7 +1381,7 @@ class VideoPanel(QWidget):
 
     def _show_cue_first_frame(self, ms=0):
         ms = max(0, int(ms))
-        self.audio_mix.stop()
+        self._cancel_audio_mix()
         self.player.audio_set_volume(0)
         self.tc_main.setText(sec_to_tc(ms / 1000 + self.tc_offset, self.fps, self.df))
         self.tc_rem.setText(sec_to_tc(max(0, self.duration - ms / 1000), self.fps, self.df))
@@ -1477,7 +1482,7 @@ class VideoPanel(QWidget):
             self.player.audio_set_volume(0)
             self.audio_mix.set_channels(selected)
             if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
-                self._restart_audio_mix()
+                self._schedule_audio_mix(delay_ms=120, restart=True)
             label = "/".join(str(ch) for ch in selected)
             self.ai_lbl.setText(f"✓ CH {label} 믹스 출력  |  LKFS 기준은 1/2CH")
 
@@ -1522,16 +1527,46 @@ class VideoPanel(QWidget):
             return
         pos = self.player.position() if pos_ms is None else int(pos_ms)
         self.player.audio_set_volume(0)
+        self.audio_mix.set_file(
+            self.cur_file,
+            self.cur_info.get('audio_stream_count', 0),
+            self.cur_info.get('channels', 2)
+        )
         self.audio_mix.set_channels(self._get_selected_audio_channels())
         self.audio_mix.set_rate(self._playback_rate)
         self.audio_mix.restart(max(0.0, pos / 1000.0))
+
+    def _cancel_audio_mix(self):
+        self._audio_mix_seq += 1
+        self.audio_mix.stop()
+
+    def _schedule_audio_mix(self, delay_ms=80, pos_ms=None, restart=False):
+        if not self.cur_file:
+            return
+        self._audio_mix_seq += 1
+        seq = self._audio_mix_seq
+        file_at_schedule = self.cur_file
+
+        def _run():
+            if seq != self._audio_mix_seq:
+                return
+            if self.cur_file != file_at_schedule:
+                return
+            if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+                return
+            if restart:
+                self._restart_audio_mix(pos_ms)
+            else:
+                self._start_audio_mix()
+
+        QTimer.singleShot(max(0, int(delay_ms)), _run)
 
     def _set_position(self, ms):
         ms = max(0, min(int(self.duration * 1000), int(ms))) if self.duration > 0 else max(0, int(ms))
         self.player.setPosition(ms)
         if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
-            self.audio_mix.stop()
-            QTimer.singleShot(80, lambda m=ms: self._restart_audio_mix(m))
+            self._cancel_audio_mix()
+            self._schedule_audio_mix(delay_ms=80, pos_ms=ms, restart=True)
 
     def _toggle_safe_area(self):
         W = self.video_view.width(); H = self.video_view.height()
@@ -1544,7 +1579,7 @@ class VideoPanel(QWidget):
         else: self.player.play()
 
     def stop(self):
-        self.audio_mix.stop()
+        self._cancel_audio_mix()
         self.player.stop(); self.player.setPosition(0)
         self.meter_ctrl.set_playing(False)
 
@@ -1632,9 +1667,9 @@ class VideoPanel(QWidget):
         if playing:
             self._led_timer.start()
             self.player.audio_set_volume(0)
-            QTimer.singleShot(60, self._start_audio_mix)
+            self._schedule_audio_mix(delay_ms=60)
         else:
-            self.audio_mix.stop()
+            self._cancel_audio_mix()
             self._led_timer.stop()
             self.led.setStyleSheet(f"color:{C['text3']};font-size:10px;background:transparent;")
             self._led_on = False
@@ -1688,7 +1723,7 @@ class VideoPanel(QWidget):
             self.ai_lbl.setText('버퍼링 중...')
         elif status == S.EndOfMedia:
             # 재생 끝 — LED 끄기
-            self.audio_mix.stop()
+            self._cancel_audio_mix()
             self._led_timer.stop()
             self.led.setStyleSheet(
                 f"color:{C['text3']};font-size:10px;background:transparent;")
