@@ -12,7 +12,7 @@ from PyQt6.QtGui     import QColor, QPalette
 
 from constants    import (
     C, STYLE, LOG_DIR, TMP_DIR, BASE_DIR, log,
-    check_runtime_environment, cleanup_child_processes,
+    check_runtime_environment, cleanup_child_processes, load_settings, save_settings,
 )
 from video_panel  import VideoPanel
 from right_panel  import RightPanel
@@ -21,8 +21,13 @@ from right_panel  import RightPanel
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        self._settings = load_settings()
         self.setWindowTitle("Archive Tagger — MXF Player v2.0")
-        self.resize(1400, 980)
+        size = self._settings.get('window_size', [1400, 980])
+        try:
+            self.resize(int(size[0]), int(size[1]))
+        except Exception:
+            self.resize(1400, 980)
         self.setMinimumSize(1100, 760)
         self.setStyleSheet(STYLE)
         self.setAcceptDrops(True)
@@ -72,13 +77,16 @@ class MainWindow(QMainWindow):
         splitter.setHandleWidth(2)
         splitter.setStretchFactor(0, 7)
         splitter.setStretchFactor(1, 3)
-        splitter.setSizes([980, 420])
+        splitter_sizes = self._settings.get('splitter_sizes', [980, 420])
+        try:
+            splitter.setSizes([int(splitter_sizes[0]), int(splitter_sizes[1])])
+        except Exception:
+            splitter.setSizes([980, 420])
         root.addWidget(splitter, 1)
         self._splitter = splitter
 
         def _keep_ratio(pos=None, idx=None):
-            total = splitter.width() - splitter.handleWidth()
-            splitter.setSizes([int(total * 0.7), int(total * 0.3)])
+            self._settings = save_settings(splitter_sizes=splitter.sizes())
         self._keep_ratio = _keep_ratio
         splitter.splitterMoved.connect(_keep_ratio)
 
@@ -244,6 +252,13 @@ class MainWindow(QMainWindow):
         try:
             vp = self.vp
             rp = self.rp
+            try:
+                self._settings = save_settings(
+                    window_size=[self.width(), self.height()],
+                    splitter_sizes=self._splitter.sizes()
+                )
+            except Exception as ex:
+                log.debug(f'save window settings: {ex}')
 
             # 트랜스코드 스레드
             vp._retire_tc()

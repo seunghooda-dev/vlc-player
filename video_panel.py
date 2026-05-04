@@ -25,7 +25,7 @@ from PyQt6.QtMultimediaWidgets import QGraphicsVideoItem
 
 from constants  import (
     C, FFMPEG, FFPROBE, FFPLAY, VLC_DIR, VIDEO_EXTS, TMP_DIR, BASE_DIR, log,
-    register_child_process, terminate_child_process,
+    register_child_process, terminate_child_process, load_settings, save_settings,
 )
 from db_models  import probe, save_clip, sec_to_tc
 from threads    import TranscodeThread
@@ -406,6 +406,7 @@ class VideoPanel(QWidget):
         self._loop=False
         self.cur_file=None; self.cur_info={}; self.cur_id=None
         self._seeking=False
+        self._settings = load_settings()
         self._first_audio_start_after_cue = False
         self._tc_thread=None
         self._dead_threads = []   # abort된 스레드 보관 (GC 소멸 방지)
@@ -643,13 +644,18 @@ class VideoPanel(QWidget):
         # 미터 컨트롤러
         self.meter_ctrl = MeterController(self.vlc_side_left, self.vlc_side_right, self.vlc_loud_meter)
         self.audio_mix = AudioMixPlayer()
-        self._playback_rate = 1.0
+        try:
+            self._playback_rate = float(self._settings.get('playback_rate', 1.0))
+        except Exception:
+            self._playback_rate = 1.0
         self._audio_mix_seq = 0
 
         # MEDIA PLAYER
         self.player = VlcPlayerAdapter(self.video_view.viewport())
         self.player.audio_set_volume(0)
-        self.audio_mix.set_volume(0.8)
+        self.player.setPlaybackRate(self._playback_rate)
+        volume = max(0, min(100, int(self._settings.get('volume', 80))))
+        self.audio_mix.set_volume(volume / 100.0)
         self.player.positionChanged.connect(self._on_pos)
         self.player.durationChanged.connect(self._on_dur)
         self.player.playbackStateChanged.connect(self._on_state)
@@ -794,7 +800,8 @@ class VideoPanel(QWidget):
         vol_lbl.setStyleSheet('color:#555;font-family:Consolas;font-size:10px;font-weight:700;')
         self.vol_slider = QSlider(Qt.Orientation.Horizontal)
         self.vol_slider.setRange(0, 100)
-        self.vol_slider.setValue(80)
+        volume = max(0, min(100, int(self._settings.get('volume', 80))))
+        self.vol_slider.setValue(volume)
         self.vol_slider.setFixedWidth(80)
         self.vol_slider.setFixedHeight(BTN_H)
         self.vol_slider.setToolTip('볼륨 조절 (0~100%)')
@@ -805,7 +812,7 @@ class VideoPanel(QWidget):
             'background:#aaaaaa;border-radius:6px;}'
             'QSlider::handle:horizontal:hover{background:#dddddd;}'
         )
-        self.vol_pct = QLabel('80%')
+        self.vol_pct = QLabel(f'{volume}%')
         self.vol_pct.setStyleSheet('color:#555;font-family:Consolas;font-size:10px;min-width:30px;')
         self.vol_pct.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         def _on_vol(v):
@@ -814,6 +821,7 @@ class VideoPanel(QWidget):
             if self.cur_file and self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
                 self._schedule_audio_mix(delay_ms=120, restart=True)
             self.vol_pct.setText(f'{v}%')
+            self._settings = save_settings(volume=int(v))
         self.vol_slider.valueChanged.connect(_on_vol)
 
         trl.addSpacing(8)
@@ -836,6 +844,13 @@ class VideoPanel(QWidget):
 
         self._ch_checks = []   # (checkbox, channel_no) list
         self._ch_group  = QButtonGroup(self); self._ch_group.setExclusive(False)
+        saved_channels = self._settings.get('audio_channels', [1, 2])
+        try:
+            saved_channels = [int(ch) for ch in saved_channels if 1 <= int(ch) <= 8]
+        except Exception:
+            saved_channels = [1, 2]
+        if not saved_channels:
+            saved_channels = [1, 2]
 
         CH_STYLE = (
             f"QCheckBox{{color:{C['text2']};font-family:Consolas;font-size:10px;spacing:4px;}}"
@@ -847,7 +862,7 @@ class VideoPanel(QWidget):
             ch_no = i + 1
             cb = QCheckBox(f"{ch_no}")
             cb.setStyleSheet(CH_STYLE)
-            cb.setChecked(i in (0, 1))   # 기본: 1/2ch 동시 선택
+            cb.setChecked(ch_no in saved_channels)
             self._ch_checks.append((cb, ch_no))
             self._ch_group.addButton(cb)
             chl.addWidget(cb)
@@ -905,11 +920,13 @@ class VideoPanel(QWidget):
         ail.addWidget(spd_lbl)
         ail.addSpacing(4)
         self._speed_btns = {}
+        saved_rate = min((0.5, 1.0, 1.5, 2.0), key=lambda x: abs(x - self._playback_rate))
+        self._playback_rate = saved_rate
         for rate, label in [(0.5,'0.5×'), (1.0,'1×'), (1.5,'1.5×'), (2.0,'2×')]:
             b = QPushButton(label)
             b.setFixedHeight(28)
             b.setCheckable(True)
-            b.setChecked(rate == 1.0)
+            b.setChecked(rate == saved_rate)
             b.setStyleSheet(
                 'QPushButton{background:#1a1a1a;color:#666;border:1px solid #2a2a2a;'
                 'border-radius:3px;font-family:Consolas;font-size:11px;font-weight:700;padding:0 8px;}'
@@ -923,6 +940,7 @@ class VideoPanel(QWidget):
                 self.audio_mix.set_rate(r)
                 if self.cur_file and self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
                     self._schedule_audio_mix(delay_ms=120, restart=True)
+                self._settings = save_settings(playback_rate=r)
                 for rr, bb in self._speed_btns.items():
                     bb.setChecked(rr == r)
             b.clicked.connect(_set_speed)
@@ -987,6 +1005,12 @@ class VideoPanel(QWidget):
     # ── 파일 열기 ────────────────────────────────────────
     def _load_last_dir(self):
         try:
+            last_dir = load_settings().get('last_dir')
+            if last_dir:
+                return last_dir
+        except Exception:
+            pass
+        try:
             import json as _j
             p = BASE_DIR / 'last_dir.json'
             return _j.loads(p.read_text()).get('folder', 'C:/')
@@ -994,8 +1018,7 @@ class VideoPanel(QWidget):
 
     def _save_last_dir(self, folder):
         try:
-            import json as _j
-            (BASE_DIR / 'last_dir.json').write_text(_j.dumps({'folder': folder}))
+            self._settings = save_settings(last_dir=folder)
         except Exception as e: log.warning(f'last_dir 저장 실패: {e}')
 
     def _on_clip_selected(self, item):
@@ -1259,14 +1282,26 @@ class VideoPanel(QWidget):
             cb.setEnabled(enabled)
             if enabled and first_enabled is None:
                 first_enabled = cb
-        # 기본 모니터링은 1/2CH 동시 출력
+        # 기본 모니터링은 저장된 채널을 우선 사용하고, 없으면 1/2CH 동시 출력
+        saved_channels = self._settings.get('audio_channels', [1, 2])
+        try:
+            saved_channels = [int(ch) for ch in saved_channels if 1 <= int(ch) <= 8]
+        except Exception:
+            saved_channels = [1, 2]
+        if not saved_channels:
+            saved_channels = [1, 2]
         for cb, _ in self._ch_checks:
             cb.setChecked(False)
         default_selected = []
         for cb, ch_no in self._ch_checks:
-            if cb.isEnabled() and ch_no in (1, 2):
+            if cb.isEnabled() and ch_no in saved_channels:
                 cb.setChecked(True)
                 default_selected.append(ch_no)
+        if not default_selected and saved_channels != [1, 2]:
+            for cb, ch_no in self._ch_checks:
+                if cb.isEnabled() and ch_no in (1, 2):
+                    cb.setChecked(True)
+                    default_selected.append(ch_no)
         if not default_selected and first_enabled:
             first_enabled.setChecked(True)
             default_selected = [1]
@@ -1478,6 +1513,7 @@ class VideoPanel(QWidget):
             if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
                 self._schedule_audio_mix(delay_ms=120, restart=True)
             label = "/".join(str(ch) for ch in selected)
+            self._settings = save_settings(audio_channels=selected)
             self.ai_lbl.setText(f"✓ CH {label} 믹스 출력  |  LKFS 기준은 1/2CH")
 
     def _apply_audio_channel(self):

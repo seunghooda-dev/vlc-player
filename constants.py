@@ -263,10 +263,58 @@ FFPLAY     = "ffplay"
 VIDEO_EXTS = {'.mxf','.mp4','.mov','.mts','.m2ts','.mkv','.avi'}
 BASE_DIR   = Path(__file__).parent
 DB_PATH    = BASE_DIR / "archive.db"
+SETTINGS_PATH = BASE_DIR / "settings.json"
 LOG_DIR    = BASE_DIR / "logs"
 TMP_DIR    = BASE_DIR / "tmp"
 LOG_DIR.mkdir(exist_ok=True)
 TMP_DIR.mkdir(exist_ok=True)
+
+DEFAULT_SETTINGS = {
+    'volume': 80,
+    'playback_rate': 1.0,
+    'audio_channels': [1, 2],
+    'black_amount': '98',
+    'black_threshold': '32',
+    'mute_threshold': '-50',
+    'mute_duration': '1.0',
+    'last_dir': 'C:/',
+    'window_size': [1400, 980],
+    'splitter_sizes': [980, 420],
+}
+
+_settings_cache = None
+_settings_lock = threading.RLock()
+
+def load_settings():
+    global _settings_cache
+    with _settings_lock:
+        if _settings_cache is not None:
+            return dict(_settings_cache)
+        data = dict(DEFAULT_SETTINGS)
+        try:
+            if SETTINGS_PATH.exists():
+                loaded = json.loads(SETTINGS_PATH.read_text(encoding='utf-8'))
+                if isinstance(loaded, dict):
+                    data.update(loaded)
+        except Exception:
+            pass
+        _settings_cache = data
+        return dict(_settings_cache)
+
+def save_settings(**updates):
+    global _settings_cache
+    with _settings_lock:
+        data = load_settings()
+        data.update(updates)
+        _settings_cache = data
+        try:
+            SETTINGS_PATH.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2),
+                encoding='utf-8'
+            )
+        except Exception:
+            pass
+        return dict(data)
 
 def _hidden_subprocess_flags():
     return 0x08000000 if os.name == 'nt' else 0

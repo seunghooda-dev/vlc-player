@@ -8,6 +8,7 @@ dist/
 
 archive.db
 last_dir.json
+settings.json
 
 .venv/
 venv/

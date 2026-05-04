@@ -15,7 +15,7 @@ from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui  import QColor
 from PyQt6.QtMultimedia import QMediaPlayer
 
-from constants   import C, VIDEO_EXTS, BASE_DIR, log
+from constants   import C, VIDEO_EXTS, BASE_DIR, log, load_settings, save_settings
 from db_models   import sec_to_tc
 from threads     import AudioAnalyzeThread, BlackDetectThread
 from meters      import mk_label
@@ -30,6 +30,7 @@ class RightPanel(QWidget):
         self._analysis_active = None
         self._analysis_paused_playback = False
         self._analysis_paused_meters = False
+        self._settings = load_settings()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0,0,0,0)
         layout.setSpacing(0)
@@ -272,14 +273,14 @@ class RightPanel(QWidget):
 
         lbl_amt = QLabel("검정%")
         lbl_amt.setStyleSheet(f"color:{C['text2']};font-size:11px;")
-        self.black_amount = QLineEdit("98")
+        self.black_amount = QLineEdit(str(self._settings.get('black_amount', '98')))
         self.black_amount.setFixedWidth(42); self.black_amount.setFixedHeight(26)
         self.black_amount.setStyleSheet(_inp)
         self.black_amount.setToolTip("화면 중 검정으로 판단할 최소 비율. 기본 98%")
 
         lbl_thr = QLabel("밝기")
         lbl_thr.setStyleSheet(f"color:{C['text2']};font-size:11px;")
-        self.black_threshold = QLineEdit("32")
+        self.black_threshold = QLineEdit(str(self._settings.get('black_threshold', '32')))
         self.black_threshold.setFixedWidth(42); self.black_threshold.setFixedHeight(26)
         self.black_threshold.setStyleSheet(_inp)
         self.black_threshold.setToolTip("검정 픽셀 밝기 기준. 낮을수록 엄격합니다. 기본 32")
@@ -295,6 +296,8 @@ class RightPanel(QWidget):
             f"QPushButton:disabled{{background:#111;color:#4a4020;border-color:#242010;}}"
         )
         self.btn_run_black.clicked.connect(self._run_black_detect)
+        self.black_amount.editingFinished.connect(self._save_detection_settings)
+        self.black_threshold.editingFinished.connect(self._save_detection_settings)
 
         tbl.addWidget(lbl_amt); tbl.addWidget(self.black_amount)
         tbl.addSpacing(6)
@@ -333,6 +336,17 @@ class RightPanel(QWidget):
             self.black_status.setText("  1프레임 이상 / 화면 98% 이상 검정 기준")
             self.black_list.clear()
         except Exception as e: log.warning(f'black tab reset: {e}')
+
+    def _save_detection_settings(self):
+        try:
+            self._settings = save_settings(
+                black_amount=self.black_amount.text().strip() or '98',
+                black_threshold=self.black_threshold.text().strip() or '32',
+                mute_threshold=self.spin_threshold.text().strip() or '-50',
+                mute_duration=self.spin_duration.text().strip() or '1.0',
+            )
+        except Exception as e:
+            log.debug(f'detection settings save: {e}')
 
     def _analysis_thread_running(self):
         for name in ('_black_thread', '_audio_thread'):
@@ -419,6 +433,9 @@ class RightPanel(QWidget):
             threshold = int(float(self.black_threshold.text()))
             amount = max(1, min(100, amount))
             threshold = max(0, min(255, threshold))
+            self.black_amount.setText(str(amount))
+            self.black_threshold.setText(str(threshold))
+            self._save_detection_settings()
         except ValueError:
             self.black_status.setText("  ⚠ 검정%/밝기 값을 숫자로 입력하세요")
             self._finish_analysis_mode()
@@ -494,14 +511,14 @@ class RightPanel(QWidget):
 
         lbl_thr = QLabel("임계값")
         lbl_thr.setStyleSheet(f"color:{C['text2']};font-size:11px;")
-        self.spin_threshold = QLineEdit("-50")
+        self.spin_threshold = QLineEdit(str(self._settings.get('mute_threshold', '-50')))
         self.spin_threshold.setFixedWidth(48); self.spin_threshold.setFixedHeight(26)
         self.spin_threshold.setStyleSheet(_inp)
         self.spin_threshold.setToolTip("뮤트 감지 임계값 (dB). 예: -50")
 
         lbl_dur = QLabel("최소(초)")
         lbl_dur.setStyleSheet(f"color:{C['text2']};font-size:11px;")
-        self.spin_duration = QLineEdit("1.0")
+        self.spin_duration = QLineEdit(str(self._settings.get('mute_duration', '1.0')))
         self.spin_duration.setFixedWidth(40); self.spin_duration.setFixedHeight(26)
         self.spin_duration.setStyleSheet(_inp)
         self.spin_duration.setToolTip("뮤트 최소 지속 시간 (초). 기본 1초")
@@ -517,6 +534,8 @@ class RightPanel(QWidget):
             f"QPushButton:disabled{{background:#111;color:#2a4a4a;border-color:#1a2a2a;}}"
         )
         self.btn_run_audio.clicked.connect(self._run_audio_analyze)
+        self.spin_threshold.editingFinished.connect(self._save_detection_settings)
+        self.spin_duration.editingFinished.connect(self._save_detection_settings)
 
         tbl.addWidget(lbl_thr); tbl.addWidget(self.spin_threshold)
         tbl.addSpacing(6)
@@ -587,6 +606,9 @@ class RightPanel(QWidget):
         try:
             thr = float(self.spin_threshold.text())
             dur = float(self.spin_duration.text())
+            self.spin_threshold.setText(f'{thr:g}')
+            self.spin_duration.setText(f'{dur:g}')
+            self._save_detection_settings()
         except ValueError:
             self.audio_status.setText("  ⚠ 임계값/최소지속시간을 숫자로 입력하세요"); return
         if not self._begin_analysis_mode('audio', '뮤트 검출'):
