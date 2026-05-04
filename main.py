@@ -6,6 +6,7 @@ import sys
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
     QSplitter, QDialog, QPushButton, QMessageBox, QPlainTextEdit,
+    QComboBox,
 )
 from PyQt6.QtCore    import Qt
 from PyQt6.QtGui     import QColor, QPalette, QFont
@@ -177,17 +178,25 @@ class MainWindow(QMainWindow):
         except Exception as e:
             log.debug(f'runtime warning label: {e}')
 
-    def _recent_error_log_text(self, max_lines=300):
+    def _recent_error_log_text(self, max_lines=300, mode='warn'):
         log_path = LOG_DIR / 'player.log'
         try:
             if not log_path.exists():
                 return f"로그 파일이 아직 없습니다.\n\n{log_path}"
             lines = log_path.read_text(encoding='utf-8', errors='replace').splitlines()
-            levels = ('] WARNING', '] ERROR', '] CRITICAL')
-            picked = [line for line in lines if any(level in line for level in levels)]
-            header = f"LOG FILE: {log_path}\nFILTER : WARNING / ERROR / CRITICAL\n"
+            modes = {
+                'all':   ('ALL', None),
+                'warn':  ('WARNING / ERROR / CRITICAL', ('] WARNING', '] ERROR', '] CRITICAL')),
+                'error': ('ERROR / CRITICAL', ('] ERROR', '] CRITICAL')),
+            }
+            label, levels = modes.get(mode, modes['warn'])
+            if levels is None:
+                picked = lines[-max_lines:]
+            else:
+                picked = [line for line in lines if any(level in line for level in levels)][-max_lines:]
+            header = f"LOG FILE: {log_path}\nFILTER : {label}\nLINES  : {len(picked)} / {len(lines)}\n"
             if not picked:
-                return header + "\n최근 오류/경고 로그가 없습니다."
+                return header + "\n표시할 로그가 없습니다."
             return header + "\n" + "\n".join(picked[-max_lines:])
         except Exception as e:
             return f"로그 읽기 실패: {e}"
@@ -211,22 +220,53 @@ class MainWindow(QMainWindow):
         )
         lay.addWidget(title)
 
+        filter_row = QWidget()
+        fl = QHBoxLayout(filter_row)
+        fl.setContentsMargins(0,0,0,0)
+        fl.setSpacing(8)
+        filter_lbl = QLabel('필터')
+        filter_lbl.setStyleSheet(f"color:{C['text2']};font-size:12px;background:transparent;")
+        filter_combo = QComboBox()
+        filter_combo.addItem('경고+', 'warn')
+        filter_combo.addItem('오류만', 'error')
+        filter_combo.addItem('전체', 'all')
+        filter_combo.setFixedHeight(30)
+        filter_combo.setStyleSheet(
+            f"QComboBox{{background:{C['panel3']};color:{C['text1']};border:1px solid {C['border']};"
+            "border-radius:6px;font-size:12px;padding:0 10px;min-width:96px;}"
+            f"QComboBox:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
+            f"QComboBox QAbstractItemView{{background:{C['panel']};color:{C['text1']};"
+            f"selection-background-color:rgba(90,167,255,35);border:1px solid {C['border2']};}}"
+        )
+        fl.addWidget(filter_lbl)
+        fl.addWidget(filter_combo)
+        fl.addStretch()
+        lay.addWidget(filter_row)
+
         text = QPlainTextEdit()
         text.setReadOnly(True)
-        text.setPlainText(self._recent_error_log_text())
         text.setStyleSheet(
             f"QPlainTextEdit{{background:{C['panel2']};color:{C['text1']};border:1px solid {C['border']};"
             f"border-radius:6px;font-family:'Cascadia Mono','Consolas','D2Coding';font-size:11px;padding:10px;selection-background-color:#264f78;}}"
         )
         lay.addWidget(text, 1)
 
+        def _refresh_log():
+            mode = filter_combo.currentData() or 'warn'
+            text.setPlainText(self._recent_error_log_text(mode=mode))
+            title.setText('오류 로그')
+
+        filter_combo.currentIndexChanged.connect(_refresh_log)
+        _refresh_log()
+
         row = QWidget()
         rl = QHBoxLayout(row)
         rl.setContentsMargins(0,0,0,0)
         rl.addStretch()
+        copy_btn = QPushButton('복사')
         refresh_btn = QPushButton('새로고침')
         close_btn = QPushButton('닫기')
-        for btn in (refresh_btn, close_btn):
+        for btn in (copy_btn, refresh_btn, close_btn):
             btn.setFixedHeight(30)
             btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             btn.setStyleSheet(
@@ -234,8 +274,13 @@ class MainWindow(QMainWindow):
                 "border-radius:6px;font-size:12px;padding:0 14px;}"
                 f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
             )
-        refresh_btn.clicked.connect(lambda: text.setPlainText(self._recent_error_log_text()))
+        copy_btn.clicked.connect(lambda: (
+            QApplication.clipboard().setText(text.toPlainText()),
+            title.setText('오류 로그 — 복사됨')
+        ))
+        refresh_btn.clicked.connect(_refresh_log)
         close_btn.clicked.connect(dlg.accept)
+        rl.addWidget(copy_btn)
         rl.addWidget(refresh_btn)
         rl.addWidget(close_btn)
         lay.addWidget(row)
