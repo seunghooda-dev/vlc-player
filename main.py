@@ -8,10 +8,10 @@ from PyQt6.QtWidgets import (
     QSplitter, QDialog, QPushButton, QMessageBox, QPlainTextEdit,
 )
 from PyQt6.QtCore    import Qt
-from PyQt6.QtGui     import QColor, QPalette
+from PyQt6.QtGui     import QColor, QPalette, QFont
 
 from constants    import (
-    C, STYLE, LOG_DIR, TMP_DIR, BASE_DIR, log,
+    C, STYLE, LOG_DIR, TMP_DIR, BASE_DIR, log, APP_FONT_QT,
     check_runtime_environment, cleanup_child_processes, load_settings, save_settings,
 )
 from video_panel  import VideoPanel
@@ -108,7 +108,7 @@ class MainWindow(QMainWindow):
             d=QLabel('⬤'); d.setStyleSheet(f"color:{col};font-size:11px;"); tbl.addWidget(d)
         tbl.addSpacing(8)
         ttl = QLabel("ARCHIVE  TAGGER")
-        ttl.setStyleSheet(f"color:{C['text1']};font-family:Consolas;font-size:15px;font-weight:700;")
+        ttl.setStyleSheet(f"color:{C['text1']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:15px;font-weight:700;")
         ttl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tbl.addWidget(ttl,1)
         log_btn = QPushButton("LOG")
@@ -117,13 +117,13 @@ class MainWindow(QMainWindow):
         log_btn.setToolTip("최근 오류 로그 보기")
         log_btn.setStyleSheet(
             f"QPushButton{{background:{C['panel3']};color:{C['text2']};border:1px solid {C['border']};"
-            "border-radius:5px;font-family:Consolas;font-size:10px;font-weight:700;"
+            "border-radius:5px;font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;font-weight:700;"
             "padding:0 8px;}"
             f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
         )
         log_btn.clicked.connect(self._show_error_log)
         tbl.addWidget(log_btn)
-        ver = QLabel("MXF  v2.0"); ver.setStyleSheet(f"color:{C['text3']};font-family:Consolas;font-size:10px;")
+        ver = QLabel("MXF  v2.0"); ver.setStyleSheet(f"color:{C['text3']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;")
         tbl.addWidget(ver)
         root.addWidget(tb)
 
@@ -198,7 +198,7 @@ class MainWindow(QMainWindow):
         dlg.resize(920, 580)
         dlg.setStyleSheet(
             f"background:{C['panel']};color:{C['text0']};"
-            f"font-family:'맑은 고딕';font-size:12px;"
+            f"font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';font-size:12px;"
         )
         lay = QVBoxLayout(dlg)
         lay.setContentsMargins(16,14,16,14)
@@ -216,7 +216,7 @@ class MainWindow(QMainWindow):
         text.setPlainText(self._recent_error_log_text())
         text.setStyleSheet(
             f"QPlainTextEdit{{background:{C['panel2']};color:{C['text1']};border:1px solid {C['border']};"
-            f"border-radius:6px;font-family:Consolas;font-size:11px;padding:10px;selection-background-color:#264f78;}}"
+            f"border-radius:6px;font-family:'Cascadia Mono','Consolas','D2Coding';font-size:11px;padding:10px;selection-background-color:#264f78;}}"
         )
         lay.addWidget(text, 1)
 
@@ -260,7 +260,7 @@ class MainWindow(QMainWindow):
         dlg.setFixedSize(420, 460)
         dlg.setStyleSheet(
             f"background:{C['panel']};color:{C['text0']};"
-            f"font-family:'맑은 고딕';font-size:13px;"
+            f"font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';font-size:13px;"
         )
         lay = QVBoxLayout(dlg); lay.setSpacing(0); lay.setContentsMargins(24,20,24,20)
         title = QLabel('⌨  단축키 목록')
@@ -288,7 +288,7 @@ class MainWindow(QMainWindow):
             act_lbl.setStyleSheet(f"color:{C['text1']};font-size:12px;background:transparent;")
             key_lbl = QLabel(key)
             key_lbl.setStyleSheet(
-                f"background:{C['panel3']};color:{C['text0']};font-family:Consolas;"
+                f"background:{C['panel3']};color:{C['text0']};font-family:'Cascadia Mono','Consolas','D2Coding';"
                 "font-size:12px;padding:2px 10px;border-radius:4px;"
                 f"border:1px solid {C['border']};")
             key_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -436,6 +436,7 @@ def main():
     _setup_global_exception_handler()
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
+    app.setFont(QFont(APP_FONT_QT, 10))
     palette = QPalette()
     palette.setColor(QPalette.ColorRole.Window,          QColor(C['bg']))
     palette.setColor(QPalette.ColorRole.WindowText,      QColor(C['text0']))

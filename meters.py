@@ -16,7 +16,7 @@ from PyQt6.QtGui   import QColor, QPainter, QPen, QBrush, QFont, QLinearGradient
 from PyQt6.QtMultimediaWidgets import QGraphicsVideoItem
 
 from constants import (
-    C, FFMPEG, FFPROBE, log,
+    C, FFMPEG, FFPROBE, log, APP_FONT_QT, css_font,
     register_child_process, unregister_child_process, terminate_child_process,
 )
 
@@ -43,11 +43,11 @@ def mk_btn(text, w=None, h=26, color=None, bg=None):
     if st: b.setStyleSheet(st)
     return b
 
-def mk_label(text, color=None, family="맑은 고딕", size=10, bold=False):
+def mk_label(text, color=None, family=APP_FONT_QT, size=10, bold=False):
     l = QLabel(text)
     c = color or C['text0']
     w = "bold" if bold else "normal"
-    l.setStyleSheet(f"color:{c};font-family:{family};font-size:{size}px;font-weight:{w};background:transparent;")
+    l.setStyleSheet(f"color:{c};font-family:{css_font(family)};font-size:{size}px;font-weight:{w};background:transparent;")
     return l
 
 def separator(vertical=True):
@@ -126,7 +126,7 @@ class SideMeter(QWidget):
             p.fillRect(LBL_X, y, LBL_W, ROW, box_col)
             if ROW >= 7:
                 p.setPen(QColor('#ffffff'))
-                p.setFont(QFont('Consolas', max(5, min(8, ROW - 2)), QFont.Weight.Bold))
+                p.setFont(QFont('Cascadia Mono', max(5, min(8, ROW - 2)), QFont.Weight.Bold))
                 p.drawText(LBL_X, y, LBL_W, ROW,
                     Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
                     str(ch_num))
@@ -211,7 +211,7 @@ class SafeAreaItem:
             # 작은 라벨
             txt = self._scene.addText(label)
             txt.setDefaultTextColor(QColor(200, 200, 200, alpha))
-            txt.setFont(QFont("Consolas", 7))
+            txt.setFont(QFont("Cascadia Mono", 7))
             txt.setZValue(21)
             txt.setPos(mx + 3, my + 1)
             self._items.append(txt)
@@ -267,7 +267,7 @@ class LoudnessMeter(QWidget):
             p.setPen(QColor('#FFD700') if is_ref else QColor('#2a2a2a'))
             p.drawLine(BAR_X-2,gy,BAR_X+BAR_W+2,gy)
             if db in [-6,-18,-24,-36]:
-                p.setFont(QFont('Consolas',6,QFont.Weight.Bold if is_ref else QFont.Weight.Normal))
+                p.setFont(QFont('Cascadia Mono',6,QFont.Weight.Bold if is_ref else QFont.Weight.Normal))
                 p.setPen(QColor('#FFD700') if is_ref else QColor('#383838'))
                 p.drawText(0,gy-6,W,12,Qt.AlignmentFlag.AlignHCenter|Qt.AlignmentFlag.AlignVCenter,str(db))
         # True Peak 수평선
@@ -278,17 +278,17 @@ class LoudnessMeter(QWidget):
             from PyQt6.QtCore import Qt as _Qt
             p.drawLine(BAR_X-3, tp_y, BAR_X+BAR_W+3, tp_y)
             # TP 수치
-            p.setFont(QFont('Consolas',6,QFont.Weight.Bold))
+            p.setFont(QFont('Cascadia Mono',6,QFont.Weight.Bold))
             p.drawText(0, tp_y-8, W, 8, _Qt.AlignmentFlag.AlignHCenter, f'TP{self._true_peak:.1f}')
-        p.setFont(QFont('Consolas',7,QFont.Weight.Bold)); p.setPen(QColor('#444'))
+        p.setFont(QFont('Cascadia Mono',7,QFont.Weight.Bold)); p.setPen(QColor('#444'))
         p.drawText(0,0,W,LBL_H,Qt.AlignmentFlag.AlignHCenter|Qt.AlignmentFlag.AlignVCenter,'LKFS')
         m_str=f'{self._lkfs_m:.1f}' if self._lkfs_m>LMIN else '---'
         i_str=f'{self._lkfs_i:.1f}' if self._lkfs_i>LMIN else '---'
         m_col=QColor('#ff4444') if self._lkfs_m>-18 else QColor('#ffcc00') if self._lkfs_m>-24 else QColor('#00e676')
-        p.setFont(QFont('Consolas',7)); p.setPen(QColor('#555')); p.drawText(0,H-BOT_H,W,14,Qt.AlignmentFlag.AlignHCenter,'M')
-        p.setPen(m_col); p.setFont(QFont('Consolas',9,QFont.Weight.Bold))
+        p.setFont(QFont('Cascadia Mono',7)); p.setPen(QColor('#555')); p.drawText(0,H-BOT_H,W,14,Qt.AlignmentFlag.AlignHCenter,'M')
+        p.setPen(m_col); p.setFont(QFont('Cascadia Mono',9,QFont.Weight.Bold))
         p.drawText(0,H-BOT_H+12,W,16,Qt.AlignmentFlag.AlignHCenter,m_str)
-        p.setFont(QFont('Consolas',7)); p.setPen(QColor('#888'))
+        p.setFont(QFont('Cascadia Mono',7)); p.setPen(QColor('#888'))
         p.drawText(0,H-12,W,12,Qt.AlignmentFlag.AlignHCenter,f'I:{i_str}')
         p.end()
 

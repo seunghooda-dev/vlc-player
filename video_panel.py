@@ -488,7 +488,7 @@ class VideoPanel(QWidget):
         self.empty_label = QLabel("▶\n\nMXF 파일을 열어주세요\n\n⏏ 파일을 드래그하거나 CUE 버튼을 누르세요")
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty_label.setStyleSheet(
-            f"color:{C['text2']};font-family:Consolas;font-size:14px;background:#000;")
+            f"color:{C['text2']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:14px;background:#000;")
         self._empty_proxy = self._scene.addWidget(self.empty_label)
         self._empty_proxy.setZValue(1)
 
@@ -511,7 +511,7 @@ class VideoPanel(QWidget):
         from PyQt6.QtGui import QFont as _QFont
         self._res_text = self._scene.addText("")
         self._res_text.setDefaultTextColor(QColor(255, 255, 255, 160))
-        self._res_text.setFont(_QFont("Consolas", 9, _QFont.Weight.Bold))
+        self._res_text.setFont(_QFont("Cascadia Mono", 9, _QFont.Weight.Bold))
         self._res_text.setZValue(15)
 
         # QGraphicsView
@@ -676,7 +676,7 @@ class VideoPanel(QWidget):
         tc_w.setStyleSheet(f"background:{C['panel2']};border-top:1px solid {C['border']};border-bottom:1px solid {C['border']};")
         tcl = QHBoxLayout(tc_w); tcl.setContentsMargins(16,6,16,6); tcl.setSpacing(0)
         self.tc_main = QLabel('00:00:00;00')
-        self.tc_main.setStyleSheet(f"color:{C['yellow']};font-family:Consolas;font-size:38px;font-weight:500;background:transparent;")
+        self.tc_main.setStyleSheet(f"color:{C['yellow']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:38px;font-weight:500;background:transparent;")
         self.tc_main.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tcl.addWidget(self.tc_main, 3)
         div = QFrame(); div.setFrameShape(QFrame.Shape.VLine)
@@ -695,7 +695,7 @@ class VideoPanel(QWidget):
             ('OUT',  self.tc_out_l, C['orange']),
         ]):
             kl = mk_label(k, C['text3'], 'Consolas', 10, bold=True); kl.setFixedWidth(36)
-            v.setStyleSheet(f'color:{c};font-family:Consolas;font-size:14px;background:transparent;')
+            v.setStyleSheet(f"color:{c};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:14px;background:transparent;")
             v.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             sg.addWidget(kl, row, 0); sg.addWidget(v, row, 1)
         tcl.addLayout(sg, 2)
@@ -749,7 +749,7 @@ class VideoPanel(QWidget):
         self.btn_folder = QPushButton("EJECT")
         self.btn_folder.setFixedSize(BTN_W+10, BTN_H)
         self.btn_folder.setToolTip("EJECT — 현재 파일을 화면에서 내립니다")
-        self.btn_folder.setStyleSheet(TR_STYLE + "QPushButton{font-size:11px;font-family:Consolas;font-weight:700;letter-spacing:1px;}")
+        self.btn_folder.setStyleSheet(TR_STYLE + "QPushButton{font-size:11px;font-family:'Cascadia Mono','Consolas','D2Coding';font-weight:700;letter-spacing:1px;}")
 
         # 순수 ASCII 심볼 — 이모지 컬러 렌더링 없음
         self.btn_m1  = QPushButton("-1");    self.btn_m1.setFixedSize(BTN_W, BTN_H); self.btn_m1.setToolTip("-1 프레임  (← 방향키)")
@@ -761,7 +761,7 @@ class VideoPanel(QWidget):
         self.btn_goe = QPushButton(">>|");   self.btn_goe.setFixedSize(BTN_W, BTN_H); self.btn_goe.setToolTip("끝으로  (End)")
         self.btn_p1  = QPushButton("+1");    self.btn_p1.setFixedSize(BTN_W, BTN_H); self.btn_p1.setToolTip("+1 프레임  (→ 방향키)")
 
-        _mono = "font-family:Consolas;font-size:14px;font-weight:700;"
+        _mono = "font-family:'Cascadia Mono','Consolas','D2Coding';font-size:14px;font-weight:700;"
         for b in [self.btn_m1,self.btn_gos,self.btn_rew,self.btn_stop,
                   self.btn_fwd,self.btn_goe,self.btn_p1]:
             b.setStyleSheet(TR_STYLE + f"QPushButton{{{_mono}}}")
@@ -777,7 +777,7 @@ class VideoPanel(QWidget):
         self.btn_cue.setToolTip('CUE\n선택한 파일을 플레이어에 올립니다\n이미 로드된 파일이면 IN 포인트로 이동합니다')
         self.btn_cue.setStyleSheet(
             f"QPushButton{{background:rgba(255,209,102,28);color:{C['yellow']};border:1px solid rgba(255,209,102,95);"
-            "border-radius:6px;font-family:Consolas;font-weight:700;font-size:14px;"
+            "border-radius:6px;font-family:'Cascadia Mono','Consolas','D2Coding';font-weight:700;font-size:14px;"
             "padding:0 22px;}"
             f"QPushButton:hover{{background:rgba(255,209,102,45);border-color:{C['yellow']};color:#ffffff;}}"
             "QPushButton:pressed{padding-top:2px;background:#181818;}"
@@ -790,7 +790,7 @@ class VideoPanel(QWidget):
         self.btn_safe.setToolTip("세이프 에어리어  ON / OFF\n방송용 안전 영역 가이드라인을 표시합니다\n  · 액션 세이프  90%  (바깥쪽 회색선)\n  · 타이틀 세이프  80%  (안쪽 회색선)")
         safe_style = (
             f"QPushButton{{background:{C['panel3']};color:{C['text2']};border:1px solid {C['border']};"
-            "border-radius:6px;font-family:Consolas;font-size:11px;font-weight:700;"
+            "border-radius:6px;font-family:'Cascadia Mono','Consolas','D2Coding';font-size:11px;font-weight:700;"
             "padding:0 8px;}"
             f"QPushButton:checked{{background:rgba(45,212,191,34);color:{C['teal']};border-color:{C['teal']};}}"
             f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
@@ -816,7 +816,7 @@ class VideoPanel(QWidget):
 
         # 볼륨 슬라이더
         vol_lbl = QLabel('VOL')
-        vol_lbl.setStyleSheet(f"color:{C['text2']};font-family:Consolas;font-size:10px;font-weight:700;")
+        vol_lbl.setStyleSheet(f"color:{C['text2']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;font-weight:700;")
         self.vol_slider = QSlider(Qt.Orientation.Horizontal)
         self.vol_slider.setRange(0, 100)
         volume = max(0, min(100, int(self._settings.get('volume', 80))))
@@ -832,7 +832,7 @@ class VideoPanel(QWidget):
             'QSlider::handle:horizontal:hover{background:#ffffff;}'
         )
         self.vol_pct = QLabel(f'{volume}%')
-        self.vol_pct.setStyleSheet(f"color:{C['text2']};font-family:Consolas;font-size:10px;min-width:30px;")
+        self.vol_pct.setStyleSheet(f"color:{C['text2']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;min-width:30px;")
         self.vol_pct.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         def _on_vol(v):
             self.player.audio_set_volume(0)
@@ -857,7 +857,7 @@ class VideoPanel(QWidget):
         ch_bar = QWidget(); ch_bar.setFixedHeight(34)
         ch_bar.setStyleSheet(f"background:{C['panel2']};border-bottom:1px solid {C['border']};")
         chl = QHBoxLayout(ch_bar); chl.setContentsMargins(12,4,12,4); chl.setSpacing(6)
-        ch_lbl = QLabel("CH"); ch_lbl.setStyleSheet(f"color:{C['text2']};font-family:Consolas;font-size:10px;font-weight:700;")
+        ch_lbl = QLabel("CH"); ch_lbl.setStyleSheet(f"color:{C['text2']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;font-weight:700;")
         ch_lbl.setFixedWidth(20)
         chl.addWidget(ch_lbl)
 
@@ -872,7 +872,7 @@ class VideoPanel(QWidget):
             saved_channels = [1, 2]
 
         CH_STYLE = (
-            f"QCheckBox{{color:{C['text2']};font-family:Consolas;font-size:10px;spacing:5px;}}"
+            f"QCheckBox{{color:{C['text2']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;spacing:5px;}}"
             f"QCheckBox:checked{{color:{C['teal']};font-weight:bold;}}"
             f"QCheckBox::indicator{{width:12px;height:12px;border:1px solid {C['border']};border-radius:3px;background:{C['panel']};}}"
             f"QCheckBox::indicator:checked{{background:{C['teal']};border-color:{C['teal']};}}"
@@ -936,7 +936,7 @@ class VideoPanel(QWidget):
 
         # 배속 버튼
         spd_lbl = QLabel('SPEED')
-        spd_lbl.setStyleSheet(f"color:{C['text2']};font-family:Consolas;font-size:10px;font-weight:700;")
+        spd_lbl.setStyleSheet(f"color:{C['text2']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;font-weight:700;")
         ail.addWidget(spd_lbl)
         ail.addSpacing(4)
         self._speed_btns = {}
@@ -949,7 +949,7 @@ class VideoPanel(QWidget):
             b.setChecked(rate == saved_rate)
             b.setStyleSheet(
                 f"QPushButton{{background:{C['panel2']};color:{C['text2']};border:1px solid {C['border']};"
-                "border-radius:5px;font-family:Consolas;font-size:11px;font-weight:700;padding:0 8px;}"
+                "border-radius:5px;font-family:'Cascadia Mono','Consolas','D2Coding';font-size:11px;font-weight:700;padding:0 8px;}"
                 f"QPushButton:checked{{background:rgba(90,167,255,35);color:{C['text0']};border-color:{C['blue']};}}"
                 f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
             )
@@ -976,7 +976,7 @@ class VideoPanel(QWidget):
         iol = QHBoxLayout(io); iol.setContentsMargins(10,3,10,3); iol.setSpacing(4)
         _io_style = (
             f"QPushButton{{background:{C['panel3']};color:{C['text1']};border:1px solid {C['border']};"
-            "border-radius:6px;font-family:'맑은 고딕';font-size:11px;padding:0 10px;height:28px;}"
+            "border-radius:6px;font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';font-size:11px;padding:0 10px;height:28px;}"
             f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
             "QPushButton:pressed{padding-top:1px;background:#101218;}"
         )
@@ -999,7 +999,7 @@ class VideoPanel(QWidget):
         self.btn_loop.setToolTip('IN→OUT 구간 반복 재생  (IN/OUT 설정 후 활성화)')
         self.btn_loop.setStyleSheet(
             f"QPushButton{{background:{C['panel3']};color:{C['text2']};border:1px solid {C['border']};"
-            "border-radius:6px;font-family:Consolas;font-size:11px;font-weight:700;"
+            "border-radius:6px;font-family:'Cascadia Mono','Consolas','D2Coding';font-size:11px;font-weight:700;"
             "padding:0 12px;height:28px;}"
             f"QPushButton:checked{{background:rgba(45,212,191,34);color:{C['teal']};border-color:{C['teal']};}}"
             f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
@@ -1228,8 +1228,8 @@ class VideoPanel(QWidget):
         self.tc_rem.setText("00:00:00;00")
         self.tc_in_l.setText("—")
         self.tc_out_l.setText("—")
-        self.tc_in_l.setStyleSheet(f"color:{C['text0']};font-family:Consolas;font-size:16px;background:transparent;")
-        self.tc_out_l.setStyleSheet(f"color:{C['text0']};font-family:Consolas;font-size:16px;background:transparent;")
+        self.tc_in_l.setStyleSheet(f"color:{C['text0']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:16px;background:transparent;")
+        self.tc_out_l.setStyleSheet(f"color:{C['text0']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:16px;background:transparent;")
 
         # 슬라이더 초기화
         self.slider.setValue(0)
@@ -1422,10 +1422,10 @@ class VideoPanel(QWidget):
         # 이전 에러 상태(빨간 LED 등) 초기화
         self.led.setStyleSheet(f"color:{C['text3']};font-size:10px;background:transparent;")
         self.empty_label.setStyleSheet(
-            f"color:{C['text3']};font-family:Consolas;font-size:14px;background:#000;")
+            f"color:{C['text3']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:14px;background:#000;")
         self.tc_in_l.setText("—"); self.tc_out_l.setText("—")
-        self.tc_in_l.setStyleSheet(f"color:{C['text0']};font-family:Consolas;font-size:16px;background:transparent;")
-        self.tc_out_l.setStyleSheet(f"color:{C['text0']};font-family:Consolas;font-size:16px;background:transparent;")
+        self.tc_in_l.setStyleSheet(f"color:{C['text0']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:16px;background:transparent;")
+        self.tc_out_l.setStyleSheet(f"color:{C['text0']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:16px;background:transparent;")
 
         # 클립 리스트 선택 표시
         for i in range(self.clip_list.count()):
@@ -1462,7 +1462,7 @@ class VideoPanel(QWidget):
         df_label = "DF" if self._drop_frame_enabled() else "NDF"
         df_color = C['teal'] if self._drop_frame_enabled() else C['text2']
         self.lbl_df.setText(df_label)
-        self.lbl_df.setStyleSheet(f"color:{df_color};font-family:Consolas;font-size:11px;")
+        self.lbl_df.setStyleSheet(f"color:{df_color};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:11px;")
         ch_count = info.get('channels', 0)
         stream_count = info.get('audio_stream_count', 0) or ch_count
         self.lbl_ch.setText(f"{stream_count}CH")
@@ -1853,20 +1853,20 @@ class VideoPanel(QWidget):
     def _set_in(self):
         self.in_pt = self._display_frame / self._media_fps()
         self.tc_in_l.setText(self._frames_to_tc(self._display_frame, include_offset=True))
-        self.tc_in_l.setStyleSheet(f"color:{C['yellow']};font-family:Consolas;font-size:16px;background:transparent;")
+        self.tc_in_l.setStyleSheet(f"color:{C['yellow']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:16px;background:transparent;")
 
     def _clr_in(self):
         self.in_pt=None; self.tc_in_l.setText("—")
-        self.tc_in_l.setStyleSheet(f"color:{C['text0']};font-family:Consolas;font-size:16px;background:transparent;")
+        self.tc_in_l.setStyleSheet(f"color:{C['text0']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:16px;background:transparent;")
 
     def _set_out(self):
         self.out_pt = self._display_frame / self._media_fps()
         self.tc_out_l.setText(self._frames_to_tc(self._display_frame, include_offset=True))
-        self.tc_out_l.setStyleSheet(f"color:{C['orange']};font-family:Consolas;font-size:16px;background:transparent;")
+        self.tc_out_l.setStyleSheet(f"color:{C['orange']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:16px;background:transparent;")
 
     def _clr_out(self):
         self.out_pt=None; self.tc_out_l.setText("—")
-        self.tc_out_l.setStyleSheet(f"color:{C['text0']};font-family:Consolas;font-size:16px;background:transparent;")
+        self.tc_out_l.setStyleSheet(f"color:{C['text0']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:16px;background:transparent;")
 
 
     # ── 이벤트 ───────────────────────────────────────────
@@ -1955,7 +1955,7 @@ class VideoPanel(QWidget):
         # 빈 화면 표시
         self.empty_label.setText(f'⚠ {friendly}\n\n{detail[:120]}')
         self.empty_label.setStyleSheet(
-            f"color:{C['red']};font-family:Consolas;font-size:13px;background:#000;")
+            f"color:{C['red']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:13px;background:#000;")
         self._empty_proxy.setVisible(True)
         # 로그
         log.error(f'[PLAYER ERROR] {friendly} | {detail}')

@@ -77,7 +77,7 @@ class RightPanel(QWidget):
         self._sort_asc = True
         _sort_btn_style = (
             f"QPushButton{{background:{C['panel2']};color:{C['text2']};border:1px solid {C['border']};"
-            f"border-radius:5px;font-family:Consolas;font-size:10px;font-weight:700;"
+            f"border-radius:5px;font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;font-weight:700;"
             f"padding:0 7px;height:24px;}}"
             f"QPushButton:checked{{background:rgba(90,167,255,30);color:{C['text0']};border-color:{C['blue']};}}"
             f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
@@ -113,7 +113,7 @@ class RightPanel(QWidget):
         # 경로 표시
         self.exp_path = mk_label('파일을 추가하세요', C['text3'], 'Consolas', 10)
         self.exp_path.setStyleSheet(
-            f"color:{C['text2']};font-family:Consolas;font-size:10px;"
+            f"color:{C['text2']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;"
             f"background:{C['panel2']};padding:4px 12px;"
             f"border-bottom:1px solid {C['border']};")
         l.addWidget(self.exp_path)
@@ -125,7 +125,7 @@ class RightPanel(QWidget):
         self.exp_list.setStyleSheet(
             f"QListWidget{{background:{C['panel2']};border:none;outline:none;}}"
             f"QListWidget::item{{padding:9px 14px;border-bottom:1px solid {C['border']};"
-            f"font-family:'맑은 고딕';font-size:12px;color:{C['text1']};}}"
+            f"font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';font-size:12px;color:{C['text1']};}}"
             f"QListWidget::item:selected{{background:rgba(90,167,255,28);"
             f"border-left:2px solid {C['blue']};color:{C['text0']};}}"
             f"QListWidget::item:hover{{background:rgba(255,255,255,7);}}"
@@ -205,7 +205,7 @@ class RightPanel(QWidget):
         menu = QMenu(self.exp_list)
         menu.setStyleSheet(
             f"QMenu{{background:{C['panel']};color:{C['text1']};border:1px solid {C['border2']};"
-            "font-family:'맑은 고딕';font-size:13px;padding:5px 0;border-radius:6px;}"
+            "font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';font-size:13px;padding:5px 0;border-radius:6px;}"
             "QMenu::item{padding:6px 20px;}"
             f"QMenu::item:selected{{background:rgba(90,167,255,35);color:{C['text0']};}}"
             f"QMenu::separator{{height:1px;background:{C['border']};margin:3px 0;}}"
@@ -295,7 +295,7 @@ class RightPanel(QWidget):
         tbl = QHBoxLayout(tb); tbl.setContentsMargins(8,4,8,4); tbl.setSpacing(6)
 
         _inp = (f"background:{C['input']};border:1px solid {C['border']};border-radius:5px;"
-                f"color:{C['yellow']};font-family:Consolas;font-size:12px;padding:2px 6px;")
+                f"color:{C['yellow']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:12px;padding:2px 6px;")
 
         lbl_amt = QLabel("검정%")
         lbl_amt.setStyleSheet(f"color:{C['text2']};font-size:11px;")
@@ -347,7 +347,7 @@ class RightPanel(QWidget):
         self.black_list.setStyleSheet(
             f"QListWidget{{background:{C['panel2']};color:{C['text1']};}}"
             f"QListWidget::item{{padding:8px 14px;border-bottom:1px solid {C['border']};"
-            f"font-family:Consolas;font-size:11px;}}"
+            f"font-family:'Cascadia Mono','Consolas','D2Coding';font-size:11px;}}"
             f"QListWidget::item:selected{{background:rgba(255,209,102,28);"
             f"border-left:2px solid {C['yellow']};}}"
             f"QListWidget::item:hover{{background:rgba(255,255,255,7);}}")
@@ -549,7 +549,7 @@ class RightPanel(QWidget):
         tbl = QHBoxLayout(tb); tbl.setContentsMargins(8,4,8,4); tbl.setSpacing(6)
 
         _inp = (f"background:{C['input']};border:1px solid {C['border']};border-radius:5px;"
-                f"color:{C['teal']};font-family:Consolas;font-size:12px;padding:2px 6px;")
+                f"color:{C['teal']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:12px;padding:2px 6px;")
 
         lbl_thr = QLabel("임계값")
         lbl_thr.setStyleSheet(f"color:{C['text2']};font-size:11px;")
@@ -606,7 +606,7 @@ class RightPanel(QWidget):
         self.peak_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.peak_table.setStyleSheet(
             f"QTableWidget{{background:{C['panel2']};color:{C['text1']};"
-            f"font-family:Consolas;font-size:11px;gridline-color:{C['border']};}}"
+            f"font-family:'Cascadia Mono','Consolas','D2Coding';font-size:11px;gridline-color:{C['border']};}}"
             f"QHeaderView::section{{background:{C['panel']};color:{C['text2']};"
             f"font-size:10px;padding:3px;border:none;border-bottom:1px solid {C['border']};}}")
         l.addWidget(self.peak_table)
@@ -622,7 +622,7 @@ class RightPanel(QWidget):
         self.mute_list.setStyleSheet(
             f"QListWidget{{background:{C['panel2']};color:{C['text1']};}}"
             f"QListWidget::item{{padding:8px 14px;border-bottom:1px solid {C['border']};"
-            f"font-family:Consolas;font-size:11px;}}"
+            f"font-family:'Cascadia Mono','Consolas','D2Coding';font-size:11px;}}"
             f"QListWidget::item:hover{{background:rgba(255,255,255,7);}}")
         self.mute_list.itemClicked.connect(
             lambda i: self.seek_requested.emit(i.data(Qt.ItemDataRole.UserRole) or 0))

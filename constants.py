@@ -11,6 +11,22 @@ import sys, os, json, subprocess, hashlib, csv, shutil, threading, atexit
 from pathlib import Path
 from datetime import datetime
 
+# ── 글꼴 ──────────────────────────────────────────────────
+# Windows 11 기준으로 더 현대적인 UI/숫자 글꼴을 우선 사용하고,
+# 없는 환경에서는 기존 Windows 기본 글꼴로 자연스럽게 내려간다.
+APP_FONT_QT = "Segoe UI Variable Text"
+MONO_FONT_QT = "Cascadia Mono"
+APP_FONT_CSS = "'Segoe UI Variable Text','Segoe UI','Malgun Gothic'"
+MONO_FONT_CSS = "'Cascadia Mono','Consolas','D2Coding'"
+
+def css_font(family=None):
+    name = (family or APP_FONT_QT).strip()
+    if name in ("맑은 고딕", "Malgun Gothic", "Segoe UI", "Segoe UI Variable Text"):
+        return APP_FONT_CSS
+    if name in ("Consolas", "Cascadia Mono", "D2Coding", "monospace"):
+        return MONO_FONT_CSS
+    return name
+
 # ── 색상 ──────────────────────────────────────────────────
 C = {
     # 배경 계층
@@ -43,7 +59,7 @@ QToolTip {{
     color: {C['text0']};
     border: 1px solid {C['border2']};
     padding: 7px 10px;
-    font-family: '맑은 고딕';
+    font-family: {APP_FONT_CSS};
     font-size: 12px;
     border-radius: 6px;
 }}
@@ -52,7 +68,7 @@ QToolTip {{
 QMainWindow, QWidget {{
     background-color: {C['bg']};
     color: {C['text0']};
-    font-family: '맑은 고딕';
+    font-family: {APP_FONT_CSS};
     font-size: 13px;
 }}
 QSplitter::handle {{
@@ -64,7 +80,7 @@ QSplitter::handle {{
 QStatusBar {{
     background-color: #0b0c10;
     color: {C['text2']};
-    font-family: Consolas;
+    font-family: {MONO_FONT_CSS};
     font-size: 11px;
     border-top: 1px solid {C['border']};
     padding: 3px 12px;
@@ -105,7 +121,7 @@ QListWidget {{
     border: none;
     color: {C['text0']};
     outline: none;
-    font-family: '맑은 고딕';
+    font-family: {APP_FONT_CSS};
     font-size: 12px;
 }}
 QListWidget::item {{
@@ -127,7 +143,7 @@ QLineEdit {{
     border-radius: 5px;
     color: {C['text0']};
     padding: 6px 10px;
-    font-family: '맑은 고딕';
+    font-family: {APP_FONT_CSS};
     font-size: 12px;
     selection-background-color: rgba(90,167,255,70);
 }}
@@ -193,7 +209,7 @@ QTableWidget {{
     border: none;
     color: {C['text0']};
     gridline-color: {C['border']};
-    font-family: '맑은 고딕';
+    font-family: {APP_FONT_CSS};
     font-size: 12px;
     outline: none;
 }}
@@ -212,7 +228,7 @@ QHeaderView::section {{
     border-right: 1px solid {C['border']};
     border-bottom: 1px solid {C['border']};
     padding: 6px 10px;
-    font-family: '맑은 고딕';
+    font-family: {APP_FONT_CSS};
     font-size: 11px;
     font-weight: 600;
 }}
@@ -600,12 +616,12 @@ def mk_btn(text, w=None, h=26, color=None, bg=None):
             f"QPushButton:hover{{background:{bc};opacity:0.8;}}")
     return b
 
-def mk_label(text, color=None, family="맑은 고딕", size=10, bold=False):
+def mk_label(text, color=None, family=APP_FONT_QT, size=10, bold=False):
     from PyQt6.QtWidgets import QLabel
     l = QLabel(text)
     w = "bold" if bold else "normal"
     l.setStyleSheet(
-        f"color:{color or C['text0']};font-family:{family};"
+        f"color:{color or C['text0']};font-family:{css_font(family)};"
         f"font-size:{size}px;font-weight:{w};background:transparent;")
     return l
 
