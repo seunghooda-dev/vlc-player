@@ -473,7 +473,7 @@ class VideoPanel(QWidget):
         self._scene.addItem(self._video_item)
 
         # 빈화면 라벨 (비디오 없을 때)
-        self.empty_label = QLabel("▶\n\nMXF / MP4 파일을 열어주세요\n\n⏏ 파일을 드래그하거나 CUE 버튼을 누르세요")
+        self.empty_label = QLabel("▶\n\nMXF 파일을 열어주세요\n\n⏏ 파일을 드래그하거나 CUE 버튼을 누르세요")
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty_label.setStyleSheet(
             f"color:{C['text3']};font-family:Consolas;font-size:14px;background:#000;")
@@ -1039,7 +1039,7 @@ class VideoPanel(QWidget):
 
         # 화면 초기화
         self._video_item.hide()
-        self.empty_label.setText("▶\n\nMXF / MP4 파일을 열어주세요\n\n파일 추가 버튼 또는 파일 드래그로 불러오세요")
+        self.empty_label.setText("▶\n\nMXF 파일을 열어주세요\n\n파일 추가 버튼 또는 파일 드래그로 불러오세요")
         self._empty_proxy.show()
 
         # AI 버튼 비활성화
