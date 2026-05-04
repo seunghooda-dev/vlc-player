@@ -174,6 +174,28 @@ class RightPanel(QWidget):
         if fp:
             self.vp.load_file(fp)
 
+    def _file_status_badge(self, f, is_cue=False):
+        analysis = f.get("analysis")
+        if analysis == "black":
+            return "블랙 검사중", C['yellow']
+        if analysis == "mute":
+            return "뮤트 검사중", C['teal']
+        if f.get("black") == "error" or f.get("mute") == "error":
+            return "검사 오류", C['red']
+        if f.get("black") == "found" and f.get("mute") == "found":
+            return "블랙/무음", C['orange']
+        if f.get("black") == "found":
+            return "블랙 있음", C['yellow']
+        if f.get("mute") == "found":
+            return "무음 있음", C['teal']
+        if f.get("black") == "ok" and f.get("mute") == "ok":
+            return "정상", C['green']
+        if f.get("playing"):
+            return "재생중", C['green']
+        if is_cue or f.get("cue"):
+            return "CUE", C['blue']
+        return "미분석", C['text2']
+
     def _exp_context_menu(self, pos):
         from PyQt6.QtWidgets import QMenu
         item = self.exp_list.itemAt(pos)
@@ -227,15 +249,17 @@ class RightPanel(QWidget):
         for f in files:
             is_cue = (f["filepath"] == cue_fp)
             prefix = "▶  " if is_cue else "    "
-            item = QListWidgetItem(f"{prefix}{f['name']}")
+            badge, badge_color = self._file_status_badge(f, is_cue)
+            item = QListWidgetItem(f"{prefix}{f['name']}    [{badge}]")
             item.setData(Qt.ItemDataRole.UserRole, f["filepath"])
-            if is_cue:
-                item.setForeground(QColor(C['green']))
+            item.setToolTip(f"{Path(f['filepath']).name}\n상태: {badge}")
+            if is_cue and badge not in ("블랙 있음", "무음 있음", "블랙/무음", "검사 오류"):
+                item.setForeground(QColor(badge_color))
                 font = item.font()
                 font.setBold(True)
                 item.setFont(font)
             else:
-                item.setForeground(QColor(C['text1']))
+                item.setForeground(QColor(badge_color if badge != "미분석" else C['text1']))
             self.exp_list.addItem(item)
             if is_cue:
                 self.exp_list.setCurrentItem(item)
@@ -447,6 +471,9 @@ class RightPanel(QWidget):
         self.btn_run_black.setEnabled(False)
         self.black_list.clear()
         self.black_status.setText("  ⏳ 블랙 프레임 검출 중...")
+        self._black_file = self.vp.cur_file
+        if hasattr(self.vp, '_set_file_status'):
+            self.vp._set_file_status(self._black_file, analysis="black")
         try:
             self.vp.btn_black.setEnabled(False)
             self.vp.prog_ai.show()
@@ -462,6 +489,13 @@ class RightPanel(QWidget):
 
     def _on_black_done(self, ranges):
         self.btn_run_black.setEnabled(True)
+        if hasattr(self.vp, '_set_file_status'):
+            fp = getattr(self, '_black_file', self.vp.cur_file)
+            self.vp._set_file_status(
+                fp,
+                analysis=None,
+                black="found" if ranges else "ok",
+            )
         try:
             self.vp.btn_black.setEnabled(True)
             self.vp.prog_ai.hide()
@@ -489,6 +523,9 @@ class RightPanel(QWidget):
     def _on_black_error(self, err):
         self.black_status.setText(f"  ⚠ 오류: {err}")
         self.btn_run_black.setEnabled(True)
+        if hasattr(self.vp, '_set_file_status'):
+            fp = getattr(self, '_black_file', self.vp.cur_file)
+            self.vp._set_file_status(fp, analysis=None, black="error")
         try:
             self.vp.btn_black.setEnabled(True)
             self.vp.prog_ai.hide()
@@ -621,6 +658,9 @@ class RightPanel(QWidget):
         self.btn_run_audio.setEnabled(False)
         self.mute_list.clear(); self.peak_table.setRowCount(0)
         self.audio_status.setText(f"  ⏳ 1/2CH 레벨 인덱스 확인 중... ({dur:.1f}초 이상)")
+        self._audio_file = self.vp.cur_file
+        if hasattr(self.vp, '_set_file_status'):
+            self.vp._set_file_status(self._audio_file, analysis="mute")
         self.peak_table.setRowCount(1)
         for col, val in enumerate(["1/2CH", "100ms 레벨 캐시", "자동 저장"]):
             item = QTableWidgetItem(val)
@@ -644,6 +684,13 @@ class RightPanel(QWidget):
     def _on_audio_done(self, result):
         self.btn_run_audio.setEnabled(True)
         mutes    = result.get('mutes', [])
+        if hasattr(self.vp, '_set_file_status'):
+            fp = getattr(self, '_audio_file', self.vp.cur_file)
+            self.vp._set_file_status(
+                fp,
+                analysis=None,
+                mute="found" if mutes else "ok",
+            )
         peaks    = result.get('peaks', {})
         rms_vals = result.get('rms', {})
         ch_count = result.get('ch_count', 0)
@@ -691,6 +738,9 @@ class RightPanel(QWidget):
     def _on_audio_error(self, err):
         self.audio_status.setText(f"  ⚠ 오류: {err}")
         self.btn_run_audio.setEnabled(True)
+        if hasattr(self.vp, '_set_file_status'):
+            fp = getattr(self, '_audio_file', self.vp.cur_file)
+            self.vp._set_file_status(fp, analysis=None, mute="error")
         try:
             self.vp.btn_audio.setEnabled(True)
             self.vp.prog_ai.hide()

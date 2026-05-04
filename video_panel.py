@@ -1153,6 +1153,48 @@ class VideoPanel(QWidget):
             self._settings = save_settings(last_dir=folder)
         except Exception as e: log.warning(f'last_dir 저장 실패: {e}')
 
+    def _new_file_record(self, filepath):
+        p = Path(filepath)
+        return {
+            "name": p.name,
+            "filepath": filepath,
+            "size": p.stat().st_size,
+            "ext": p.suffix.upper().lstrip("."),
+            "cue": False,
+            "playing": False,
+            "black": None,   # None | ok | found | error
+            "mute": None,    # None | ok | found | error
+            "analysis": None,
+        }
+
+    def _file_entry(self, filepath):
+        for item in self._files:
+            if item.get("filepath") == filepath:
+                item.setdefault("cue", False)
+                item.setdefault("playing", False)
+                item.setdefault("black", None)
+                item.setdefault("mute", None)
+                item.setdefault("analysis", None)
+                return item
+        return None
+
+    def _set_file_status(self, filepath, **changes):
+        entry = self._file_entry(filepath)
+        if not entry:
+            return
+        entry.update(changes)
+        if hasattr(self, '_right_panel'):
+            self._right_panel.refresh_explorer()
+
+    def _set_all_files_not_playing(self):
+        changed = False
+        for item in self._files:
+            if item.get("playing"):
+                item["playing"] = False
+                changed = True
+        if changed and hasattr(self, '_right_panel'):
+            self._right_panel.refresh_explorer()
+
     def _on_clip_selected(self, item):
         """클립 단일클릭 — 상태바에 파일명 표시, 아직 CUE 안 함"""
         fp = item.data(Qt.ItemDataRole.UserRole)
@@ -1212,6 +1254,10 @@ class VideoPanel(QWidget):
 
         # 클립 리스트 선택 해제
         self.clip_list.clearSelection()
+        self._set_all_files_not_playing()
+        for f in self._files:
+            if f.get("cue") and f.get("black") is None and f.get("mute") is None:
+                f["cue"] = False
         if hasattr(self, '_right_panel'):
             self._right_panel.refresh_explorer()
 
@@ -1301,10 +1347,7 @@ class VideoPanel(QWidget):
         new_files = []
         for f in files:
             if f not in [x["filepath"] for x in self._files]:
-                info = {"name":Path(f).name,"filepath":f,
-                        "size":Path(f).stat().st_size,
-                        "ext":Path(f).suffix.upper().lstrip(".")}
-                self._files.append(info)
+                self._files.append(self._new_file_record(f))
                 new_files.append(f)
         self._refresh_clip_list()
         # MXF만 즉시 백그라운드 변환 (CUE 전에 미리 준비)
@@ -1318,7 +1361,9 @@ class VideoPanel(QWidget):
     def _refresh_clip_list(self):
         self.clip_list.clear()
         for f in self._files:
-            item = QListWidgetItem(f"  {f['name']}  —  {f['ext']}  {f['size']//1024//1024}MB")
+            item = QListWidgetItem(
+                f"  {f['name']}  —  {f['ext']}  {f['size']//1024//1024}MB"
+            )
             item.setData(Qt.ItemDataRole.UserRole, f["filepath"])
             self.clip_list.addItem(item)
         # Explorer도 항상 동기화
@@ -1367,6 +1412,9 @@ class VideoPanel(QWidget):
         self._stop_all()
         self._loading = True   # 로딩 중 플래그 — 체크박스 이벤트 차단
         self.cur_file = filepath
+        for f in self._files:
+            f["cue"] = (f.get("filepath") == filepath)
+            f["playing"] = False
         self.cur_id   = None
         self._first_audio_start_after_cue = True
         self.in_pt=None; self.out_pt=None
@@ -1846,6 +1894,20 @@ class VideoPanel(QWidget):
         self._raise_vlc_meters()
         playing = state == QMediaPlayer.PlaybackState.PlayingState
         self.btn_play.setText("||" if playing else "▶")
+        if self.cur_file:
+            changed = False
+            for f in self._files:
+                is_cur = f.get("filepath") == self.cur_file
+                new_playing = bool(playing and is_cur)
+                new_cue = bool(is_cur or f.get("cue"))
+                if f.get("playing") != new_playing:
+                    f["playing"] = new_playing
+                    changed = True
+                if is_cur and f.get("cue") != new_cue:
+                    f["cue"] = new_cue
+                    changed = True
+            if changed and hasattr(self, '_right_panel'):
+                self._right_panel.refresh_explorer()
         # LED 깜빡임 제어
         if playing:
             self._frame_clock_active = True
@@ -1927,9 +1989,7 @@ class VideoPanel(QWidget):
             fp = url.toLocalFile()
             if Path(fp).suffix.lower() in VIDEO_EXTS:
                 if fp not in [x["filepath"] for x in self._files]:
-                    self._files.append({"name":Path(fp).name,"filepath":fp,
-                                        "size":Path(fp).stat().st_size,
-                                        "ext":Path(fp).suffix.upper().lstrip(".")})
+                    self._files.append(self._new_file_record(fp))
                 self._refresh_clip_list(); self.load_file(fp); break
 
     def keyPressEvent(self, e):
