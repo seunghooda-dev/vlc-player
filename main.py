@@ -18,11 +18,71 @@ from video_panel  import VideoPanel
 from right_panel  import RightPanel
 
 
+APP_WINDOW_TITLE = "Archive Tagger — MXF Player v2.0"
+APP_MUTEX_NAME = r"Local\ArchiveTagger_MXF_Player_v2_SingleInstance"
+_single_instance_handle = None
+
+
+def _activate_existing_window():
+    if not sys.platform.startswith('win'):
+        return False
+    try:
+        import ctypes
+        user32 = ctypes.WinDLL('user32', use_last_error=True)
+        user32.FindWindowW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
+        user32.FindWindowW.restype = ctypes.c_void_p
+        user32.ShowWindow.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        user32.BringWindowToTop.argtypes = [ctypes.c_void_p]
+        user32.SetForegroundWindow.argtypes = [ctypes.c_void_p]
+        hwnd = user32.FindWindowW(None, APP_WINDOW_TITLE)
+        if not hwnd:
+            return False
+        SW_RESTORE = 9
+        user32.ShowWindow(hwnd, SW_RESTORE)
+        user32.BringWindowToTop(hwnd)
+        user32.SetForegroundWindow(hwnd)
+        return True
+    except Exception as e:
+        log.debug(f'activate existing window failed: {e}')
+        return False
+
+
+def _acquire_single_instance():
+    """Windows named mutex로 중복 실행을 막는다."""
+    global _single_instance_handle
+    if not sys.platform.startswith('win'):
+        return True
+    try:
+        import ctypes
+        kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, ctypes.c_bool, ctypes.c_wchar_p]
+        kernel32.CreateMutexW.restype = ctypes.c_void_p
+        kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+        handle = kernel32.CreateMutexW(None, False, APP_MUTEX_NAME)
+        err = ctypes.get_last_error()
+        if not handle:
+            log.warning(f'single instance mutex creation failed: {err}')
+            return True
+        if err == 183:  # ERROR_ALREADY_EXISTS
+            try:
+                kernel32.CloseHandle(handle)
+            except Exception:
+                pass
+            _activate_existing_window()
+            log.info('중복 실행 차단 — 기존 창 활성화')
+            return False
+        _single_instance_handle = handle
+        return True
+    except Exception as e:
+        log.warning(f'single instance check failed: {e}')
+        return True
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self._settings = load_settings()
-        self.setWindowTitle("Archive Tagger — MXF Player v2.0")
+        self.setWindowTitle(APP_WINDOW_TITLE)
         size = self._settings.get('window_size', [1400, 980])
         try:
             self.resize(int(size[0]), int(size[1]))
@@ -374,10 +434,6 @@ def _cleanup_tmp_files():
 def main():
     import threading
     _setup_global_exception_handler()
-    log.info('=' * 50)
-    log.info(f'Archive Tagger 시작 — Python {sys.version.split()[0]}')
-    log.info(f'LOG_DIR: {LOG_DIR}')
-    _cleanup_tmp_files()
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     palette = QPalette()
@@ -391,6 +447,12 @@ def main():
     palette.setColor(QPalette.ColorRole.Highlight,       QColor('#1a4a8a'))
     palette.setColor(QPalette.ColorRole.HighlightedText, QColor(C['text0']))
     app.setPalette(palette)
+    if not _acquire_single_instance():
+        sys.exit(0)
+    log.info('=' * 50)
+    log.info(f'Archive Tagger 시작 — Python {sys.version.split()[0]}')
+    log.info(f'LOG_DIR: {LOG_DIR}')
+    _cleanup_tmp_files()
     runtime = check_runtime_environment()
     if not runtime.get('ok'):
         details = '\n'.join(
