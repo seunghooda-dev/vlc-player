@@ -3,11 +3,14 @@ main.py — 진입점
 MainWindow + 전역 예외 처리 + 앱 실행
 """
 import sys
-from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel, QSplitter, QDialog, QPushButton
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
+    QSplitter, QDialog, QPushButton, QMessageBox,
+)
 from PyQt6.QtCore    import Qt
 from PyQt6.QtGui     import QColor, QPalette
 
-from constants    import C, STYLE, LOG_DIR, TMP_DIR, BASE_DIR, log
+from constants    import C, STYLE, LOG_DIR, TMP_DIR, BASE_DIR, log, check_runtime_environment
 from video_panel  import VideoPanel
 from right_panel  import RightPanel
 
@@ -70,6 +73,26 @@ class MainWindow(QMainWindow):
 
         self.vp.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.vp.setFocus()
+
+    def show_runtime_status(self, runtime):
+        for item in runtime.get('items', []):
+            level = log.info if item.get('ok') else log.warning
+            level(f"runtime {item.get('name')}: {item.get('message')}")
+        if runtime.get('ok'):
+            msg = "  ● READY   |   VLC / FFmpeg / FFplay OK   |   Archive Tagger v2.0"
+            self.statusBar().showMessage(msg)
+            try:
+                self.vp.ai_lbl.setText("✓ 실행 환경 확인 완료 — VLC / FFmpeg / FFplay OK")
+            except Exception as e:
+                log.debug(f'runtime ai label: {e}')
+            return
+        missing = ', '.join(runtime.get('missing', []))
+        msg = f"  ⚠ 실행 환경 누락: {missing}"
+        self.statusBar().showMessage(msg)
+        try:
+            self.vp.ai_lbl.setText(f"⚠ 필수 프로그램 누락: {missing}")
+        except Exception as e:
+            log.debug(f'runtime warning label: {e}')
 
     def dragEnterEvent(self, e):
         if e.mimeData().hasUrls(): e.accept()
@@ -268,8 +291,28 @@ def main():
     palette.setColor(QPalette.ColorRole.Highlight,       QColor('#1a4a8a'))
     palette.setColor(QPalette.ColorRole.HighlightedText, QColor(C['text0']))
     app.setPalette(palette)
+    runtime = check_runtime_environment()
+    if not runtime.get('ok'):
+        details = '\n'.join(
+            f"- {item['name']}: {'OK' if item['ok'] else 'MISSING'}"
+            f"\n  {item['message']}"
+            for item in runtime.get('items', [])
+        )
+        log.warning(f"runtime check failed: {runtime.get('missing')}")
+        QMessageBox.warning(
+            None,
+            "실행 환경 확인",
+            "필수 프로그램 경로를 확인했습니다.\n\n"
+            f"{details}\n\n"
+            "VLC가 없으면 MXF 영상 재생이 불가능하고, "
+            "FFmpeg/FFplay가 없으면 오디오 믹스와 검출 기능이 제한됩니다."
+        )
+        if 'VLC' in runtime.get('missing', []):
+            log.error('VLC runtime missing; abort startup before player construction')
+            sys.exit(1)
     win = MainWindow()
     win.show()
+    win.show_runtime_status(runtime)
     ret = app.exec()
     log.info('Archive Tagger 종료')
     sys.exit(ret)

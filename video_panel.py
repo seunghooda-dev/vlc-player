@@ -23,7 +23,7 @@ from PyQt6.QtGui   import QColor, QFont, QDragEnterEvent, QDropEvent
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtMultimediaWidgets import QGraphicsVideoItem
 
-from constants  import C, FFMPEG, FFPROBE, VIDEO_EXTS, TMP_DIR, BASE_DIR, log
+from constants  import C, FFMPEG, FFPROBE, FFPLAY, VLC_DIR, VIDEO_EXTS, TMP_DIR, BASE_DIR, log
 from db_models  import probe, save_clip, sec_to_tc
 from threads    import TranscodeThread
 from meters     import SideMeter, SafeAreaItem, LoudnessMeter, MeterController, mk_btn, mk_label, separator
@@ -127,7 +127,7 @@ class AudioMixPlayer(QObject):
             'pipe:1',
         ]
         ffplay_cmd = [
-            'ffplay',
+            FFPLAY,
             '-nodisp',
             '-autoexit',
             '-loglevel', 'quiet',
@@ -211,9 +211,9 @@ class VlcPlayerAdapter(QObject):
 
     def __init__(self, video_widget):
         super().__init__()
-        vlc_dir = r'C:\Program Files\VideoLAN\VLC'
+        vlc_dir = VLC_DIR or Path(r'C:\Program Files\VideoLAN\VLC')
         if hasattr(os, 'add_dll_directory') and Path(vlc_dir).exists():
-            os.add_dll_directory(vlc_dir)
+            os.add_dll_directory(str(vlc_dir))
         import vlc
         self._vlc = vlc
         self._instance = vlc.Instance('--no-video-title-show', '--quiet')

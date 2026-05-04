@@ -7,7 +7,7 @@ Archive Tagger - PyQt6 완전판
 파일 탐색 + 비디오 플레이어 + DB + STT + 씬감지 + 검색
 """
 
-import sys, os, json, subprocess, hashlib, csv
+import sys, os, json, subprocess, hashlib, csv, shutil
 from pathlib import Path
 from datetime import datetime
 
@@ -259,6 +259,7 @@ QProgressBar::chunk {{
 
 FFMPEG     = "ffmpeg"
 FFPROBE    = "ffprobe"
+FFPLAY     = "ffplay"
 VIDEO_EXTS = {'.mxf','.mp4','.mov','.mts','.m2ts','.mkv','.avi'}
 BASE_DIR   = Path(__file__).parent
 DB_PATH    = BASE_DIR / "archive.db"
@@ -266,6 +267,96 @@ LOG_DIR    = BASE_DIR / "logs"
 TMP_DIR    = BASE_DIR / "tmp"
 LOG_DIR.mkdir(exist_ok=True)
 TMP_DIR.mkdir(exist_ok=True)
+
+def _hidden_subprocess_flags():
+    return 0x08000000 if os.name == 'nt' else 0
+
+def _candidate_vlc_dirs():
+    seen = set()
+    candidates = []
+    for env_name in ('VLC_HOME', 'VLC_PATH'):
+        raw = os.environ.get(env_name)
+        if raw:
+            candidates.append(Path(raw))
+    for env_name in ('ProgramFiles', 'ProgramFiles(x86)'):
+        raw = os.environ.get(env_name)
+        if raw:
+            candidates.append(Path(raw) / 'VideoLAN' / 'VLC')
+    vlc_exe = shutil.which('vlc') or shutil.which('vlc.exe')
+    if vlc_exe:
+        candidates.append(Path(vlc_exe).parent)
+    for path in candidates:
+        key = str(path).lower()
+        if key not in seen:
+            seen.add(key)
+            yield path
+
+def resolve_vlc_dir():
+    for path in _candidate_vlc_dirs():
+        if (path / 'libvlc.dll').exists():
+            return path
+    return None
+
+VLC_DIR = resolve_vlc_dir()
+
+def _check_command(name, command):
+    exe = shutil.which(command)
+    if not exe:
+        return {
+            'name': name,
+            'ok': False,
+            'path': '',
+            'message': f'{command} 실행 파일을 PATH에서 찾을 수 없습니다.',
+        }
+    try:
+        proc = subprocess.run(
+            [exe, '-version'],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            creationflags=_hidden_subprocess_flags(),
+        )
+        first_line = (proc.stdout or proc.stderr or '').splitlines()
+        return {
+            'name': name,
+            'ok': proc.returncode == 0,
+            'path': exe,
+            'message': first_line[0] if first_line else exe,
+        }
+    except Exception as e:
+        return {
+            'name': name,
+            'ok': False,
+            'path': exe,
+            'message': str(e),
+        }
+
+def check_runtime_environment():
+    items = [
+        _check_command('FFmpeg', FFMPEG),
+        _check_command('FFprobe', FFPROBE),
+        _check_command('FFplay', FFPLAY),
+    ]
+    if VLC_DIR:
+        items.append({
+            'name': 'VLC',
+            'ok': True,
+            'path': str(VLC_DIR),
+            'message': str(VLC_DIR / 'libvlc.dll'),
+        })
+    else:
+        items.append({
+            'name': 'VLC',
+            'ok': False,
+            'path': '',
+            'message': r'C:\Program Files\VideoLAN\VLC\libvlc.dll 을 찾을 수 없습니다.',
+        })
+    missing = [item['name'] for item in items if not item['ok']]
+    return {
+        'ok': not missing,
+        'items': items,
+        'missing': missing,
+    }
 
 # ── 로거 ──────────────────────────────────────────────
 import logging as _logging
