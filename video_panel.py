@@ -766,6 +766,12 @@ class VideoPanel(QWidget):
                   self.btn_fwd,self.btn_goe,self.btn_p1]:
             b.setStyleSheet(TR_STYLE + f"QPushButton{{{_mono}}}")
 
+        self.btn_stop.setStyleSheet(
+            TR_STYLE
+            + f"QPushButton{{color:{C['text0']};font-family:'Cascadia Mono','Consolas','D2Coding';"
+            "font-size:24px;font-weight:700;}}"
+        )
+
         self.btn_play.setStyleSheet(
             TR_STYLE
             + f"QPushButton{{color:{C['text0']};font-size:24px;background:#202632;border-color:{C['blue']};}}"
