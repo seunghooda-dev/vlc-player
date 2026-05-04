@@ -478,6 +478,7 @@ class RightPanel(QWidget):
             self.vp.btn_black.setEnabled(False)
             self.vp.prog_ai.show()
             self.vp.ai_lbl.setText("⬛ 블랙 프레임 검출 중...")
+            self._start_black_elapsed_timer()
         except Exception as e:
             log.debug(f'black ai state: {e}')
 
@@ -500,6 +501,7 @@ class RightPanel(QWidget):
             self.vp.btn_black.setEnabled(True)
             self.vp.prog_ai.hide()
             self.vp.ai_lbl.setText(f"✓ 블랙 검출 완료 — {len(ranges)}구간")
+            self._finish_black_elapsed_timer()
         except Exception as e:
             log.debug(f'black ai done state: {e}')
         self.black_list.clear()
@@ -530,6 +532,7 @@ class RightPanel(QWidget):
             self.vp.btn_black.setEnabled(True)
             self.vp.prog_ai.hide()
             self.vp.ai_lbl.setText(f"블랙 오류: {err}")
+            self._finish_black_elapsed_timer(prefix='BLACK ERR')
         except Exception as e:
             log.debug(f'black ai error state: {e}')
         self._finish_analysis_mode()
@@ -759,6 +762,39 @@ class RightPanel(QWidget):
         if h:
             return f'{h:02d}:{m:02d}:{s:02d}'
         return f'{m:02d}:{s:02d}'
+
+    def _start_black_elapsed_timer(self):
+        self._black_elapsed_start = time.monotonic()
+        if not hasattr(self, '_black_elapsed_timer'):
+            self._black_elapsed_timer = QTimer(self)
+            self._black_elapsed_timer.setInterval(250)
+            self._black_elapsed_timer.timeout.connect(self._update_black_elapsed_timer)
+        self._update_black_elapsed_timer()
+        self._black_elapsed_timer.start()
+
+    def _update_black_elapsed_timer(self):
+        start = getattr(self, '_black_elapsed_start', None)
+        if start is None:
+            return
+        elapsed = time.monotonic() - start
+        try:
+            self.vp.ai_time_lbl.setText(f"BLACK {self._format_elapsed(elapsed)}")
+            self.vp.ai_time_lbl.show()
+        except Exception as e:
+            log.debug(f'black elapsed update: {e}')
+
+    def _finish_black_elapsed_timer(self, prefix='BLACK'):
+        start = getattr(self, '_black_elapsed_start', None)
+        if hasattr(self, '_black_elapsed_timer'):
+            self._black_elapsed_timer.stop()
+        if start is None:
+            return
+        elapsed = time.monotonic() - start
+        try:
+            self.vp.ai_time_lbl.setText(f"{prefix} {self._format_elapsed(elapsed)}")
+            self.vp.ai_time_lbl.show()
+        except Exception as e:
+            log.debug(f'black elapsed finish: {e}')
 
     def _start_audio_elapsed_timer(self):
         self._audio_elapsed_start = time.monotonic()
