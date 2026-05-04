@@ -24,7 +24,7 @@ from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtMultimediaWidgets import QGraphicsVideoItem
 
 from constants  import C, FFMPEG, FFPROBE, VIDEO_EXTS, TMP_DIR, BASE_DIR, log
-from db_models  import probe, save_clip, sec_to_tc, is_df_fps
+from db_models  import probe, save_clip, sec_to_tc
 from threads    import TranscodeThread
 from meters     import SideMeter, SafeAreaItem, LoudnessMeter, MeterController, mk_btn, mk_label, separator
 
@@ -223,7 +223,7 @@ class VlcPlayerAdapter(QObject):
         self._selected_audio_channel = 1
         self._audio_apply_attempts = 0
         self._timer = QTimer(self)
-        self._timer.setInterval(80)
+        self._timer.setInterval(16)
         self._timer.timeout.connect(self._tick)
 
     def _bind_hwnd(self):
@@ -406,7 +406,7 @@ class VideoPanel(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.fps=29.97; self.df=True; self.tc_offset=0.0; self.duration=0.0
+        self.fps=29.97; self.df=False; self.tc_offset=0.0; self.duration=0.0
         self._source_duration = 0.0
         self._using_preview = False
         self._selected_chs = [1, 2]
@@ -1017,7 +1017,7 @@ class VideoPanel(QWidget):
         self.cur_file = None
         self.cur_id   = None
         self.cur_info = {}
-        self.fps=29.97; self.df=True; self.tc_offset=0.0
+        self.fps=29.97; self.df=False; self.tc_offset=0.0
         self.duration = 0.0
         self._source_duration = 0.0
         self._using_preview = False
@@ -1236,7 +1236,7 @@ class VideoPanel(QWidget):
         if not info: info = {"filename":Path(filepath).name,"filepath":filepath,"fps":29.97,"duration":0,"size":0}
         self.cur_info = info
         self.fps       = info.get("fps", 29.97)
-        self.df        = info.get("df", is_df_fps(self.fps))
+        self.df        = False
         self.tc_offset = info.get("tc_offset", 0.0)
         self.duration  = info.get("duration", 0)
         self._source_duration = self.duration
@@ -1248,11 +1248,11 @@ class VideoPanel(QWidget):
         w = info.get("width", 0)
         res_str = ("4K" if w >= 3840 else "HD" if w >= 1920 else f"{h}p") if h else "—"
         self.lbl_res.setText(res_str)
-        # FPS 표시: 29.97DF / 59.94DF / 25NDF 등
+        # FPS 표시: 표시용 타임코드는 프레임 번호가 건너뛰지 않도록 NDF 고정
         fps_str = f"{self.fps:.2f}"
         self.lbl_fps.setText(fps_str)
-        df_label = "DF" if self.df else "NDF"
-        df_color = C['teal'] if self.df else C['text2']
+        df_label = "NDF"
+        df_color = C['text2']
         self.lbl_df.setText(df_label)
         self.lbl_df.setStyleSheet(f"color:{df_color};font-family:Consolas;font-size:11px;")
         ch_count = info.get('channels', 0)

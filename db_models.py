@@ -76,10 +76,9 @@ def is_df_fps(fps):
     return abs(fps - round(fps)) > 0.01
 
 def sec_to_tc(sec, fps=29.97, df=None):
-    # SMPTE 12M 타임코드 — DF/NDF 자동 판별
-    # HD(29.97) = DF, UHD(59.94) = DF, 정수fps = NDF
+    # Player display timecode. Keep frame numbers visible without DF skips.
     if sec is None or sec < 0: sec = 0.0
-    if df is None: df = is_df_fps(fps)
+    if df is None: df = False
     nom = round(fps)  # 명목 FPS: 29.97->30, 59.94->60
     if df and nom in (30, 60):
         # Drop Frame 보정 (SMPTE 12M)

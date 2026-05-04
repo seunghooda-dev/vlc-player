@@ -310,7 +310,7 @@ def is_df_fps(fps):
 
 def sec_to_tc(sec, fps=29.97, df=None):
     if sec is None or sec < 0: sec = 0.0
-    if df is None: df = is_df_fps(fps)
+    if df is None: df = False
     nom = round(fps)
     if df and nom in (30, 60):
         drop = 2 if nom == 30 else 4
