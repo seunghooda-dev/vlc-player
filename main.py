@@ -5,7 +5,7 @@ MainWindow + 전역 예외 처리 + 앱 실행
 import sys
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
-    QSplitter, QDialog, QPushButton, QMessageBox,
+    QSplitter, QDialog, QPushButton, QMessageBox, QPlainTextEdit,
 )
 from PyQt6.QtCore    import Qt
 from PyQt6.QtGui     import QColor, QPalette
@@ -46,6 +46,18 @@ class MainWindow(QMainWindow):
         ttl.setStyleSheet(f"color:{C['text2']};font-family:Consolas;font-size:16px;letter-spacing:1px;")
         ttl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tbl.addWidget(ttl,1)
+        log_btn = QPushButton("LOG")
+        log_btn.setFixedHeight(24)
+        log_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        log_btn.setToolTip("최근 오류 로그 보기")
+        log_btn.setStyleSheet(
+            "QPushButton{background:#1d1d22;color:#666;border:1px solid #2a2a2f;"
+            "border-radius:3px;font-family:Consolas;font-size:10px;font-weight:700;"
+            "padding:0 8px;}"
+            "QPushButton:hover{background:#24242a;color:#cccccc;border-color:#444;}"
+        )
+        log_btn.clicked.connect(self._show_error_log)
+        tbl.addWidget(log_btn)
         ver = QLabel("MXF  v2.0"); ver.setStyleSheet("color:#2e2e2e;font-family:Consolas;font-size:10px;letter-spacing:1px;")
         tbl.addWidget(ver)
         root.addWidget(tb)
@@ -96,6 +108,70 @@ class MainWindow(QMainWindow):
             self.vp.ai_lbl.setText(f"⚠ 필수 프로그램 누락: {missing}")
         except Exception as e:
             log.debug(f'runtime warning label: {e}')
+
+    def _recent_error_log_text(self, max_lines=300):
+        log_path = LOG_DIR / 'player.log'
+        try:
+            if not log_path.exists():
+                return f"로그 파일이 아직 없습니다.\n\n{log_path}"
+            lines = log_path.read_text(encoding='utf-8', errors='replace').splitlines()
+            levels = ('] WARNING', '] ERROR', '] CRITICAL')
+            picked = [line for line in lines if any(level in line for level in levels)]
+            header = f"LOG FILE: {log_path}\nFILTER : WARNING / ERROR / CRITICAL\n"
+            if not picked:
+                return header + "\n최근 오류/경고 로그가 없습니다."
+            return header + "\n" + "\n".join(picked[-max_lines:])
+        except Exception as e:
+            return f"로그 읽기 실패: {e}"
+
+    def _show_error_log(self):
+        dlg = QDialog(self)
+        dlg.setWindowTitle('오류 로그')
+        dlg.resize(920, 580)
+        dlg.setStyleSheet(
+            f"background:{C['panel']};color:{C['text0']};"
+            f"font-family:'맑은 고딕';font-size:12px;"
+        )
+        lay = QVBoxLayout(dlg)
+        lay.setContentsMargins(16,14,16,14)
+        lay.setSpacing(10)
+
+        title = QLabel('오류 로그')
+        title.setStyleSheet(
+            f"color:{C['text0']};font-size:14px;font-weight:700;"
+            f"padding-bottom:4px;background:transparent;"
+        )
+        lay.addWidget(title)
+
+        text = QPlainTextEdit()
+        text.setReadOnly(True)
+        text.setPlainText(self._recent_error_log_text())
+        text.setStyleSheet(
+            "QPlainTextEdit{background:#0d0d10;color:#b8b8c8;border:1px solid #2a2a2f;"
+            "font-family:Consolas;font-size:11px;padding:8px;selection-background-color:#264f78;}"
+        )
+        lay.addWidget(text, 1)
+
+        row = QWidget()
+        rl = QHBoxLayout(row)
+        rl.setContentsMargins(0,0,0,0)
+        rl.addStretch()
+        refresh_btn = QPushButton('새로고침')
+        close_btn = QPushButton('닫기')
+        for btn in (refresh_btn, close_btn):
+            btn.setFixedHeight(30)
+            btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            btn.setStyleSheet(
+                "QPushButton{background:#222;color:#aaa;border:1px solid #333;"
+                "border-radius:4px;font-size:12px;padding:0 14px;}"
+                "QPushButton:hover{background:#2a2a2a;color:#eee;}"
+            )
+        refresh_btn.clicked.connect(lambda: text.setPlainText(self._recent_error_log_text()))
+        close_btn.clicked.connect(dlg.accept)
+        rl.addWidget(refresh_btn)
+        rl.addWidget(close_btn)
+        lay.addWidget(row)
+        dlg.exec()
 
     def dragEnterEvent(self, e):
         if e.mimeData().hasUrls(): e.accept()
