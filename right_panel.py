@@ -56,13 +56,13 @@ class RightPanel(QWidget):
         l = QVBoxLayout(w); l.setContentsMargins(0,0,0,0); l.setSpacing(0)
 
         # 툴바
-        tb = QWidget(); tb.setFixedHeight(44)
-        tb.setStyleSheet(f"background:#282828;border-bottom:1px solid {C['border']};")
+        tb = QWidget(); tb.setFixedHeight(46)
+        tb.setStyleSheet(f"background:{C['panel']};border-bottom:1px solid {C['border']};")
         tbl = QHBoxLayout(tb); tbl.setContentsMargins(6,3,6,3); tbl.setSpacing(4)
         _exp_btn_style = (
-            f"QPushButton{{background:{C['panel2']};color:{C['text1']};border:1px solid {C['border']};"
-            f"border-radius:4px;font-size:11px;font-weight:600;padding:0 12px;height:28px;}}"
-            f"QPushButton:hover{{background:#1e1e24;color:{C['text0']};border-color:#38383F;}}"
+            f"QPushButton{{background:{C['panel3']};color:{C['text1']};border:1px solid {C['border']};"
+            f"border-radius:6px;font-size:11px;font-weight:600;padding:0 12px;height:30px;}}"
+            f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
         )
         btn_file = QPushButton("📄  파일 추가"); btn_file.setFixedHeight(32)
         btn_file.setToolTip("개별 영상 파일 추가")
@@ -77,10 +77,10 @@ class RightPanel(QWidget):
         self._sort_asc = True
         _sort_btn_style = (
             f"QPushButton{{background:{C['panel2']};color:{C['text2']};border:1px solid {C['border']};"
-            f"border-radius:3px;font-family:Consolas;font-size:10px;font-weight:700;"
+            f"border-radius:5px;font-family:Consolas;font-size:10px;font-weight:700;"
             f"padding:0 7px;height:24px;}}"
-            f"QPushButton:checked{{color:{C['text0']};border-color:#444;}}"
-            f"QPushButton:hover{{background:#222;color:{C['text1']};}}"
+            f"QPushButton:checked{{background:rgba(90,167,255,30);color:{C['text0']};border-color:{C['blue']};}}"
+            f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
         )
         self._sort_btns = {}
         for key, label, tip in [
@@ -124,11 +124,11 @@ class RightPanel(QWidget):
         self.exp_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.exp_list.setStyleSheet(
             f"QListWidget{{background:{C['panel2']};border:none;outline:none;}}"
-            f"QListWidget::item{{padding:8px 14px;border-bottom:1px solid {C['border']};"
+            f"QListWidget::item{{padding:9px 14px;border-bottom:1px solid {C['border']};"
             f"font-family:'맑은 고딕';font-size:12px;color:{C['text1']};}}"
-            f"QListWidget::item:selected{{background:rgba(74,158,255,22);"
+            f"QListWidget::item:selected{{background:rgba(90,167,255,28);"
             f"border-left:2px solid {C['blue']};color:{C['text0']};}}"
-            f"QListWidget::item:hover{{background:rgba(255,255,255,5);}}"
+            f"QListWidget::item:hover{{background:rgba(255,255,255,7);}}"
         )
         # 단일 클릭은 선택만, 더블클릭은 CUE
         self.exp_list.itemClicked.connect(self._on_exp_clicked)
@@ -182,11 +182,11 @@ class RightPanel(QWidget):
         if not fp: return
         menu = QMenu(self.exp_list)
         menu.setStyleSheet(
-            "QMenu{background:#1e1e1e;color:#ccc;border:1px solid #444;"
-            "font-family:'맑은 고딕';font-size:13px;padding:4px 0;}"
+            f"QMenu{{background:{C['panel']};color:{C['text1']};border:1px solid {C['border2']};"
+            "font-family:'맑은 고딕';font-size:13px;padding:5px 0;border-radius:6px;}"
             "QMenu::item{padding:6px 20px;}"
-            "QMenu::item:selected{background:#2a3a5a;color:#fff;}"
-            "QMenu::separator{height:1px;background:#333;margin:3px 0;}"
+            f"QMenu::item:selected{{background:rgba(90,167,255,35);color:{C['text0']};}}"
+            f"QMenu::separator{{height:1px;background:{C['border']};margin:3px 0;}}"
         )
         act_cue = menu.addAction("▶   CUE  —  화면에 올리기")
         menu.addSeparator()
@@ -264,11 +264,11 @@ class RightPanel(QWidget):
         w = QWidget()
         l = QVBoxLayout(w); l.setContentsMargins(0,0,0,0); l.setSpacing(0)
 
-        tb = QWidget(); tb.setFixedHeight(44)
-        tb.setStyleSheet(f"background:#1a1a1a;border-bottom:1px solid {C['border']};")
+        tb = QWidget(); tb.setFixedHeight(46)
+        tb.setStyleSheet(f"background:{C['panel']};border-bottom:1px solid {C['border']};")
         tbl = QHBoxLayout(tb); tbl.setContentsMargins(8,4,8,4); tbl.setSpacing(6)
 
-        _inp = (f"background:#111;border:1px solid #2a2a2a;border-radius:3px;"
+        _inp = (f"background:{C['input']};border:1px solid {C['border']};border-radius:5px;"
                 f"color:{C['yellow']};font-family:Consolas;font-size:12px;padding:2px 6px;")
 
         lbl_amt = QLabel("검정%")
@@ -289,11 +289,11 @@ class RightPanel(QWidget):
         self.btn_run_black.setFixedHeight(30); self.btn_run_black.setEnabled(False)
         self.btn_run_black.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.btn_run_black.setStyleSheet(
-            f"QPushButton{{background:rgba(255,204,51,0.16);color:{C['yellow']};"
-            f"border:1px solid rgba(255,204,51,0.35);border-radius:4px;"
+            f"QPushButton{{background:rgba(255,209,102,30);color:{C['yellow']};"
+            f"border:1px solid rgba(255,209,102,95);border-radius:6px;"
             f"font-size:11px;font-weight:600;padding:0 12px;}}"
-            f"QPushButton:hover{{background:rgba(255,204,51,0.28);}}"
-            f"QPushButton:disabled{{background:#111;color:#4a4020;border-color:#242010;}}"
+            f"QPushButton:hover{{background:rgba(255,209,102,45);border-color:{C['yellow']};}}"
+            f"QPushButton:disabled{{background:#101218;color:#4a4020;border-color:#242010;}}"
         )
         self.btn_run_black.clicked.connect(self._run_black_detect)
         self.black_amount.editingFinished.connect(self._save_detection_settings)
@@ -307,24 +307,24 @@ class RightPanel(QWidget):
 
         self.black_status = QLabel("  파일을 로드하고 블랙 검출 버튼을 누르세요")
         self.black_status.setStyleSheet(
-            f"color:{C['text3']};font-size:11px;background:#111;"
+            f"color:{C['text2']};font-size:11px;background:{C['panel2']};"
             f"padding:5px 12px;border-bottom:1px solid {C['border']};")
         l.addWidget(self.black_status)
 
         hdr = QLabel("  블랙 구간 — 클릭하면 해당 프레임으로 이동")
         hdr.setStyleSheet(
             f"color:{C['text2']};font-size:11px;font-weight:600;"
-            f"background:#181818;padding:4px 12px;border-bottom:1px solid {C['border']};")
+            f"background:{C['panel']};padding:4px 12px;border-bottom:1px solid {C['border']};")
         l.addWidget(hdr)
 
         self.black_list = QListWidget()
         self.black_list.setStyleSheet(
-            f"QListWidget{{background:#0b0b0b;color:{C['text1']};}}"
-            f"QListWidget::item{{padding:7px 14px;border-bottom:1px solid #1c1c1c;"
+            f"QListWidget{{background:{C['panel2']};color:{C['text1']};}}"
+            f"QListWidget::item{{padding:8px 14px;border-bottom:1px solid {C['border']};"
             f"font-family:Consolas;font-size:11px;}}"
-            f"QListWidget::item:selected{{background:rgba(255,204,51,20);"
+            f"QListWidget::item:selected{{background:rgba(255,209,102,28);"
             f"border-left:2px solid {C['yellow']};}}"
-            f"QListWidget::item:hover{{background:rgba(255,255,255,5);}}")
+            f"QListWidget::item:hover{{background:rgba(255,255,255,7);}}")
         self.black_list.itemClicked.connect(
             lambda i: self.seek_requested.emit(i.data(Qt.ItemDataRole.UserRole) or 0))
         l.addWidget(self.black_list, 1)
@@ -502,11 +502,11 @@ class RightPanel(QWidget):
         l = QVBoxLayout(w); l.setContentsMargins(0,0,0,0); l.setSpacing(0)
 
         # ── 툴바 ──
-        tb = QWidget(); tb.setFixedHeight(44)
-        tb.setStyleSheet(f"background:#1a1a1a;border-bottom:1px solid {C['border']};")
+        tb = QWidget(); tb.setFixedHeight(46)
+        tb.setStyleSheet(f"background:{C['panel']};border-bottom:1px solid {C['border']};")
         tbl = QHBoxLayout(tb); tbl.setContentsMargins(8,4,8,4); tbl.setSpacing(6)
 
-        _inp = (f"background:#111;border:1px solid #2a2a2a;border-radius:3px;"
+        _inp = (f"background:{C['input']};border:1px solid {C['border']};border-radius:5px;"
                 f"color:{C['teal']};font-family:Consolas;font-size:12px;padding:2px 6px;")
 
         lbl_thr = QLabel("임계값")
@@ -527,11 +527,11 @@ class RightPanel(QWidget):
         self.btn_run_audio.setFixedHeight(30); self.btn_run_audio.setEnabled(False)
         self.btn_run_audio.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.btn_run_audio.setStyleSheet(
-            f"QPushButton{{background:rgba(0,188,212,0.25);color:#80DEEA;"
-            f"border:1px solid rgba(0,188,212,0.4);border-radius:4px;"
+            f"QPushButton{{background:rgba(45,212,191,35);color:{C['teal']};"
+            f"border:1px solid rgba(45,212,191,105);border-radius:6px;"
             f"font-size:11px;font-weight:600;padding:0 12px;}}"
-            f"QPushButton:hover{{background:rgba(0,188,212,0.45);}}"
-            f"QPushButton:disabled{{background:#111;color:#2a4a4a;border-color:#1a2a2a;}}"
+            f"QPushButton:hover{{background:rgba(45,212,191,52);border-color:{C['teal']};}}"
+            f"QPushButton:disabled{{background:#101218;color:#2a4a4a;border-color:#1a2a2a;}}"
         )
         self.btn_run_audio.clicked.connect(self._run_audio_analyze)
         self.spin_threshold.editingFinished.connect(self._save_detection_settings)
@@ -546,7 +546,7 @@ class RightPanel(QWidget):
         # ── 상태 라벨 ──
         self.audio_status = QLabel("  파일을 로드하고 뮤트 검출 버튼을 누르세요")
         self.audio_status.setStyleSheet(
-            f"color:{C['text3']};font-size:11px;background:#111;"
+            f"color:{C['text2']};font-size:11px;background:{C['panel2']};"
             f"padding:5px 12px;border-bottom:1px solid {C['border']};")
         l.addWidget(self.audio_status)
 
@@ -554,7 +554,7 @@ class RightPanel(QWidget):
         peak_hdr = QLabel("  빠른 뮤트 검출 모드")
         peak_hdr.setStyleSheet(
             f"color:{C['text2']};font-size:11px;font-weight:600;"
-            f"background:#181818;padding:4px 12px;border-bottom:1px solid {C['border']};")
+            f"background:{C['panel']};padding:4px 12px;border-bottom:1px solid {C['border']};")
         l.addWidget(peak_hdr)
 
         self.peak_table = QTableWidget(0, 3)
@@ -563,9 +563,9 @@ class RightPanel(QWidget):
         self.peak_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.peak_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.peak_table.setStyleSheet(
-            f"QTableWidget{{background:#111;color:{C['text1']};"
-            f"font-family:Consolas;font-size:11px;gridline-color:#1e1e1e;}}"
-            f"QHeaderView::section{{background:#1a1a1a;color:{C['text2']};"
+            f"QTableWidget{{background:{C['panel2']};color:{C['text1']};"
+            f"font-family:Consolas;font-size:11px;gridline-color:{C['border']};}}"
+            f"QHeaderView::section{{background:{C['panel']};color:{C['text2']};"
             f"font-size:10px;padding:3px;border:none;border-bottom:1px solid {C['border']};}}")
         l.addWidget(self.peak_table)
 
@@ -573,15 +573,15 @@ class RightPanel(QWidget):
         mute_hdr = QLabel("  뮤트 구간")
         mute_hdr.setStyleSheet(
             f"color:{C['text2']};font-size:11px;font-weight:600;"
-            f"background:#181818;padding:4px 12px;border-bottom:1px solid {C['border']};")
+            f"background:{C['panel']};padding:4px 12px;border-bottom:1px solid {C['border']};")
         l.addWidget(mute_hdr)
 
         self.mute_list = QListWidget()
         self.mute_list.setStyleSheet(
-            f"QListWidget{{background:#111;color:{C['text1']};}}"
-            f"QListWidget::item{{padding:7px 14px;border-bottom:1px solid #1c1c1c;"
+            f"QListWidget{{background:{C['panel2']};color:{C['text1']};}}"
+            f"QListWidget::item{{padding:8px 14px;border-bottom:1px solid {C['border']};"
             f"font-family:Consolas;font-size:11px;}}"
-            f"QListWidget::item:hover{{background:rgba(255,255,255,5);}}")
+            f"QListWidget::item:hover{{background:rgba(255,255,255,7);}}")
         self.mute_list.itemClicked.connect(
             lambda i: self.seek_requested.emit(i.data(Qt.ItemDataRole.UserRole) or 0))
         l.addWidget(self.mute_list, 1)

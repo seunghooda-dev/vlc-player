@@ -14,36 +14,38 @@ from datetime import datetime
 # ── 색상 ──────────────────────────────────────────────────
 C = {
     # 배경 계층
-    'bg'     :'#111114',   # 최상위 배경
-    'panel'  :'#18181c',   # 패널
-    'panel2' :'#0d0d10',   # 서브패널
-    'border' :'#252528',   # 구분선
-    'input'  :'#1e1e22',   # 입력창
+    'bg'     :'#0f1014',   # 최상위 배경
+    'panel'  :'#15171d',   # 패널
+    'panel2' :'#0a0b0f',   # 서브패널
+    'panel3' :'#1b1e27',   # 강조 패널
+    'border' :'#272b35',   # 구분선
+    'border2':'#3a4050',   # 활성 구분선
+    'input'  :'#181b22',   # 입력창
     # 강조색 — 단일 포인트 컬러 + 용도별
-    'blue'   :'#4A9EFF',   # 주 강조 (선택, 포커스)
-    'yellow' :'#F5C542',   # 타임코드, CUE
-    'green'  :'#3DD68C',   # 재생, 완료
-    'orange' :'#FF8C42',   # FPS, 경고
+    'blue'   :'#5AA7FF',   # 주 강조 (선택, 포커스)
+    'yellow' :'#FFD166',   # 타임코드, CUE
+    'green'  :'#4ADE80',   # 재생, 완료
+    'orange' :'#FB923C',   # FPS, 경고
     'teal'   :'#2DD4BF',   # SAFE, 채널
-    'red'    :'#FF5252',   # 에러
-    'purple' :'#A78BFA',   # STT
+    'red'    :'#FF5C7A',   # 에러
+    'purple' :'#B794F4',   # STT
     # 텍스트 계층
-    'text0'  :'#E8E8EC',   # 주 텍스트
-    'text1'  :'#8888A0',   # 보조 텍스트
-    'text2'  :'#55556A',   # 설명 텍스트
-    'text3'  :'#33333F',   # 비활성
+    'text0'  :'#F3F4F8',   # 주 텍스트
+    'text1'  :'#A7ADBE',   # 보조 텍스트
+    'text2'  :'#6F778B',   # 설명 텍스트
+    'text3'  :'#3F4555',   # 비활성
 }
 
 STYLE = f"""
-/* ── 툴팁: 연노란색 반투명 ── */
+/* ── 툴팁 ── */
 QToolTip {{
-    background-color: #1e1e2e;
-    color: #e0e0e0;
-    border: 1px solid #4a4a6a;
-    padding: 6px 12px;
+    background-color: #20242d;
+    color: {C['text0']};
+    border: 1px solid {C['border2']};
+    padding: 7px 10px;
     font-family: '맑은 고딕';
     font-size: 12px;
-    border-radius: 5px;
+    border-radius: 6px;
 }}
 
 /* ── 기본 ── */
@@ -54,26 +56,25 @@ QMainWindow, QWidget {{
     font-size: 13px;
 }}
 QSplitter::handle {{
-    background-color: #1a1a1a;
+    background-color: {C['border']};
     width: 1px;
 }}
 
 /* ── 상태바 ── */
 QStatusBar {{
-    background-color: #141414;
+    background-color: #0b0c10;
     color: {C['text2']};
     font-family: Consolas;
     font-size: 11px;
-    border-top: 1px solid #1a1a1a;
+    border-top: 1px solid {C['border']};
     padding: 3px 12px;
-    letter-spacing: 0.5px;
 }}
 
 /* ── 탭 ── */
 QTabWidget::pane {{
     border: none;
     background-color: {C['panel2']};
-    border-top: 1px solid #1a1a1a;
+    border-top: 1px solid {C['border']};
 }}
 QTabBar {{
     background: transparent;
@@ -81,27 +82,26 @@ QTabBar {{
 QTabBar::tab {{
     background-color: transparent;
     color: {C['text2']};
-    padding: 9px 20px;
+    padding: 10px 18px;
     border: none;
     border-bottom: 2px solid transparent;
     font-size: 12px;
     font-weight: 500;
-    letter-spacing: 0.3px;
     margin-right: 2px;
 }}
 QTabBar::tab:selected {{
     color: {C['text0']};
     border-bottom: 2px solid {C['blue']};
-    background-color: rgba(74, 158, 255, 12);
+    background-color: rgba(90, 167, 255, 22);
 }}
 QTabBar::tab:hover {{
-    color: {C['text1']};
-    background-color: rgba(255,255,255,6);
+    color: {C['text0']};
+    background-color: rgba(255,255,255,7);
 }}
 
 /* ── 리스트 ── */
 QListWidget {{
-    background-color: #1c1c1c;
+    background-color: {C['panel2']};
     border: none;
     color: {C['text0']};
     outline: none;
@@ -110,76 +110,77 @@ QListWidget {{
 }}
 QListWidget::item {{
     padding: 8px 12px;
-    border-bottom: 1px solid #242424;
+    border-bottom: 1px solid {C['border']};
 }}
 QListWidget::item:selected {{
-    background-color: rgba(60, 60, 60, 80);
+    background-color: rgba(90, 167, 255, 26);
+    color: {C['text0']};
 }}
 QListWidget::item:hover {{
-    background-color: rgba(255,255,255,5);
+    background-color: rgba(255,255,255,7);
 }}
 
 /* ── 입력창 ── */
 QLineEdit {{
-    background-color: #1c1c1c;
-    border: 1px solid #2e2e2e;
-    border-radius: 4px;
+    background-color: {C['input']};
+    border: 1px solid {C['border']};
+    border-radius: 5px;
     color: {C['text0']};
     padding: 6px 10px;
     font-family: '맑은 고딕';
     font-size: 12px;
-    selection-background-color: rgba(74,158,255,60);
+    selection-background-color: rgba(90,167,255,70);
 }}
 QLineEdit:focus {{
-    border: 1px solid rgba(74,158,255,120);
-    background-color: #202020;
+    border: 1px solid rgba(90,167,255,140);
+    background-color: #1f2430;
 }}
 
 /* ── 버튼 기본 ── */
 QPushButton {{
-    background-color: #383838;
+    background-color: {C['panel3']};
     color: {C['text0']};
-    border: 1px solid #282828;
-    border-radius: 4px;
+    border: 1px solid {C['border']};
+    border-radius: 6px;
     padding: 6px 14px;
     font-size: 12px;
     font-weight: 500;
     min-height: 28px;
 }}
 QPushButton:hover {{
-    background-color: #424242;
-    border-color: #3a3a3a;
+    background-color: #222734;
+    border-color: {C['border2']};
 }}
 QPushButton:pressed {{
-    background-color: #2e2e2e;
+    background-color: #12151c;
     padding-top: 7px;
 }}
 QPushButton:disabled {{
-    color: #3a3a3a;
-    background-color: #242424;
-    border-color: #222;
+    color: {C['text3']};
+    background-color: #101218;
+    border-color: #1c2029;
 }}
 
 /* ── 슬라이더 ── */
 QSlider::groove:horizontal {{
-    background: #1e1e1e;
+    background: #242936;
     height: 4px;
     border-radius: 2px;
 }}
 QSlider::sub-page:horizontal {{
-    background: qlineargradient(x1:0,x2:1,stop:0 {C['blue']},stop:1 #00e5ff);
+    background: qlineargradient(x1:0,x2:1,stop:0 {C['blue']},stop:1 {C['teal']});
     border-radius: 2px;
 }}
 QSlider::handle:horizontal {{
-    background: #e0e0e0;
-    border: none;
+    background: {C['text0']};
+    border: 1px solid rgba(90,167,255,140);
     width: 14px;
     height: 14px;
     border-radius: 7px;
     margin: -5px 0;
 }}
 QSlider::handle:horizontal:hover {{
-    background: white;
+    background: #ffffff;
     width: 16px;
     height: 16px;
     border-radius: 8px;
@@ -188,33 +189,32 @@ QSlider::handle:horizontal:hover {{
 
 /* ── 테이블 ── */
 QTableWidget {{
-    background-color: #1c1c1c;
+    background-color: {C['panel2']};
     border: none;
     color: {C['text0']};
-    gridline-color: #242424;
+    gridline-color: {C['border']};
     font-family: '맑은 고딕';
     font-size: 12px;
     outline: none;
 }}
 QTableWidget::item {{
     padding: 6px 10px;
-    border-bottom: 1px solid #242424;
+    border-bottom: 1px solid {C['border']};
 }}
 QTableWidget::item:selected {{
-    background-color: rgba(74,158,255,25);
+    background-color: rgba(90,167,255,28);
     color: {C['text0']};
 }}
 QHeaderView::section {{
-    background-color: #1a1a1a;
+    background-color: {C['panel']};
     color: {C['text2']};
     border: none;
-    border-right: 1px solid #242424;
-    border-bottom: 1px solid #242424;
+    border-right: 1px solid {C['border']};
+    border-bottom: 1px solid {C['border']};
     padding: 6px 10px;
     font-family: '맑은 고딕';
     font-size: 11px;
     font-weight: 600;
-    letter-spacing: 0.5px;
 }}
 
 /* ── 스크롤바 ── */
@@ -224,12 +224,12 @@ QScrollBar:vertical {{
     margin: 0;
 }}
 QScrollBar::handle:vertical {{
-    background: rgba(255,255,255,18);
+    background: rgba(167,173,190,45);
     border-radius: 2px;
     min-height: 30px;
 }}
 QScrollBar::handle:vertical:hover {{
-    background: rgba(255,255,255,35);
+    background: rgba(167,173,190,80);
 }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
 QScrollBar:horizontal {{
@@ -237,14 +237,14 @@ QScrollBar:horizontal {{
     height: 4px;
 }}
 QScrollBar::handle:horizontal {{
-    background: rgba(255,255,255,18);
+    background: rgba(167,173,190,45);
     border-radius: 2px;
 }}
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
 
 /* ── 프로그레스바 ── */
 QProgressBar {{
-    background: #1e1e1e;
+    background: #242936;
     border: none;
     border-radius: 2px;
     text-align: center;
@@ -252,7 +252,7 @@ QProgressBar {{
     font-size: 10px;
 }}
 QProgressBar::chunk {{
-    background: qlineargradient(x1:0,x2:1,stop:0 {C['blue']},stop:1 #00e5ff);
+    background: qlineargradient(x1:0,x2:1,stop:0 {C['blue']},stop:1 {C['teal']});
     border-radius: 2px;
 }}
 """

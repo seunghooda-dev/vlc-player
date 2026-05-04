@@ -41,14 +41,14 @@ class MainWindow(QMainWindow):
         root.setSpacing(0)
 
         # 타이틀 바
-        tb = QWidget(); tb.setFixedHeight(36)
-        tb.setStyleSheet(f"background:#161616;border-bottom:1px solid #0d0d0d;")
-        tbl = QHBoxLayout(tb); tbl.setContentsMargins(8,0,8,0); tbl.setSpacing(6)
+        tb = QWidget(); tb.setFixedHeight(38)
+        tb.setStyleSheet(f"background:#101218;border-bottom:1px solid {C['border']};")
+        tbl = QHBoxLayout(tb); tbl.setContentsMargins(10,0,10,0); tbl.setSpacing(6)
         for col in ['#FF5F57','#FFBD2E','#28C941']:
             d=QLabel('⬤'); d.setStyleSheet(f"color:{col};font-size:11px;"); tbl.addWidget(d)
         tbl.addSpacing(8)
         ttl = QLabel("ARCHIVE  TAGGER")
-        ttl.setStyleSheet(f"color:{C['text2']};font-family:Consolas;font-size:16px;letter-spacing:1px;")
+        ttl.setStyleSheet(f"color:{C['text1']};font-family:Consolas;font-size:15px;font-weight:700;")
         ttl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tbl.addWidget(ttl,1)
         log_btn = QPushButton("LOG")
@@ -56,14 +56,14 @@ class MainWindow(QMainWindow):
         log_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         log_btn.setToolTip("최근 오류 로그 보기")
         log_btn.setStyleSheet(
-            "QPushButton{background:#1d1d22;color:#666;border:1px solid #2a2a2f;"
-            "border-radius:3px;font-family:Consolas;font-size:10px;font-weight:700;"
+            f"QPushButton{{background:{C['panel3']};color:{C['text2']};border:1px solid {C['border']};"
+            "border-radius:5px;font-family:Consolas;font-size:10px;font-weight:700;"
             "padding:0 8px;}"
-            "QPushButton:hover{background:#24242a;color:#cccccc;border-color:#444;}"
+            f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
         )
         log_btn.clicked.connect(self._show_error_log)
         tbl.addWidget(log_btn)
-        ver = QLabel("MXF  v2.0"); ver.setStyleSheet("color:#2e2e2e;font-family:Consolas;font-size:10px;letter-spacing:1px;")
+        ver = QLabel("MXF  v2.0"); ver.setStyleSheet(f"color:{C['text3']};font-family:Consolas;font-size:10px;")
         tbl.addWidget(ver)
         root.addWidget(tb)
 
@@ -155,8 +155,8 @@ class MainWindow(QMainWindow):
         text.setReadOnly(True)
         text.setPlainText(self._recent_error_log_text())
         text.setStyleSheet(
-            "QPlainTextEdit{background:#0d0d10;color:#b8b8c8;border:1px solid #2a2a2f;"
-            "font-family:Consolas;font-size:11px;padding:8px;selection-background-color:#264f78;}"
+            f"QPlainTextEdit{{background:{C['panel2']};color:{C['text1']};border:1px solid {C['border']};"
+            f"border-radius:6px;font-family:Consolas;font-size:11px;padding:10px;selection-background-color:#264f78;}}"
         )
         lay.addWidget(text, 1)
 
@@ -170,9 +170,9 @@ class MainWindow(QMainWindow):
             btn.setFixedHeight(30)
             btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             btn.setStyleSheet(
-                "QPushButton{background:#222;color:#aaa;border:1px solid #333;"
-                "border-radius:4px;font-size:12px;padding:0 14px;}"
-                "QPushButton:hover{background:#2a2a2a;color:#eee;}"
+                f"QPushButton{{background:{C['panel3']};color:{C['text1']};border:1px solid {C['border']};"
+                "border-radius:6px;font-size:12px;padding:0 14px;}"
+                f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
             )
         refresh_btn.clicked.connect(lambda: text.setPlainText(self._recent_error_log_text()))
         close_btn.clicked.connect(dlg.accept)
@@ -228,7 +228,7 @@ class MainWindow(QMainWindow):
             act_lbl.setStyleSheet(f"color:{C['text1']};font-size:12px;background:transparent;")
             key_lbl = QLabel(key)
             key_lbl.setStyleSheet(
-                "background:#2a2a2a;color:#cccccc;font-family:Consolas;"
+                f"background:{C['panel3']};color:{C['text0']};font-family:Consolas;"
                 "font-size:12px;padding:2px 10px;border-radius:4px;"
                 f"border:1px solid {C['border']};")
             key_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -238,9 +238,9 @@ class MainWindow(QMainWindow):
         close_btn = QPushButton('닫기')
         close_btn.setFixedHeight(34)
         close_btn.setStyleSheet(
-            "QPushButton{background:#222;color:#aaa;border:1px solid #333;"
-            "border-radius:4px;font-size:12px;}"
-            "QPushButton:hover{background:#2a2a2a;color:#eee;}"
+            f"QPushButton{{background:{C['panel3']};color:{C['text1']};border:1px solid {C['border']};"
+            "border-radius:6px;font-size:12px;}"
+            f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
         )
         close_btn.clicked.connect(dlg.accept)
         lay.addWidget(close_btn)
