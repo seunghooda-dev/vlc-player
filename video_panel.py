@@ -27,7 +27,7 @@ from constants  import (
     C, FFMPEG, FFPROBE, FFPLAY, VLC_DIR, VIDEO_EXTS, TMP_DIR, BASE_DIR, log,
     register_child_process, terminate_child_process, load_settings, save_settings,
 )
-from db_models  import probe, save_clip, sec_to_tc
+from db_models  import probe, save_clip, frames_to_tc, tc_to_frames
 from threads    import TranscodeThread
 from meters     import SideMeter, SafeAreaItem, LoudnessMeter, MeterController, mk_btn, mk_label, separator
 
@@ -1061,43 +1061,13 @@ class VideoPanel(QWidget):
         return int(round(max(0, int(frame)) / self._media_fps() * 1000))
 
     def _parse_tc_offset_frames(self, tc):
-        if not tc:
-            return int(round(float(self.tc_offset or 0.0) * self._media_fps()))
-        try:
-            parts = str(tc).replace(';', ':').split(':')
-            if len(parts) != 4:
-                return 0
-            h, m, s, f = [int(x) for x in parts]
-            nom = self._nominal_fps()
-            total_f = ((h * 3600 + m * 60 + s) * nom) + f
-            drop = self._drop_frames_per_minute()
-            if drop:
-                total_minutes = h * 60 + m
-                total_f -= drop * (total_minutes - total_minutes // 10)
-            return max(0, total_f)
-        except Exception as e:
-            log.debug(f'tc offset frame parse: {e}')
-            return 0
+        if tc:
+            return tc_to_frames(tc, self._media_fps(), self._drop_frame_enabled())
+        return int(round(float(self.tc_offset or 0.0) * self._media_fps()))
 
     def _frames_to_tc(self, frame, include_offset=False):
-        nom = self._nominal_fps()
-        total_f = max(0, int(frame))
-        if include_offset:
-            total_f += max(0, int(getattr(self, '_tc_offset_frames', 0)))
-        drop = self._drop_frames_per_minute()
-        if drop:
-            frames_per_10min = nom * 60 * 10 - drop * 9
-            frames_per_min = nom * 60 - drop
-            ten_min_blocks = total_f // frames_per_10min
-            remainder = total_f % frames_per_10min
-            dropped_minutes = max(0, (remainder - drop) // frames_per_min)
-            total_f += drop * (9 * ten_min_blocks + dropped_minutes)
-        ff = total_f % nom
-        ss = (total_f // nom) % 60
-        mm = (total_f // nom // 60) % 60
-        hh = total_f // nom // 3600
-        sep = ';' if drop else ':'
-        return f"{hh:02d}:{mm:02d}:{ss:02d}{sep}{ff:02d}"
+        offset = getattr(self, '_tc_offset_frames', 0) if include_offset else 0
+        return frames_to_tc(frame, self._media_fps(), self._drop_frame_enabled(), offset)
 
     def _set_display_frame(self, frame, update_slider=True):
         dur_frames = self._duration_frames()

@@ -12,7 +12,7 @@ from constants import (
     FFMPEG, FFPROBE, TMP_DIR, log,
     register_child_process, unregister_child_process, terminate_child_process,
 )
-from db_models import sec_to_tc
+from db_models import sec_to_tc, frames_to_tc
 
 class TranscodeThread(QThread):
     ready    = pyqtSignal(str)   # 프리뷰 준비
@@ -192,14 +192,19 @@ class AudioAnalyzeThread(QThread):
     finished = pyqtSignal(dict)   # {'mutes': [...], 'peaks': {...}, 'ch_count': int}
     error    = pyqtSignal(str)
 
-    def __init__(self, fp, fps, noise_threshold=-50, min_duration=2.0):
+    def __init__(self, fp, fps, noise_threshold=-50, min_duration=2.0, df=None, tc_offset_frames=0):
         super().__init__()
         self.fp              = fp
         self.fps             = fps
+        self.df              = df
+        self.tc_offset_frames = int(tc_offset_frames or 0)
         self.noise_threshold = noise_threshold   # dB (-50 기본)
         self.min_duration    = min_duration      # 초
         self._abort          = False
         self._proc           = None
+
+    def _tc(self, sec):
+        return sec_to_tc(sec, self.fps, self.df, self.tc_offset_frames)
 
     def abort(self):
         self._abort = True
@@ -322,7 +327,7 @@ class AudioAnalyzeThread(QThread):
                     pos_sec = processed_windows * window_sec
                     if pos_sec >= next_emit_sec:
                         self.progress.emit(
-                            f'{source_ch_count}ch 파일 — {basis} 100ms 레벨 인덱스 생성 중... {sec_to_tc(pos_sec, self.fps)}')
+                            f'{source_ch_count}ch 파일 — {basis} 100ms 레벨 인덱스 생성 중... {self._tc(pos_sec)}')
                         next_emit_sec += 30.0
 
             if len(buf) >= ch_count * 2:
@@ -374,8 +379,8 @@ class AudioAnalyzeThread(QThread):
             'start'   : start_s,
             'end'     : end_s,
             'duration': dur_s,
-            'tc_start': sec_to_tc(start_s, self.fps),
-            'tc_end'  : sec_to_tc(end_s, self.fps),
+            'tc_start': self._tc(start_s),
+            'tc_end'  : self._tc(end_s),
         })
 
     def run(self):
@@ -452,14 +457,22 @@ class BlackDetectThread(QThread):
     finished = pyqtSignal(list)   # [{'start': float, 'end': float, 'frames': int, ...}]
     error    = pyqtSignal(str)
 
-    def __init__(self, fp, fps, amount=98, threshold=32):
+    def __init__(self, fp, fps, amount=98, threshold=32, df=None, tc_offset_frames=0):
         super().__init__()
         self.fp        = fp
         self.fps       = fps or 29.97
+        self.df        = df
+        self.tc_offset_frames = int(tc_offset_frames or 0)
         self.amount    = int(amount)
         self.threshold = int(threshold)
         self._abort    = False
         self._proc     = None
+
+    def _tc_from_frame(self, frame):
+        return frames_to_tc(frame, self.fps, self.df, self.tc_offset_frames)
+
+    def _tc_from_sec(self, sec):
+        return sec_to_tc(sec, self.fps, self.df, self.tc_offset_frames)
 
     def abort(self):
         self._abort = True
@@ -481,8 +494,8 @@ class BlackDetectThread(QThread):
             'frames'    : frames,
             'start_frame': int(seg['start_frame']),
             'end_frame' : int(seg['end_frame']),
-            'tc_start'  : sec_to_tc(start, self.fps),
-            'tc_end'    : sec_to_tc(end_frame_time, self.fps),
+            'tc_start'  : self._tc_from_frame(seg['start_frame']),
+            'tc_end'    : self._tc_from_frame(seg['end_frame']),
         })
 
     def run(self):
@@ -543,7 +556,7 @@ class BlackDetectThread(QThread):
                         }
 
                 if hit_count % 200 == 0:
-                    self.progress.emit(f'블랙 프레임 {hit_count}개 검출 중... 최근 {sec_to_tc(t, self.fps)} ({pblack}%)')
+                    self.progress.emit(f'블랙 프레임 {hit_count}개 검출 중... 최근 {self._tc_from_sec(t)} ({pblack}%)')
 
             if seg is not None:
                 self._flush_segment(ranges, seg)

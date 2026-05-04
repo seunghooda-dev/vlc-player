@@ -75,30 +75,71 @@ def is_df_fps(fps):
     # DF 프레임레이트: 29.97, 59.94, 23.976 등 소수점 fps
     return abs(fps - round(fps)) > 0.01
 
-def sec_to_tc(sec, fps=29.97, df=None):
-    # Player display timecode. DF uses SMPTE drop-frame numbering for 29.97/59.94.
-    if sec is None or sec < 0: sec = 0.0
-    nom = round(fps)  # 명목 FPS: 29.97->30, 59.94->60
+def _nominal_fps(fps):
+    try:
+        return max(1, int(round(float(fps or 29.97))))
+    except Exception:
+        return 30
+
+def _is_drop_frame_tc(fps, df=None):
+    nom = _nominal_fps(fps)
     if df is None:
-        df = nom in (30, 60) and is_df_fps(fps)
-    if df and nom in (30, 60):
-        # Drop Frame 보정 (SMPTE 12M)
-        # 29.97DF: 매분 2프레임 드롭, 10분 단위 제외
-        # 59.94DF: 매분 4프레임 드롭, 10분 단위 제외
-        drop = 2 if nom == 30 else 4
-        total_f = round(sec * fps)
-        d  = total_f // (nom * 600 - drop * 9)
-        m1 = total_f %  (nom * 600 - drop * 9)
-        m  = max(0, (m1 - drop) // (nom * 60 - drop))
-        total_f += drop * (9 * d + m)
-    else:
-        total_f = round(sec * fps)
+        df = nom in (30, 60) and is_df_fps(float(fps or 29.97))
+    return bool(df) and nom in (30, 60)
+
+def _drop_frames_per_minute(fps, df=None):
+    if not _is_drop_frame_tc(fps, df):
+        return 0
+    return 2 if _nominal_fps(fps) == 30 else 4
+
+def tc_to_frames(tc, fps=29.97, df=None):
+    """Convert a source timecode label to real frame count."""
+    if not tc:
+        return 0
+    try:
+        parts = str(tc).replace(';', ':').split(':')
+        if len(parts) != 4:
+            return 0
+        h, m, s, f = [int(x) for x in parts]
+        nom = _nominal_fps(fps)
+        total_f = ((h * 3600 + m * 60 + s) * nom) + f
+        drop = _drop_frames_per_minute(fps, df)
+        if drop:
+            total_minutes = h * 60 + m
+            total_f -= drop * (total_minutes - total_minutes // 10)
+        return max(0, total_f)
+    except Exception as e:
+        log.debug(f'tc_to_frames: {e}')
+        return 0
+
+def frames_to_tc(frame, fps=29.97, df=None, offset_frames=0):
+    """Convert a real frame count to display TC, including optional source TC offset."""
+    nom = _nominal_fps(fps)
+    total_f = max(0, int(round(frame or 0))) + max(0, int(offset_frames or 0))
+    drop = _drop_frames_per_minute(fps, df)
+    if drop:
+        frames_per_10min = nom * 60 * 10 - drop * 9
+        frames_per_min = nom * 60 - drop
+        ten_min_blocks = total_f // frames_per_10min
+        remainder = total_f % frames_per_10min
+        dropped_minutes = max(0, (remainder - drop) // frames_per_min)
+        total_f += drop * (9 * ten_min_blocks + dropped_minutes)
     ff = total_f % nom
     ss = (total_f // nom) % 60
     mm = (total_f // nom // 60) % 60
     hh =  total_f // nom // 3600
-    sep = ';' if df else ':'
+    sep = ';' if drop else ':'
     return f"{hh:02d}:{mm:02d}:{ss:02d}{sep}{ff:02d}"
+
+def sec_to_tc(sec, fps=29.97, df=None, offset_frames=0):
+    # Player display timecode. DF uses SMPTE drop-frame numbering for 29.97/59.94.
+    if sec is None or sec < 0:
+        sec = 0.0
+    try:
+        frame = round(float(sec) * float(fps or 29.97))
+    except Exception:
+        frame = 0
+    return frames_to_tc(frame, fps, df, offset_frames)
 
 def sec_fmt(s):
     return f"{int(s//60):02d}:{int(s%60):02d}"

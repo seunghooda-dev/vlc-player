@@ -482,7 +482,14 @@ class RightPanel(QWidget):
         except Exception as e:
             log.debug(f'black ai state: {e}')
 
-        self._black_thread = BlackDetectThread(self.vp.cur_file, self.vp.fps, amount, threshold)
+        self._black_thread = BlackDetectThread(
+            self.vp.cur_file,
+            self.vp.fps,
+            amount,
+            threshold,
+            getattr(self.vp, 'df', None),
+            getattr(self.vp, '_tc_offset_frames', 0),
+        )
         self._black_thread.progress.connect(lambda m: self.black_status.setText(f"  ⏳ {m}"))
         self._black_thread.finished.connect(self._on_black_done)
         self._black_thread.error.connect(self._on_black_error)
@@ -678,7 +685,14 @@ class RightPanel(QWidget):
         except Exception as e:
             log.debug(f'audio ai state: {e}')
 
-        self._audio_thread = AudioAnalyzeThread(self.vp.cur_file, self.vp.fps, thr, dur)
+        self._audio_thread = AudioAnalyzeThread(
+            self.vp.cur_file,
+            self.vp.fps,
+            thr,
+            dur,
+            getattr(self.vp, 'df', None),
+            getattr(self.vp, '_tc_offset_frames', 0),
+        )
         self._audio_thread.progress.connect(lambda m: self.audio_status.setText(f"  ⏳ {m}"))
         self._audio_thread.finished.connect(self._on_audio_done)
         self._audio_thread.error.connect(self._on_audio_error)
