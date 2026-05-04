@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui  import QColor
+from PyQt6.QtMultimedia import QMediaPlayer
 
 from constants   import C, VIDEO_EXTS, BASE_DIR, log
 from db_models   import sec_to_tc
@@ -26,6 +27,9 @@ class RightPanel(QWidget):
         super().__init__()
         self.vp = video_panel
         self.cur_id = None
+        self._analysis_active = None
+        self._analysis_paused_playback = False
+        self._analysis_paused_meters = False
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0,0,0,0)
         layout.setSpacing(0)
@@ -330,12 +334,85 @@ class RightPanel(QWidget):
             self.black_list.clear()
         except Exception as e: log.warning(f'black tab reset: {e}')
 
+    def _analysis_thread_running(self):
+        for name in ('_black_thread', '_audio_thread'):
+            thread = getattr(self, name, None)
+            try:
+                if thread and thread.isRunning():
+                    return True
+            except Exception:
+                pass
+        return False
+
+    def _set_transport_enabled(self, enabled):
+        for name in (
+            'btn_folder', 'btn_m1', 'btn_gos', 'btn_rew', 'btn_play',
+            'btn_stop', 'btn_fwd', 'btn_goe', 'btn_p1', 'btn_cue',
+        ):
+            btn = getattr(self.vp, name, None)
+            if btn:
+                try:
+                    btn.setEnabled(enabled)
+                except Exception:
+                    pass
+
+    def _begin_analysis_mode(self, kind, label):
+        if self._analysis_thread_running():
+            return False
+        self._analysis_active = kind
+        self._analysis_paused_playback = False
+        self._analysis_paused_meters = False
+        try:
+            if self.vp.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+                self._analysis_paused_playback = True
+                self.vp.player.pause()
+            if hasattr(self.vp, '_cancel_audio_mix'):
+                self.vp._cancel_audio_mix()
+            if hasattr(self.vp, 'meter_ctrl'):
+                self.vp.meter_ctrl.set_playing(False)
+                self._analysis_paused_meters = True
+            self._set_transport_enabled(False)
+            if hasattr(self.vp, 'status_changed'):
+                self.vp.status_changed.emit(f"  ⏸ {label} 중 — 재생/오디오 미터 일시정지")
+        except Exception as e:
+            log.debug(f'analysis mode begin: {e}')
+        return True
+
+    def _finish_analysis_mode(self):
+        self._set_transport_enabled(True)
+        if self.vp.cur_file:
+            try:
+                self.btn_run_black.setEnabled(True)
+                self.btn_run_audio.setEnabled(True)
+                self.vp.btn_black.setEnabled(True)
+                self.vp.btn_audio.setEnabled(True)
+            except Exception as e:
+                log.debug(f'analysis buttons restore: {e}')
+        try:
+            if self._analysis_paused_meters and self.vp.cur_file:
+                ch_count = self.vp.cur_info.get('channels', 2)
+                self.vp.meter_ctrl.start_file(
+                    self.vp.cur_file, ch_count, self.vp.player, (1, 2),
+                    self.vp.cur_info.get('audio_stream_count', 0))
+            if self._analysis_paused_playback and hasattr(self.vp, 'status_changed'):
+                self.vp.status_changed.emit("  ⏸ 분석 완료 — 재생 버튼을 눌러 이어서 확인하세요")
+        except Exception as e:
+            log.debug(f'analysis mode finish: {e}')
+        finally:
+            self._analysis_active = None
+            self._analysis_paused_playback = False
+            self._analysis_paused_meters = False
+
     def _run_black_detect(self):
         if not self.vp.cur_file:
             return
         if getattr(self, '_black_thread', None) and self._black_thread.isRunning():
             self.tabs.setCurrentWidget(self.black_list.parentWidget())
             self.black_status.setText("  ⏳ 블랙 검출이 이미 진행 중입니다")
+            return
+        if not self._begin_analysis_mode('black', '블랙 검출'):
+            self.tabs.setCurrentWidget(self.black_list.parentWidget())
+            self.black_status.setText("  ⏳ 다른 분석이 진행 중입니다")
             return
         try:
             amount = int(float(self.black_amount.text()))
@@ -344,6 +421,7 @@ class RightPanel(QWidget):
             threshold = max(0, min(255, threshold))
         except ValueError:
             self.black_status.setText("  ⚠ 검정%/밝기 값을 숫자로 입력하세요")
+            self._finish_analysis_mode()
             return
 
         self.tabs.setCurrentWidget(self.black_list.parentWidget())
@@ -387,6 +465,7 @@ class RightPanel(QWidget):
                 item.setForeground(QColor(C['yellow'] if frames == 1 else C['orange']))
                 self.black_list.addItem(item)
         self.black_status.setText(f"  ✓ 완료 — 블랙 {len(ranges)}구간")
+        self._finish_analysis_mode()
 
     def _on_black_error(self, err):
         self.black_status.setText(f"  ⚠ 오류: {err}")
@@ -397,6 +476,7 @@ class RightPanel(QWidget):
             self.vp.ai_lbl.setText(f"블랙 오류: {err}")
         except Exception as e:
             log.debug(f'black ai error state: {e}')
+        self._finish_analysis_mode()
         log.error(f'BlackDetect UI error: {err}')
 
 
@@ -509,6 +589,10 @@ class RightPanel(QWidget):
             dur = float(self.spin_duration.text())
         except ValueError:
             self.audio_status.setText("  ⚠ 임계값/최소지속시간을 숫자로 입력하세요"); return
+        if not self._begin_analysis_mode('audio', '뮤트 검출'):
+            self.tabs.setCurrentWidget(self.mute_list.parentWidget())
+            self.audio_status.setText("  ⏳ 다른 분석이 진행 중입니다")
+            return
 
         self.btn_run_audio.setEnabled(False)
         self.mute_list.clear(); self.peak_table.setRowCount(0)
@@ -523,7 +607,6 @@ class RightPanel(QWidget):
             self.vp.btn_audio.setEnabled(False)
             self.vp.prog_ai.show()
             self.vp.ai_lbl.setText(f"🔇 1/2CH 레벨 인덱스 확인 중...")
-            self._pause_meters_for_audio_scan()
             self._start_audio_elapsed_timer()
         except Exception as e:
             log.debug(f'audio ai state: {e}')
@@ -576,10 +659,10 @@ class RightPanel(QWidget):
             self.vp.btn_audio.setEnabled(True)
             self.vp.prog_ai.hide()
             self.vp.ai_lbl.setText(f"✓ 뮤트 검출 완료 — {len(mutes)}구간")
-            self._resume_meters_after_audio_scan()
             self._finish_audio_elapsed_timer()
         except Exception as e:
             log.debug(f'audio ai done state: {e}')
+        self._finish_analysis_mode()
 
     def _on_audio_error(self, err):
         self.audio_status.setText(f"  ⚠ 오류: {err}")
@@ -588,34 +671,11 @@ class RightPanel(QWidget):
             self.vp.btn_audio.setEnabled(True)
             self.vp.prog_ai.hide()
             self.vp.ai_lbl.setText(f"뮤트 오류: {err}")
-            self._resume_meters_after_audio_scan()
             self._finish_audio_elapsed_timer(prefix='MUTE ERR')
         except Exception as e:
             log.debug(f'audio ai error state: {e}')
+        self._finish_analysis_mode()
         log.error(f'AudioAnalyze UI error: {err}')
-
-    def _pause_meters_for_audio_scan(self):
-        self._meter_paused_for_audio = False
-        try:
-            if hasattr(self.vp, 'meter_ctrl'):
-                self.vp.meter_ctrl.set_playing(False)
-                self._meter_paused_for_audio = True
-        except Exception as e:
-            log.debug(f'audio scan meter pause: {e}')
-
-    def _resume_meters_after_audio_scan(self):
-        if not getattr(self, '_meter_paused_for_audio', False):
-            return
-        try:
-            if self.vp.cur_file and hasattr(self.vp, 'meter_ctrl'):
-                ch_count = self.vp.cur_info.get('channels', 2)
-                self.vp.meter_ctrl.start_file(
-                    self.vp.cur_file, ch_count, self.vp.player, (1, 2),
-                    self.vp.cur_info.get('audio_stream_count', 0))
-        except Exception as e:
-            log.debug(f'audio scan meter resume: {e}')
-        finally:
-            self._meter_paused_for_audio = False
 
     def _format_elapsed(self, elapsed):
         elapsed = max(0, int(elapsed))
