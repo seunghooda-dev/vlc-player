@@ -19,8 +19,8 @@ from video_panel  import VideoPanel
 from right_panel  import RightPanel
 
 
-APP_WINDOW_TITLE = "Archive Tagger — MXF Player v2.0"
-APP_MUTEX_NAME = r"Local\ArchiveTagger_MXF_Player_v2_SingleInstance"
+APP_WINDOW_TITLE = "MXF QC Player V.1.0"
+APP_MUTEX_NAME = r"Local\MXF_QC_Player_V1_SingleInstance"
 _single_instance_handle = None
 
 
@@ -108,7 +108,7 @@ class MainWindow(QMainWindow):
         for col in ['#FF5F57','#FFBD2E','#28C941']:
             d=QLabel('⬤'); d.setStyleSheet(f"color:{col};font-size:11px;"); tbl.addWidget(d)
         tbl.addSpacing(8)
-        ttl = QLabel("ARCHIVE  TAGGER")
+        ttl = QLabel("MXF  QC  PLAYER")
         ttl.setStyleSheet(f"color:{C['text1']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:15px;font-weight:700;")
         ttl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tbl.addWidget(ttl,1)
@@ -124,7 +124,7 @@ class MainWindow(QMainWindow):
         )
         log_btn.clicked.connect(self._show_error_log)
         tbl.addWidget(log_btn)
-        ver = QLabel("MXF  v2.0"); ver.setStyleSheet(f"color:{C['text3']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;")
+        ver = QLabel("V.1.0"); ver.setStyleSheet(f"color:{C['text3']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;")
         tbl.addWidget(ver)
         root.addWidget(tb)
 
@@ -153,7 +153,7 @@ class MainWindow(QMainWindow):
 
         # 상태 바
         self.vp.status_changed.connect(self.statusBar().showMessage)
-        self.statusBar().showMessage("  ● READY   |   Archive Tagger v2.0   |   GPU: NVIDIA")
+        self.statusBar().showMessage("  ● READY   |   MXF QC Player V.1.0   |   GPU: NVIDIA")
 
         self.vp.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.vp.setFocus()
@@ -163,7 +163,7 @@ class MainWindow(QMainWindow):
             level = log.info if item.get('ok') else log.warning
             level(f"runtime {item.get('name')}: {item.get('message')}")
         if runtime.get('ok'):
-            msg = "  ● READY   |   VLC / FFmpeg / FFplay OK   |   Archive Tagger v2.0"
+            msg = "  ● READY   |   VLC / FFmpeg / FFplay OK   |   MXF QC Player V.1.0"
             self.statusBar().showMessage(msg)
             try:
                 self.vp.ai_lbl.setText("✓ 실행 환경 확인 완료 — VLC / FFmpeg / FFplay OK")
@@ -496,7 +496,7 @@ def main():
     if not _acquire_single_instance():
         sys.exit(0)
     log.info('=' * 50)
-    log.info(f'Archive Tagger 시작 — Python {sys.version.split()[0]}')
+    log.info(f'MXF QC Player 시작 — Python {sys.version.split()[0]}')
     log.info(f'LOG_DIR: {LOG_DIR}')
     _cleanup_tmp_files()
     runtime = check_runtime_environment()
@@ -523,7 +523,7 @@ def main():
     win.show_runtime_status(runtime)
     ret = app.exec()
     cleanup_child_processes()
-    log.info('Archive Tagger 종료')
+    log.info('MXF QC Player 종료')
     sys.exit(ret)
 
 if __name__ == "__main__":

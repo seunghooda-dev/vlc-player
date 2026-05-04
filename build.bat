@@ -7,7 +7,7 @@ set "PY=C:\Users\seung\AppData\Local\Python\bin\python.exe"
 if not exist "%PY%" set "PY=python"
 
 echo ================================================
-echo   Archive Tagger - build desktop executable
+echo   MXF QC Player V.1.0 - build desktop executable
 echo ================================================
 echo.
 
@@ -41,14 +41,14 @@ if not exist "%ProgramFiles%\VideoLAN\VLC\libvlc.dll" (
     --clean ^
     --onefile ^
     --windowed ^
-    --name ArchiveTagger ^
+    --name "MXF QC Player" ^
     --hidden-import vlc ^
     --hidden-import numpy ^
     main.py
 if errorlevel 1 goto fail
 
 echo.
-echo Build complete: dist\ArchiveTagger.exe
+echo Build complete: dist\MXF QC Player.exe
 echo Runtime files will be created next to the EXE: archive.db, settings.json, logs\, tmp\
 echo External dependencies are not bundled: VLC, FFmpeg, FFplay must be installed or placed in PATH/app tools folder.
 exit /b 0

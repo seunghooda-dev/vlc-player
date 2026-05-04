@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 > nul
 setlocal
-title Archive Tagger - MXF Player
+title MXF QC Player V.1.0
 cd /d "%~dp0"
 
 set "PY=C:\Users\seung\AppData\Local\Python\bin\python.exe"
@@ -9,7 +9,7 @@ if not exist "%PY%" set "PY=python"
 
 echo.
 echo ================================================
-echo   Archive Tagger - MXF Player
+echo   MXF QC Player V.1.0
 echo ================================================
 echo.
 
@@ -20,13 +20,13 @@ if errorlevel 1 (
     echo.
 )
 
-if exist "dist\ArchiveTagger.exe" (
-    echo Launching dist\ArchiveTagger.exe
-    start "" "dist\ArchiveTagger.exe"
+if exist "dist\MXF QC Player.exe" (
+    echo Launching dist\MXF QC Player.exe
+    start "" "dist\MXF QC Player.exe"
     exit /b 0
 )
 
-echo dist\ArchiveTagger.exe not found. Running from source.
+echo dist\MXF QC Player.exe not found. Running from source.
 "%PY%" -m pip install -r requirements.txt
 if errorlevel 1 goto fail
 
@@ -38,6 +38,6 @@ exit /b %errorlevel%
 
 :fail
 echo.
-echo Failed to start Archive Tagger.
+echo Failed to start MXF QC Player.
 pause
 exit /b 1

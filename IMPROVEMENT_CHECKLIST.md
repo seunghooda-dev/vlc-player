@@ -1,4 +1,4 @@
-# Archive Tagger Improvement Checklist
+# MXF QC Player Improvement Checklist
 
 ## Phase 1 - Stability and reproducible builds
 
@@ -8,7 +8,7 @@
 - [x] Update `build.bat` for desktop exe builds.
 - [x] Stabilize PyInstaller runtime paths for `archive.db`, `settings.json`, `logs`, and `tmp`.
 - [x] Update `실행.bat` to launch the PyQt desktop app.
-- [x] Rebuild `dist/ArchiveTagger.exe` after script cleanup.
+- [x] Rebuild `dist/MXF QC Player.exe` after script cleanup.
 - [x] Launch rebuilt app and confirm it stays running.
 
 ## Phase 2 - Codebase cleanup

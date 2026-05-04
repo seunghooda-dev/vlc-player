@@ -3,7 +3,7 @@ constants.py — 색상, 스타일, 경로, 로거
 모든 모듈이 import하는 공통 상수
 """
 """
-Archive Tagger - PyQt6 완전판
+MXF QC Player - PyQt6 완전판
 파일 탐색 + 비디오 플레이어 + DB + STT + 씬감지 + 검색
 """
 

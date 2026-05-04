@@ -104,7 +104,7 @@ def check_syntax():
 
 def main():
     print("=" * 55)
-    print("  Archive Tagger - Import consistency check")
+    print("  MXF QC Player - Import consistency check")
     print("=" * 55)
     all_ok = True
 
