@@ -92,16 +92,17 @@ class AudioMixPlayer(QObject):
         self._ffplay = None
         self._ffmpeg = None
 
-    def restart(self, pos_sec=0.0):
+    def restart(self, pos_sec=0.0, lead_sec=None):
         self.stop()
-        self.play(pos_sec)
+        self.play(pos_sec, lead_sec=lead_sec)
 
-    def play(self, pos_sec=0.0):
+    def play(self, pos_sec=0.0, lead_sec=None):
         if not self.filepath or not Path(self.filepath).exists():
             return
         self.stop()
         fc = self._build_filter()
-        start_sec = max(0.0, float(pos_sec) + self.start_lead_sec)
+        lead = self.start_lead_sec if lead_sec is None else max(0.0, float(lead_sec))
+        start_sec = max(0.0, float(pos_sec) + lead)
         ffmpeg_cmd = [
             FFMPEG, '-hide_banner', '-loglevel', 'error',
             '-ss', f'{start_sec:.3f}',
@@ -405,6 +406,7 @@ class VideoPanel(QWidget):
         self._loop=False
         self.cur_file=None; self.cur_info={}; self.cur_id=None
         self._seeking=False
+        self._first_audio_start_after_cue = False
         self._tc_thread=None
         self._dead_threads = []   # abort된 스레드 보관 (GC 소멸 방지)
         self._routing_gen  = 0    # 라우팅 세대 ID (stale 시그널 무시용)
@@ -1205,6 +1207,7 @@ class VideoPanel(QWidget):
         self._loading = True   # 로딩 중 플래그 — 체크박스 이벤트 차단
         self.cur_file = filepath
         self.cur_id   = None
+        self._first_audio_start_after_cue = True
         self.in_pt=None; self.out_pt=None
         self._loop=False
         # 이전 에러 상태(빨간 LED 등) 초기화
@@ -1509,7 +1512,9 @@ class VideoPanel(QWidget):
         )
         self.audio_mix.set_channels(self._get_selected_audio_channels())
         self.audio_mix.set_rate(self._playback_rate)
-        self.audio_mix.play(max(0.0, self.player.position() / 1000.0))
+        lead = 0.0 if getattr(self, '_first_audio_start_after_cue', False) else None
+        self._first_audio_start_after_cue = False
+        self.audio_mix.play(max(0.0, self.player.position() / 1000.0), lead_sec=lead)
 
     def _restart_audio_mix(self, pos_ms=None):
         if not self.cur_file:
@@ -1525,7 +1530,9 @@ class VideoPanel(QWidget):
         )
         self.audio_mix.set_channels(self._get_selected_audio_channels())
         self.audio_mix.set_rate(self._playback_rate)
-        self.audio_mix.restart(max(0.0, pos / 1000.0))
+        lead = 0.0 if getattr(self, '_first_audio_start_after_cue', False) else None
+        self._first_audio_start_after_cue = False
+        self.audio_mix.restart(max(0.0, pos / 1000.0), lead_sec=lead)
 
     def _cancel_audio_mix(self):
         self._audio_mix_seq += 1
@@ -1658,7 +1665,8 @@ class VideoPanel(QWidget):
         if playing:
             self._led_timer.start()
             self.player.audio_set_volume(0)
-            self._schedule_audio_mix(delay_ms=60)
+            delay = 160 if getattr(self, '_first_audio_start_after_cue', False) else 60
+            self._schedule_audio_mix(delay_ms=delay)
         else:
             self._cancel_audio_mix()
             self._led_timer.stop()
