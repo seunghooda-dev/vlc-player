@@ -91,7 +91,7 @@ def sec_to_tc(sec, fps=29.97, df=None):
         m  = max(0, (m1 - drop) // (nom * 60 - drop))
         total_f += drop * (9 * d + m)
     else:
-        total_f = round(sec * nom)
+        total_f = round(sec * fps)
     ff = total_f % nom
     ss = (total_f // nom) % 60
     mm = (total_f // nom // 60) % 60

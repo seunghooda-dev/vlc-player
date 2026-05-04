@@ -2,7 +2,7 @@
 video_panel.py — 메인 비디오 플레이어 패널
 VideoPanel: 재생/타임코드/트랜스코드/IN-OUT/블랙검출/오디오미터
 """
-import sys, os, json, hashlib, subprocess
+import sys, os, json, hashlib, subprocess, time
 from pathlib import Path
 from datetime import datetime
 from PyQt6.QtWidgets import (
@@ -399,6 +399,11 @@ class VideoPanel(QWidget):
     def __init__(self):
         super().__init__()
         self.fps=29.97; self.df=False; self.tc_offset=0.0; self.duration=0.0
+        self._tc_offset_frames = 0
+        self._display_frame = 0
+        self._clock_anchor_frame = 0
+        self._clock_anchor_time = 0.0
+        self._frame_clock_active = False
         self._source_duration = 0.0
         self._using_preview = False
         self._selected_chs = [1, 2]
@@ -412,6 +417,10 @@ class VideoPanel(QWidget):
         self._dead_threads = []   # abort된 스레드 보관 (GC 소멸 방지)
         self._routing_gen  = 0    # 라우팅 세대 ID (stale 시그널 무시용)
         self.setAcceptDrops(True)
+        self._frame_display_timer = QTimer(self)
+        self._frame_display_timer.setTimerType(Qt.TimerType.PreciseTimer)
+        self._frame_display_timer.setInterval(8)
+        self._frame_display_timer.timeout.connect(self._tick_frame_display)
         self._build_ui()
 
     def _build_ui(self):
@@ -948,6 +957,8 @@ class VideoPanel(QWidget):
                 if not checked: return
                 self._playback_rate = r
                 self.player.setPlaybackRate(r)
+                if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+                    self._sync_frame_clock(self.player.position())
                 self.audio_mix.set_rate(r)
                 if self.cur_file and self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
                     self._schedule_audio_mix(delay_ms=120, restart=True)
@@ -1013,6 +1024,92 @@ class VideoPanel(QWidget):
             w.show()
             w.raise_()
 
+    # ── 프레임 정확 표시 ─────────────────────────────────
+    def _media_fps(self):
+        try:
+            fps = float(self.fps or 29.97)
+        except Exception:
+            fps = 29.97
+        return max(1.0, fps)
+
+    def _nominal_fps(self):
+        return max(1, int(round(self._media_fps())))
+
+    def _duration_frames(self):
+        if self.duration <= 0:
+            return 0
+        return max(0, int(round(self.duration * self._media_fps())))
+
+    def _sec_to_frame(self, sec):
+        return max(0, int(round(max(0.0, float(sec)) * self._media_fps())))
+
+    def _ms_to_frame(self, ms):
+        return self._sec_to_frame(max(0, int(ms)) / 1000.0)
+
+    def _frame_to_ms(self, frame):
+        return int(round(max(0, int(frame)) / self._media_fps() * 1000))
+
+    def _parse_tc_offset_frames(self, tc):
+        if not tc:
+            return int(round(float(self.tc_offset or 0.0) * self._nominal_fps()))
+        try:
+            parts = str(tc).replace(';', ':').split(':')
+            if len(parts) != 4:
+                return 0
+            h, m, s, f = [int(x) for x in parts]
+            nom = self._nominal_fps()
+            return ((h * 3600 + m * 60 + s) * nom) + f
+        except Exception as e:
+            log.debug(f'tc offset frame parse: {e}')
+            return 0
+
+    def _frames_to_tc(self, frame, include_offset=False):
+        nom = self._nominal_fps()
+        total_f = max(0, int(frame))
+        if include_offset:
+            total_f += max(0, int(getattr(self, '_tc_offset_frames', 0)))
+        ff = total_f % nom
+        ss = (total_f // nom) % 60
+        mm = (total_f // nom // 60) % 60
+        hh = total_f // nom // 3600
+        sep = ';' if self.df else ':'
+        return f"{hh:02d}:{mm:02d}:{ss:02d}{sep}{ff:02d}"
+
+    def _set_display_frame(self, frame, update_slider=True):
+        dur_frames = self._duration_frames()
+        if dur_frames > 0:
+            frame = max(0, min(dur_frames, int(frame)))
+        else:
+            frame = max(0, int(frame))
+        self._display_frame = frame
+        self.tc_main.setText(self._frames_to_tc(frame, include_offset=True))
+        rem_frames = max(0, dur_frames - frame)
+        self.tc_rem.setText(self._frames_to_tc(rem_frames, include_offset=False))
+        if update_slider and self.duration > 0 and not self._seeking:
+            pos_sec = frame / self._media_fps()
+            self.slider.setValue(max(0, min(1000, int(pos_sec / self.duration * 1000))))
+
+    def _set_display_position_ms(self, ms, update_slider=True):
+        self._set_display_frame(self._ms_to_frame(ms), update_slider=update_slider)
+
+    def _sync_frame_clock(self, ms=None):
+        if ms is None:
+            ms = self.player.position()
+        frame = self._ms_to_frame(ms)
+        self._clock_anchor_frame = frame
+        self._clock_anchor_time = time.perf_counter()
+        self._set_display_frame(frame)
+
+    def _tick_frame_display(self):
+        if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+            self._frame_clock_active = False
+            self._frame_display_timer.stop()
+            return
+        elapsed = max(0.0, time.perf_counter() - self._clock_anchor_time)
+        rate = max(0.1, float(getattr(self, '_playback_rate', 1.0) or 1.0))
+        frame = self._clock_anchor_frame + int(elapsed * self._media_fps() * rate)
+        self._set_display_frame(frame)
+
     # ── 파일 열기 ────────────────────────────────────────
     def _load_last_dir(self):
         try:
@@ -1045,6 +1142,12 @@ class VideoPanel(QWidget):
         self.cur_id   = None
         self.cur_info = {}
         self.fps=29.97; self.df=False; self.tc_offset=0.0
+        self._tc_offset_frames = 0
+        self._display_frame = 0
+        self._clock_anchor_frame = 0
+        self._clock_anchor_time = 0.0
+        self._frame_clock_active = False
+        self._frame_display_timer.stop()
         self.duration = 0.0
         self._source_duration = 0.0
         self._using_preview = False
@@ -1266,6 +1369,12 @@ class VideoPanel(QWidget):
         self.fps       = info.get("fps", 29.97)
         self.df        = False
         self.tc_offset = info.get("tc_offset", 0.0)
+        self._tc_offset_frames = self._parse_tc_offset_frames(info.get("timecode", ""))
+        self._display_frame = 0
+        self._clock_anchor_frame = 0
+        self._clock_anchor_time = 0.0
+        self._frame_clock_active = False
+        self._frame_display_timer.stop()
         self.duration  = info.get("duration", 0)
         self._source_duration = self.duration
         self._using_preview = False
@@ -1317,7 +1426,7 @@ class VideoPanel(QWidget):
             first_enabled.setChecked(True)
             default_selected = [1]
         self._selected_chs = default_selected or [1, 2]
-        self.tc_dur.setText(sec_to_tc(self.duration, self.fps, self.df))
+        self.tc_dur.setText(self._frames_to_tc(self._duration_frames(), include_offset=False))
         vw = info.get('width',0); vh_px = info.get('height',0)
         self._res_text.setPlainText(f"{vw}\u00d7{vh_px}" if vw and vh_px else "")
 
@@ -1423,9 +1532,7 @@ class VideoPanel(QWidget):
         ms = max(0, int(ms))
         self._cancel_audio_mix()
         self.player.audio_set_volume(0)
-        self.tc_main.setText(sec_to_tc(ms / 1000 + self.tc_offset, self.fps, self.df))
-        self.tc_rem.setText(sec_to_tc(max(0, self.duration - ms / 1000), self.fps, self.df))
-        self.slider.setValue(0 if self.duration <= 0 else int((ms / 1000) / self.duration * 1000))
+        self._sync_frame_clock(ms)
         if hasattr(self.player, 'show_first_frame'):
             self.player.show_first_frame(ms)
         else:
@@ -1609,9 +1716,18 @@ class VideoPanel(QWidget):
     def _set_position(self, ms):
         ms = max(0, min(int(self.duration * 1000), int(ms))) if self.duration > 0 else max(0, int(ms))
         self.player.setPosition(ms)
+        self._sync_frame_clock(ms)
         if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
             self._cancel_audio_mix()
             self._schedule_audio_mix(delay_ms=80, pos_ms=ms, restart=True)
+
+    def _set_frame_position(self, frame):
+        dur_frames = self._duration_frames()
+        if dur_frames > 0:
+            frame = max(0, min(dur_frames, int(frame)))
+        else:
+            frame = max(0, int(frame))
+        self._set_position(self._frame_to_ms(frame))
 
     def _toggle_safe_area(self):
         W = self.video_view.width(); H = self.video_view.height()
@@ -1629,8 +1745,7 @@ class VideoPanel(QWidget):
         self.meter_ctrl.set_playing(False)
 
     def _step(self, frames):
-        ms = int(frames/self.fps*1000)
-        self._set_position(max(0,min(int(self.duration*1000),self.player.position()+ms)))
+        self._set_frame_position(self._display_frame + int(frames))
 
     def _cue(self):
         # CUE 버튼: Explorer 선택 파일을 player에 올림
@@ -1661,12 +1776,12 @@ class VideoPanel(QWidget):
     def _on_slider_release(self):
         self._seeking=False
         if self.duration>0:
-            self._set_position(int(self.slider.value()/1000*self.duration*1000))
+            self._set_frame_position(int(round(self.slider.value() / 1000 * self._duration_frames())))
 
     # ── IN / OUT ─────────────────────────────────────────
     def _set_in(self):
-        self.in_pt=self.player.position()/1000
-        self.tc_in_l.setText(sec_to_tc(self.in_pt,self.fps,self.df))
+        self.in_pt = self._display_frame / self._media_fps()
+        self.tc_in_l.setText(self._frames_to_tc(self._display_frame, include_offset=True))
         self.tc_in_l.setStyleSheet(f"color:{C['yellow']};font-family:Consolas;font-size:16px;background:transparent;")
 
     def _clr_in(self):
@@ -1674,8 +1789,8 @@ class VideoPanel(QWidget):
         self.tc_in_l.setStyleSheet(f"color:{C['text0']};font-family:Consolas;font-size:16px;background:transparent;")
 
     def _set_out(self):
-        self.out_pt=self.player.position()/1000
-        self.tc_out_l.setText(sec_to_tc(self.out_pt,self.fps,self.df))
+        self.out_pt = self._display_frame / self._media_fps()
+        self.tc_out_l.setText(self._frames_to_tc(self._display_frame, include_offset=True))
         self.tc_out_l.setStyleSheet(f"color:{C['orange']};font-family:Consolas;font-size:16px;background:transparent;")
 
     def _clr_out(self):
@@ -1687,10 +1802,10 @@ class VideoPanel(QWidget):
     def _on_pos(self, ms):
         self._raise_vlc_meters()
         sec = ms/1000
-        self.tc_main.setText(sec_to_tc(sec + self.tc_offset, self.fps, self.df))
-        self.tc_rem.setText(sec_to_tc(max(0,self.duration-sec),self.fps,self.df))
-        if self.duration>0 and not self._seeking:
-            self.slider.setValue(int(sec/self.duration*1000))
+        if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+            self._set_display_position_ms(ms)
+        elif abs(self._ms_to_frame(ms) - self._display_frame) > max(4, int(self._media_fps() * 0.25)):
+            self._sync_frame_clock(ms)
         # 루프 재생: OUT 포인트 넘으면 IN 으로 복귀
         if self._loop and self.out_pt is not None and sec >= self.out_pt:
             in_ms = int(self.in_pt * 1000) if self.in_pt is not None else 0
@@ -1702,7 +1817,7 @@ class VideoPanel(QWidget):
             self.duration = self._source_duration
         else:
             self.duration = media_duration or self._source_duration
-        self.tc_dur.setText(sec_to_tc(self.duration,self.fps,self.df))
+        self.tc_dur.setText(self._frames_to_tc(self._duration_frames(), include_offset=False))
 
     def _on_state(self, state):
         self._raise_vlc_meters()
@@ -1710,11 +1825,17 @@ class VideoPanel(QWidget):
         self.btn_play.setText("||" if playing else "▶")
         # LED 깜빡임 제어
         if playing:
+            self._frame_clock_active = True
+            self._sync_frame_clock(self.player.position())
+            self._frame_display_timer.start()
             self._led_timer.start()
             self.player.audio_set_volume(0)
             delay = 160 if getattr(self, '_first_audio_start_after_cue', False) else 60
             self._schedule_audio_mix(delay_ms=delay)
         else:
+            self._frame_clock_active = False
+            self._frame_display_timer.stop()
+            self._set_display_position_ms(self.player.position())
             self._cancel_audio_mix()
             self._led_timer.stop()
             self.led.setStyleSheet(f"color:{C['text3']};font-size:10px;background:transparent;")
