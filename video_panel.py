@@ -415,6 +415,10 @@ class VideoPanel(QWidget):
         self._first_audio_start_after_cue = False
         self._tc_thread=None
         self._dead_threads = []   # abort된 스레드 보관 (GC 소멸 방지)
+        self._tc_cache = {}
+        self._tc_cache_order = []
+        self._preconvert_threads = []
+        self._preconvert_jobs = {}
         self._routing_gen  = 0    # 라우팅 세대 ID (stale 시그널 무시용)
         self.setAcceptDrops(True)
         self._frame_display_timer = QTimer(self)
@@ -1283,8 +1287,6 @@ class VideoPanel(QWidget):
 
     def _evict_tc_cache(self, max_files=10, max_gb=2.0):
         """tmp 캐시 정리 — 파일 수/용량 초과 시 오래된 것 삭제"""
-        if not hasattr(self, '_tc_cache_order'):
-            self._tc_cache_order = []   # 삽입 순서 추적
         # 유효한 파일만 남김
         valid = [(fp, tp) for fp, tp in self._tc_cache.items()
                  if tp and Path(tp).exists()]
@@ -1306,16 +1308,28 @@ class VideoPanel(QWidget):
                 total_bytes -= sz
         self._tc_cache_order = order
 
+    def _cancel_preconvert_job(self, filepath=None):
+        jobs = list(self._preconvert_jobs.items())
+        for fp, thread in jobs:
+            if filepath and fp != filepath:
+                continue
+            self._preconvert_jobs.pop(fp, None)
+            if thread in self._preconvert_threads:
+                self._preconvert_threads.remove(thread)
+            if fp in self._tc_cache and not self._tc_cache.get(fp):
+                self._tc_cache.pop(fp, None)
+            try:
+                if thread and thread.isRunning():
+                    thread.abort()
+            except Exception as e:
+                log.debug(f'preconvert cancel: {e}')
+
     def _preconvert(self, filepath):
-        # MXF 파일을 백그라운드에서 미리 변환해 캐시
-        if not hasattr(self, '_tc_cache'):
-            self._tc_cache = {}
-        if not hasattr(self, '_tc_cache_order'):
-            self._tc_cache_order = []
-        if not hasattr(self, '_preconvert_threads'):
-            self._preconvert_threads = []   # GC 방지: 스레드 참조 보관
-        if not hasattr(self, '_preconvert_jobs'):
-            self._preconvert_jobs = {}
+        # VLC 원본 재생으로 전환한 뒤에는 MXF 사전 변환이 첫 재생 안정성을 해친다.
+        if Path(filepath).suffix.lower() == '.mxf':
+            log.info(f'skip preconvert for VLC MXF playback: {Path(filepath).name}')
+            return
+        # 비-MXF 호환 경로에서만 백그라운드 변환 캐시를 사용한다.
 
         if filepath in self._tc_cache:
             return  # 이미 변환됨 또는 진행 중
@@ -1365,10 +1379,8 @@ class VideoPanel(QWidget):
             if self._add_file_to_list(f):
                 new_files.append(f)
         self._refresh_clip_list()
-        # MXF만 즉시 백그라운드 변환 (CUE 전에 미리 준비)
-        for f in new_files:
-            if Path(f).suffix.lower() not in ('.mp4','.mov','.m4v','.mkv','.avi','.mts','.m2ts'):
-                self._preconvert(f)
+        if new_files:
+            self.ai_lbl.setText("✓ 파일 추가 완료 — CUE 또는 더블클릭으로 원본 MXF를 바로 재생합니다")
         # Explorer 목록 즉시 갱신
         if hasattr(self, '_right_panel'):
             self._right_panel.refresh_explorer()
@@ -1379,8 +1391,8 @@ class VideoPanel(QWidget):
             return
         is_new = self._add_file_to_list(filepath)
         self._refresh_clip_list()
-        if is_new and Path(filepath).suffix.lower() not in ('.mp4','.mov','.m4v','.mkv','.avi','.mts','.m2ts'):
-            self._preconvert(filepath)
+        if is_new:
+            self.ai_lbl.setText("✓ 파일 추가 완료 — 백그라운드 변환 없이 원본을 사용합니다")
         if cue:
             self.load_file(filepath)
         elif hasattr(self, '_right_panel'):
@@ -1425,6 +1437,7 @@ class VideoPanel(QWidget):
             self.meter_ctrl.set_playing(False)
         if hasattr(self, 'audio_mix'):
             self._cancel_audio_mix()
+        self._cancel_preconvert_job()
         self._retire_tc()
         try:
             self.player.stop()
@@ -1439,6 +1452,7 @@ class VideoPanel(QWidget):
         self._remember_recent_file(filepath)
         log.info(f'load_file: {Path(filepath).name}')
         self._stop_all()
+        self._cancel_preconvert_job(filepath)
         self._loading = True   # 로딩 중 플래그 — 체크박스 이벤트 차단
         self.cur_file = filepath
         for f in self._files:
