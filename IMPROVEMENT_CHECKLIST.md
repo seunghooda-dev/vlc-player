@@ -10,6 +10,7 @@
 - [x] Add portable release package script with README and optional FFmpeg tools.
 - [x] Add in-app runtime diagnostics for VLC, FFmpeg, FFprobe, and FFplay.
 - [x] Add writable location diagnostics for app folder, logs, and tmp.
+- [x] Add fast development run/check scripts to avoid unnecessary EXE builds.
 - [x] Update `실행.bat` to launch the PyQt desktop app.
 - [x] Rebuild `dist/MXF QC Player.exe` after script cleanup.
 - [x] Launch rebuilt app and confirm it stays running.
@@ -19,6 +20,7 @@
 - [ ] Decide whether legacy `app.py` Flask prototype should be archived or kept.
 - [ ] Remove or isolate duplicate DB/probe/timecode logic from the legacy web path.
 - [ ] Add a clean developer note for `main.py` vs `app.py`.
+- [x] Document source-run vs EXE-build workflow for development.
 - [x] Review `.gitignore` and keep runtime outputs out of source control.
 
 ## Phase 3 - User-facing improvements
