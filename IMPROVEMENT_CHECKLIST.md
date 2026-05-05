@@ -7,6 +7,7 @@
 - [x] Update `requirements.txt` for the current PyQt desktop app.
 - [x] Update `build.bat` for desktop exe builds.
 - [x] Stabilize PyInstaller runtime paths for `archive.db`, `settings.json`, `logs`, and `tmp`.
+- [x] Add portable release package script with README and optional FFmpeg tools.
 - [x] Update `실행.bat` to launch the PyQt desktop app.
 - [x] Rebuild `dist/MXF QC Player.exe` after script cleanup.
 - [x] Launch rebuilt app and confirm it stays running.

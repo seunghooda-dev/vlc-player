@@ -5,6 +5,7 @@ logs/
 tmp/
 build/
 dist/
+release/
 
 archive.db
 *.db-shm

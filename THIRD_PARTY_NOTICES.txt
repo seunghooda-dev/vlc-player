@@ -1,0 +1,24 @@
+Third-Party Notices
+===================
+
+MXF QC Player can use external media tools that are not authored by this
+project.
+
+VLC / libVLC
+------------
+Website: https://www.videolan.org/vlc/
+
+VLC is required for MXF video playback. If VLC is installed separately on the
+target PC, this package does not redistribute VLC.
+
+FFmpeg
+------
+Website: https://ffmpeg.org/
+
+FFmpeg, FFprobe, and FFplay may be copied into the portable package tools\
+folder by package_release.bat when they are available on the build PC.
+
+FFmpeg builds can be licensed under LGPL or GPL depending on build options.
+When distributing a package that includes FFmpeg binaries, keep the relevant
+license files and source-code offer from the FFmpeg build provider together
+with the released package.
