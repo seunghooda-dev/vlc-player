@@ -445,6 +445,33 @@ class MainWindow(QMainWindow):
         lay.addWidget(close_btn)
         dlg.exec()
 
+    def _shutdown_worker_thread(self, thread, label, wait_ms=3000):
+        if not thread:
+            return False
+        try:
+            if hasattr(thread, 'abort'):
+                thread.abort()
+            if hasattr(thread, 'quit'):
+                thread.quit()
+            if hasattr(thread, 'isRunning') and not thread.isRunning():
+                log.info(f'{label} 종료 확인')
+                return True
+            if hasattr(thread, 'wait') and thread.wait(wait_ms):
+                log.info(f'{label} 종료')
+                return True
+            log.warning(f'{label} {wait_ms // 1000}초 내 미종료 — 강제 종료')
+            if hasattr(thread, 'terminate'):
+                thread.terminate()
+            if hasattr(thread, 'wait'):
+                thread.wait(1000)
+            return False
+        except RuntimeError as e:
+            log.debug(f'{label} already deleted: {e}')
+            return True
+        except Exception as e:
+            log.debug(f'{label} shutdown: {e}')
+            return False
+
     def closeEvent(self, e):
         """창 닫을 때 모든 스레드/프로세스 안전 종료"""
         log.info('closeEvent — 종료 시작')
@@ -462,39 +489,24 @@ class MainWindow(QMainWindow):
             # 트랜스코드 스레드
             vp._retire_tc()
 
-            # dead_threads (abort된 스레드 보관)
-            for t in getattr(vp, '_dead_threads', []):
-                try: t.abort()
-                except Exception as e: log.debug(f'dead_thread abort: {e}')
-
-            # preconvert 스레드
-            for t in getattr(vp, '_preconvert_threads', []):
-                try: t.abort()
-                except Exception as e: log.debug(f'preconvert abort: {e}')
-
-            # 오디오 분석 스레드 — abort 플래그 → quit → wait
-            if getattr(rp, '_audio_thread', None) and rp._audio_thread.isRunning():
-                try:
-                    if hasattr(rp._audio_thread, 'abort'):
-                        rp._audio_thread.abort()
-                    rp._audio_thread.quit()
-                    if not rp._audio_thread.wait(3000):
-                        log.warning('audio_thread 3초 내 미종료 — 강제 종료')
-                        rp._audio_thread.terminate()
-                    log.info('audio_thread 종료')
-                except Exception as e: log.debug(f'audio_thread quit: {e}')
-
-            # 블랙 검출 스레드 — FFmpeg 프로세스 포함 정리
-            if getattr(rp, '_black_thread', None) and rp._black_thread.isRunning():
-                try:
-                    if hasattr(rp._black_thread, 'abort'):
-                        rp._black_thread.abort()
-                    rp._black_thread.quit()
-                    if not rp._black_thread.wait(3000):
-                        log.warning('black_thread 3초 내 미종료 — 강제 종료')
-                        rp._black_thread.terminate()
-                    log.info('black_thread 종료')
-                except Exception as e: log.debug(f'black_thread quit: {e}')
+            # 작업 스레드 — abort 플래그 → quit → wait → 필요 시 terminate
+            worker_threads = []
+            worker_threads.extend((t, 'transcode_thread') for t in list(getattr(vp, '_dead_threads', [])))
+            worker_threads.extend((t, 'preconvert_thread') for t in list(getattr(vp, '_preconvert_threads', [])))
+            if getattr(rp, '_audio_thread', None):
+                worker_threads.append((rp._audio_thread, 'audio_thread'))
+            if getattr(rp, '_black_thread', None):
+                worker_threads.append((rp._black_thread, 'black_thread'))
+            for thread, label in worker_threads:
+                self._shutdown_worker_thread(thread, label)
+            try:
+                vp._dead_threads.clear()
+                vp._preconvert_threads.clear()
+                vp._preconvert_jobs.clear()
+                rp._audio_thread = None
+                rp._black_thread = None
+            except Exception as ex:
+                log.debug(f'clear worker refs: {ex}')
 
             # 미터 스레드
             if hasattr(vp, 'meter_ctrl'):

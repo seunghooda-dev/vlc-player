@@ -11,6 +11,7 @@
 - [x] Add in-app runtime diagnostics for VLC, FFmpeg, FFprobe, and FFplay.
 - [x] Add writable location diagnostics for app folder, logs, and tmp.
 - [x] Add fast development run/check scripts to avoid unnecessary EXE builds.
+- [x] Harden app shutdown for transcode, preconvert, black, and mute worker threads.
 - [x] Update `실행.bat` to launch the PyQt desktop app.
 - [x] Rebuild `dist/MXF QC Player.exe` after script cleanup.
 - [x] Launch rebuilt app and confirm it stays running.
