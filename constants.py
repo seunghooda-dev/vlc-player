@@ -310,6 +310,17 @@ FFMPEG     = resolve_tool_command("ffmpeg")
 FFPROBE    = resolve_tool_command("ffprobe")
 FFPLAY     = resolve_tool_command("ffplay")
 
+def _runtime_search_paths():
+    paths = []
+    seen = set()
+    for path in (APP_DIR, APP_DIR / 'tools', APP_DIR / 'bin', RESOURCE_DIR, RESOURCE_DIR / 'tools', RESOURCE_DIR / 'bin'):
+        key = str(path).lower()
+        if key not in seen:
+            seen.add(key)
+            paths.append(str(path))
+    paths.append('Windows PATH')
+    return paths
+
 DEFAULT_SETTINGS = {
     'volume': 80,
     'playback_rate': 1.0,
@@ -397,7 +408,28 @@ def resolve_vlc_dir():
 
 VLC_DIR = resolve_vlc_dir()
 
-def _check_command(name, command):
+def _classify_runtime_source(path):
+    try:
+        p = Path(path).resolve()
+    except Exception:
+        return '알 수 없음'
+    checks = [
+        (APP_DIR / 'tools', '앱 tools 폴더'),
+        (APP_DIR / 'bin', '앱 bin 폴더'),
+        (APP_DIR, '앱 폴더'),
+        (RESOURCE_DIR / 'tools', '내장 tools 폴더'),
+        (RESOURCE_DIR / 'bin', '내장 bin 폴더'),
+        (RESOURCE_DIR, '내장 리소스 폴더'),
+    ]
+    for root, label in checks:
+        try:
+            p.relative_to(root.resolve())
+            return label
+        except Exception:
+            pass
+    return 'Windows PATH / 시스템 설치'
+
+def _check_command(name, command, role='', required=True):
     exe = str(command) if Path(str(command)).exists() else shutil.which(command)
     if not exe:
         return {
@@ -405,6 +437,11 @@ def _check_command(name, command):
             'ok': False,
             'path': '',
             'message': f'{command} 실행 파일을 PATH 또는 앱 폴더/tools에서 찾을 수 없습니다.',
+            'version': '',
+            'source': '찾을 수 없음',
+            'role': role,
+            'required': required,
+            'hint': f'{command}.exe를 앱 폴더의 tools\\ 안에 넣거나 Windows PATH에 등록하세요.',
         }
     try:
         proc = subprocess.run(
@@ -420,6 +457,11 @@ def _check_command(name, command):
             'ok': proc.returncode == 0,
             'path': exe,
             'message': first_line[0] if first_line else exe,
+            'version': first_line[0] if first_line else '',
+            'source': _classify_runtime_source(exe),
+            'role': role,
+            'required': required,
+            'hint': '',
         }
     except Exception as e:
         return {
@@ -427,13 +469,18 @@ def _check_command(name, command):
             'ok': False,
             'path': exe,
             'message': str(e),
+            'version': '',
+            'source': _classify_runtime_source(exe),
+            'role': role,
+            'required': required,
+            'hint': f'{exe} 실행 권한이나 손상 여부를 확인하세요.',
         }
 
 def check_runtime_environment():
     items = [
-        _check_command('FFmpeg', FFMPEG),
-        _check_command('FFprobe', FFPROBE),
-        _check_command('FFplay', FFPLAY),
+        _check_command('FFmpeg', FFMPEG, '오디오 미터, 블랙/뮤트 검출, 선택 채널 믹스', True),
+        _check_command('FFprobe', FFPROBE, 'MXF 메타데이터, 길이, 해상도, 오디오 채널 확인', True),
+        _check_command('FFplay', FFPLAY, '체크된 오디오 채널 실제 출력', True),
     ]
     if VLC_DIR:
         items.append({
@@ -441,6 +488,11 @@ def check_runtime_environment():
             'ok': True,
             'path': str(VLC_DIR),
             'message': str(VLC_DIR / 'libvlc.dll'),
+            'version': str(VLC_DIR / 'libvlc.dll'),
+            'source': _classify_runtime_source(VLC_DIR),
+            'role': 'MXF 원본 영상 재생',
+            'required': True,
+            'hint': '',
         })
     else:
         items.append({
@@ -448,13 +500,58 @@ def check_runtime_environment():
             'ok': False,
             'path': '',
             'message': r'C:\Program Files\VideoLAN\VLC\libvlc.dll 을 찾을 수 없습니다.',
+            'version': '',
+            'source': '찾을 수 없음',
+            'role': 'MXF 원본 영상 재생',
+            'required': True,
+            'hint': r'VLC를 설치하거나 libvlc.dll이 포함된 VLC 폴더를 앱 폴더\VLC 또는 C:\Program Files\VideoLAN\VLC에 두세요.',
         })
     missing = [item['name'] for item in items if not item['ok']]
+    missing_required = [item['name'] for item in items if not item['ok'] and item.get('required')]
     return {
         'ok': not missing,
         'items': items,
         'missing': missing,
+        'missing_required': missing_required,
+        'can_start': 'VLC' not in missing_required,
+        'search_paths': _runtime_search_paths(),
     }
+
+def format_runtime_environment(runtime=None):
+    runtime = runtime or check_runtime_environment()
+    lines = []
+    lines.append('MXF QC Player V.1.0 실행 환경 진단')
+    lines.append('=' * 42)
+    lines.append(f"상태: {'정상' if runtime.get('ok') else '확인 필요'}")
+    if runtime.get('missing'):
+        lines.append(f"누락: {', '.join(runtime.get('missing', []))}")
+    else:
+        lines.append('누락: 없음')
+    lines.append('')
+    lines.append('구성 요소')
+    lines.append('-' * 42)
+    for item in runtime.get('items', []):
+        mark = 'OK' if item.get('ok') else 'MISSING'
+        lines.append(f"[{mark}] {item.get('name', '')}")
+        lines.append(f"  역할: {item.get('role') or '-'}")
+        lines.append(f"  위치: {item.get('path') or '-'}")
+        lines.append(f"  출처: {item.get('source') or '-'}")
+        lines.append(f"  정보: {item.get('message') or '-'}")
+        if item.get('hint'):
+            lines.append(f"  조치: {item.get('hint')}")
+        lines.append('')
+    lines.append('검색 위치')
+    lines.append('-' * 42)
+    for path in runtime.get('search_paths', []):
+        lines.append(f"- {path}")
+    lines.append('')
+    lines.append('기능 영향')
+    lines.append('-' * 42)
+    lines.append('- VLC 누락: MXF 영상 재생 불가')
+    lines.append('- FFmpeg 누락: 오디오 미터, 블랙/뮤트 검출, 채널 믹스 제한')
+    lines.append('- FFprobe 누락: 파일 길이/해상도/채널 정보 확인 제한')
+    lines.append('- FFplay 누락: 체크박스 기반 오디오 출력 제한')
+    return '\n'.join(lines)
 
 # ── 보조 프로세스 추적/정리 ──────────────────────────────
 _CHILD_PROCS = {}

@@ -13,7 +13,8 @@ from PyQt6.QtGui     import QColor, QPalette, QFont
 
 from constants    import (
     C, STYLE, LOG_DIR, TMP_DIR, BASE_DIR, log, APP_FONT_QT,
-    check_runtime_environment, cleanup_child_processes, load_settings, save_settings,
+    check_runtime_environment, format_runtime_environment,
+    cleanup_child_processes, load_settings, save_settings,
 )
 from video_panel  import VideoPanel
 from right_panel  import RightPanel
@@ -83,6 +84,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self._settings = load_settings()
+        self._runtime = None
         self.setWindowTitle(APP_WINDOW_TITLE)
         size = self._settings.get('window_size', [1400, 980])
         try:
@@ -112,6 +114,18 @@ class MainWindow(QMainWindow):
         ttl.setStyleSheet(f"color:{C['text1']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:15px;font-weight:700;")
         ttl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tbl.addWidget(ttl,1)
+        env_btn = QPushButton("ENV")
+        env_btn.setFixedHeight(24)
+        env_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        env_btn.setToolTip("VLC / FFmpeg 실행 환경 확인")
+        env_btn.setStyleSheet(
+            f"QPushButton{{background:{C['panel3']};color:{C['text2']};border:1px solid {C['border']};"
+            "border-radius:5px;font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;font-weight:700;"
+            "padding:0 8px;}"
+            f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
+        )
+        env_btn.clicked.connect(self._show_runtime_dialog)
+        tbl.addWidget(env_btn)
         log_btn = QPushButton("LOG")
         log_btn.setFixedHeight(24)
         log_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -159,14 +173,15 @@ class MainWindow(QMainWindow):
         self.vp.setFocus()
 
     def show_runtime_status(self, runtime):
+        self._runtime = runtime
         for item in runtime.get('items', []):
             level = log.info if item.get('ok') else log.warning
             level(f"runtime {item.get('name')}: {item.get('message')}")
         if runtime.get('ok'):
-            msg = "  ● READY   |   VLC / FFmpeg / FFplay OK   |   MXF QC Player V.1.0"
+            msg = "  ● READY   |   VLC / FFmpeg / FFprobe / FFplay OK   |   MXF QC Player V.1.0"
             self.statusBar().showMessage(msg)
             try:
-                self.vp.ai_lbl.setText("✓ 실행 환경 확인 완료 — VLC / FFmpeg / FFplay OK")
+                self.vp.ai_lbl.setText("✓ 실행 환경 확인 완료 — VLC / FFmpeg / FFprobe / FFplay OK")
             except Exception as e:
                 log.debug(f'runtime ai label: {e}')
             return
@@ -177,6 +192,82 @@ class MainWindow(QMainWindow):
             self.vp.ai_lbl.setText(f"⚠ 필수 프로그램 누락: {missing}")
         except Exception as e:
             log.debug(f'runtime warning label: {e}')
+
+    def _show_runtime_dialog(self):
+        dlg = QDialog(self)
+        dlg.setWindowTitle('실행 환경 진단')
+        dlg.resize(920, 620)
+        dlg.setStyleSheet(
+            f"background:{C['panel']};color:{C['text0']};"
+            f"font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';font-size:12px;"
+        )
+        lay = QVBoxLayout(dlg)
+        lay.setContentsMargins(16,14,16,14)
+        lay.setSpacing(10)
+
+        title = QLabel('실행 환경 진단')
+        title.setStyleSheet(
+            f"color:{C['text0']};font-size:14px;font-weight:700;"
+            "padding-bottom:4px;background:transparent;"
+        )
+        lay.addWidget(title)
+
+        summary = QLabel('')
+        summary.setStyleSheet(f"color:{C['text1']};font-size:12px;background:transparent;")
+        lay.addWidget(summary)
+
+        text = QPlainTextEdit()
+        text.setReadOnly(True)
+        text.setStyleSheet(
+            f"QPlainTextEdit{{background:{C['panel2']};color:{C['text1']};border:1px solid {C['border']};"
+            f"border-radius:6px;font-family:'Cascadia Mono','Consolas','D2Coding';font-size:11px;"
+            "padding:10px;selection-background-color:#264f78;}}"
+        )
+        lay.addWidget(text, 1)
+
+        def _refresh_runtime():
+            runtime = check_runtime_environment()
+            self.show_runtime_status(runtime)
+            text.setPlainText(format_runtime_environment(runtime))
+            if runtime.get('ok'):
+                title.setText('실행 환경 진단 — 정상')
+                summary.setText('VLC와 FFmpeg 계열 도구가 모두 확인됐습니다.')
+            else:
+                missing = ', '.join(runtime.get('missing', []))
+                title.setText('실행 환경 진단 — 확인 필요')
+                summary.setText(f'누락된 구성 요소: {missing}')
+
+        _refresh_runtime()
+
+        row = QWidget()
+        rl = QHBoxLayout(row)
+        rl.setContentsMargins(0,0,0,0)
+        rl.addStretch()
+        copy_btn = QPushButton('복사')
+        refresh_btn = QPushButton('새로고침')
+        log_btn = QPushButton('로그 보기')
+        close_btn = QPushButton('닫기')
+        for btn in (copy_btn, refresh_btn, log_btn, close_btn):
+            btn.setFixedHeight(30)
+            btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            btn.setStyleSheet(
+                f"QPushButton{{background:{C['panel3']};color:{C['text1']};border:1px solid {C['border']};"
+                "border-radius:6px;font-size:12px;padding:0 14px;}"
+                f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
+            )
+        copy_btn.clicked.connect(lambda: (
+            QApplication.clipboard().setText(text.toPlainText()),
+            title.setText('실행 환경 진단 — 복사됨')
+        ))
+        refresh_btn.clicked.connect(_refresh_runtime)
+        log_btn.clicked.connect(self._show_error_log)
+        close_btn.clicked.connect(dlg.accept)
+        rl.addWidget(copy_btn)
+        rl.addWidget(refresh_btn)
+        rl.addWidget(log_btn)
+        rl.addWidget(close_btn)
+        lay.addWidget(row)
+        dlg.exec()
 
     def _recent_error_log_text(self, max_lines=300, mode='warn'):
         log_path = LOG_DIR / 'player.log'
@@ -501,11 +592,7 @@ def main():
     _cleanup_tmp_files()
     runtime = check_runtime_environment()
     if not runtime.get('ok'):
-        details = '\n'.join(
-            f"- {item['name']}: {'OK' if item['ok'] else 'MISSING'}"
-            f"\n  {item['message']}"
-            for item in runtime.get('items', [])
-        )
+        details = format_runtime_environment(runtime)
         log.warning(f"runtime check failed: {runtime.get('missing')}")
         QMessageBox.warning(
             None,

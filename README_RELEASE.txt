@@ -49,6 +49,12 @@ top bar or check:
 
 logs\player.log
 
+Runtime Check
+-------------
+Use the ENV button in the top bar to verify VLC, FFmpeg, FFprobe, and FFplay.
+The dialog shows each tool path, source, version/status, and the feature that
+depends on it.
+
 Version
 -------
 MXF QC Player V.1.0
