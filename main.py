@@ -14,7 +14,8 @@ from PyQt6.QtGui     import QColor, QPalette, QFont
 from constants    import (
     C, STYLE, LOG_DIR, TMP_DIR, BASE_DIR, log, APP_FONT_QT,
     check_runtime_environment, format_runtime_environment,
-    cleanup_child_processes, load_settings, save_settings,
+    cleanup_child_processes, cleanup_orphan_audio_processes,
+    load_settings, save_settings,
 )
 from video_panel  import VideoPanel
 from right_panel  import RightPanel
@@ -604,6 +605,9 @@ def main():
     log.info('=' * 50)
     log.info(f'MXF QC Player 시작 — Python {sys.version.split()[0]}')
     log.info(f'LOG_DIR: {LOG_DIR}')
+    cleaned = cleanup_orphan_audio_processes()
+    if cleaned:
+        log.info(f'고아 오디오 프로세스 정리: {cleaned}개')
     _cleanup_tmp_files()
     runtime = check_runtime_environment()
     if not runtime.get('ok'):

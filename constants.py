@@ -772,6 +772,66 @@ def cleanup_child_processes():
     for proc, label in procs:
         terminate_child_process(proc, label)
 
+def cleanup_orphan_audio_processes():
+    """이전 버전에서 남은 ffmpeg/ffplay 오디오 믹스 고아 프로세스만 좁게 정리."""
+    if os.name != 'nt':
+        return 0
+    script = r"""
+$all = Get-CimInstance Win32_Process
+$alive = @{}
+foreach ($p in $all) { $alive[[int]$p.ProcessId] = $true }
+$targets = @()
+foreach ($p in $all) {
+    $name = [string]$p.Name
+    if ($name -ne 'ffplay.exe' -and $name -ne 'ffmpeg.exe') { continue }
+    $cmd = [string]$p.CommandLine
+    if (-not $cmd) { continue }
+    $parentAlive = $alive.ContainsKey([int]$p.ParentProcessId)
+    if ($parentAlive) { continue }
+    $isAudioMixFfplay = (
+        $name -eq 'ffplay.exe' -and
+        $cmd.Contains('-nodisp') -and
+        $cmd.Contains('-autoexit') -and
+        $cmd.Contains('s16le') -and
+        $cmd.Contains('48000') -and
+        $cmd.Contains('-i -')
+    )
+    $isAudioMixFfmpeg = (
+        $name -eq 'ffmpeg.exe' -and
+        $cmd.Contains('[aout]') -and
+        $cmd.Contains('pcm_s16le') -and
+        $cmd.Contains('pipe:1')
+    )
+    if ($isAudioMixFfplay -or $isAudioMixFfmpeg) { $targets += $p }
+}
+foreach ($p in $targets) {
+    Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
+    Write-Output "$($p.ProcessId) $($p.Name)"
+}
+"""
+    try:
+        proc = subprocess.run(
+            ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script],
+            capture_output=True,
+            text=True,
+            timeout=4,
+            creationflags=_hidden_subprocess_flags(),
+        )
+        cleaned = [line.strip() for line in (proc.stdout or '').splitlines() if line.strip()]
+        for line in cleaned:
+            _safe_proc_log(_logging.INFO if '_logging' in globals() else 20,
+                           f'orphan audio process cleaned: {line}')
+        if proc.returncode != 0:
+            detail = (proc.stderr or '').strip()
+            if detail:
+                _safe_proc_log(_logging.DEBUG if '_logging' in globals() else 10,
+                               f'orphan audio cleanup rc={proc.returncode}: {detail[:300]}')
+        return len(cleaned)
+    except Exception as e:
+        _safe_proc_log(_logging.DEBUG if '_logging' in globals() else 10,
+                       f'orphan audio cleanup skipped: {e}')
+        return 0
+
 # ── 로거 ──────────────────────────────────────────────
 import logging as _logging
 from logging.handlers import TimedRotatingFileHandler as _TRFHandler
