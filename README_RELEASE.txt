@@ -53,7 +53,9 @@ Runtime Check
 -------------
 Use the ENV button in the top bar to verify VLC, FFmpeg, FFprobe, and FFplay.
 The dialog shows each tool path, source, version/status, and the feature that
-depends on it.
+depends on it. It also checks whether the app folder, logs\, and tmp\ are
+writable. If write access fails, move the package to a normal user-writable
+folder such as Desktop, Documents, or a dedicated media tools folder.
 
 Version
 -------

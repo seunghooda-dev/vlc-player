@@ -290,8 +290,18 @@ DB_PATH    = BASE_DIR / "archive.db"
 SETTINGS_PATH = BASE_DIR / "settings.json"
 LOG_DIR    = BASE_DIR / "logs"
 TMP_DIR    = BASE_DIR / "tmp"
-LOG_DIR.mkdir(parents=True, exist_ok=True)
-TMP_DIR.mkdir(parents=True, exist_ok=True)
+_RUNTIME_DIR_ERRORS = []
+
+def _ensure_runtime_dir(path):
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        return True
+    except Exception as e:
+        _RUNTIME_DIR_ERRORS.append((str(path), str(e)))
+        return False
+
+_ensure_runtime_dir(LOG_DIR)
+_ensure_runtime_dir(TMP_DIR)
 
 def _tool_candidates(name):
     exe_name = f'{name}.exe' if os.name == 'nt' and not name.lower().endswith('.exe') else name
@@ -320,6 +330,44 @@ def _runtime_search_paths():
             paths.append(str(path))
     paths.append('Windows PATH')
     return paths
+
+def _check_write_location(name, path, role, required=True):
+    path = Path(path)
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe_name = f'.mxf_qc_write_probe_{os.getpid()}_{datetime.now().strftime("%H%M%S%f")}.tmp'
+        probe = path / probe_name
+        probe.write_text('ok', encoding='utf-8')
+        try:
+            probe.unlink(missing_ok=True)
+        except Exception:
+            pass
+        return {
+            'name': name,
+            'ok': True,
+            'path': str(path),
+            'message': '쓰기 가능',
+            'role': role,
+            'required': required,
+            'hint': '',
+        }
+    except Exception as e:
+        return {
+            'name': name,
+            'ok': False,
+            'path': str(path),
+            'message': str(e),
+            'role': role,
+            'required': required,
+            'hint': '앱 폴더를 쓰기 가능한 위치에 두세요. Program Files처럼 권한이 막힌 위치는 피하는 것이 좋습니다.',
+        }
+
+def check_runtime_storage():
+    return [
+        _check_write_location('앱 폴더', BASE_DIR, 'archive.db, settings.json 생성/갱신'),
+        _check_write_location('로그 폴더', LOG_DIR, 'logs/player.log 기록'),
+        _check_write_location('임시 폴더', TMP_DIR, '분석 캐시와 임시 작업 파일 생성'),
+    ]
 
 DEFAULT_SETTINGS = {
     'volume': 80,
@@ -508,11 +556,17 @@ def check_runtime_environment():
         })
     missing = [item['name'] for item in items if not item['ok']]
     missing_required = [item['name'] for item in items if not item['ok'] and item.get('required')]
+    storage = check_runtime_storage()
+    storage_issues = [item['name'] for item in storage if not item['ok']]
+    problems = missing + storage_issues
     return {
-        'ok': not missing,
+        'ok': not problems,
         'items': items,
+        'storage': storage,
         'missing': missing,
         'missing_required': missing_required,
+        'storage_issues': storage_issues,
+        'problems': problems,
         'can_start': 'VLC' not in missing_required,
         'search_paths': _runtime_search_paths(),
     }
@@ -523,10 +577,10 @@ def format_runtime_environment(runtime=None):
     lines.append('MXF QC Player V.1.0 실행 환경 진단')
     lines.append('=' * 42)
     lines.append(f"상태: {'정상' if runtime.get('ok') else '확인 필요'}")
-    if runtime.get('missing'):
-        lines.append(f"누락: {', '.join(runtime.get('missing', []))}")
+    if runtime.get('problems'):
+        lines.append(f"문제: {', '.join(runtime.get('problems', []))}")
     else:
-        lines.append('누락: 없음')
+        lines.append('문제: 없음')
     lines.append('')
     lines.append('구성 요소')
     lines.append('-' * 42)
@@ -536,6 +590,17 @@ def format_runtime_environment(runtime=None):
         lines.append(f"  역할: {item.get('role') or '-'}")
         lines.append(f"  위치: {item.get('path') or '-'}")
         lines.append(f"  출처: {item.get('source') or '-'}")
+        lines.append(f"  정보: {item.get('message') or '-'}")
+        if item.get('hint'):
+            lines.append(f"  조치: {item.get('hint')}")
+        lines.append('')
+    lines.append('저장 위치')
+    lines.append('-' * 42)
+    for item in runtime.get('storage', []):
+        mark = 'OK' if item.get('ok') else 'FAILED'
+        lines.append(f"[{mark}] {item.get('name', '')}")
+        lines.append(f"  역할: {item.get('role') or '-'}")
+        lines.append(f"  위치: {item.get('path') or '-'}")
         lines.append(f"  정보: {item.get('message') or '-'}")
         if item.get('hint'):
             lines.append(f"  조치: {item.get('hint')}")
@@ -551,6 +616,7 @@ def format_runtime_environment(runtime=None):
     lines.append('- FFmpeg 누락: 오디오 미터, 블랙/뮤트 검출, 채널 믹스 제한')
     lines.append('- FFprobe 누락: 파일 길이/해상도/채널 정보 확인 제한')
     lines.append('- FFplay 누락: 체크박스 기반 오디오 출력 제한')
+    lines.append('- 저장 위치 쓰기 실패: 설정 저장, 로그 기록, 분석 캐시 생성 제한')
     return '\n'.join(lines)
 
 # ── 보조 프로세스 추적/정리 ──────────────────────────────
@@ -619,24 +685,30 @@ def _make_logger():
     logger.setLevel(_logging.DEBUG)
     if logger.handlers:  # 중복 방지
         return logger
-    # 날짜별 로그 파일 (30일 보관)
-    fh = _TRFHandler(
-        LOG_DIR / 'player.log',
-        when='midnight', interval=1, backupCount=30,
-        encoding='utf-8'
-    )
-    fh.setLevel(_logging.DEBUG)
     fmt = _logging.Formatter(
         '[%(asctime)s] %(levelname)-5s | %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
-    fh.setFormatter(fmt)
     # 콘솔 출력 (WARNING 이상만)
     ch = _logging.StreamHandler()
     ch.setLevel(_logging.WARNING)
     ch.setFormatter(fmt)
-    logger.addHandler(fh)
     logger.addHandler(ch)
+    # 날짜별 로그 파일 (30일 보관)
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        fh = _TRFHandler(
+            LOG_DIR / 'player.log',
+            when='midnight', interval=1, backupCount=30,
+            encoding='utf-8'
+        )
+        fh.setLevel(_logging.DEBUG)
+        fh.setFormatter(fmt)
+        logger.addHandler(fh)
+    except Exception as e:
+        logger.warning(f'log file disabled: {LOG_DIR / "player.log"} ({e})')
+    for path, err in _RUNTIME_DIR_ERRORS:
+        logger.warning(f'runtime directory unavailable: {path} ({err})')
     return logger
 
 log = _make_logger()

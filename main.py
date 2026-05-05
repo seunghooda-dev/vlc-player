@@ -177,19 +177,22 @@ class MainWindow(QMainWindow):
         for item in runtime.get('items', []):
             level = log.info if item.get('ok') else log.warning
             level(f"runtime {item.get('name')}: {item.get('message')}")
+        for item in runtime.get('storage', []):
+            level = log.info if item.get('ok') else log.warning
+            level(f"storage {item.get('name')}: {item.get('message')}")
         if runtime.get('ok'):
-            msg = "  ● READY   |   VLC / FFmpeg / FFprobe / FFplay OK   |   MXF QC Player V.1.0"
+            msg = "  ● READY   |   VLC / FFmpeg / FFprobe / FFplay / 저장 위치 OK   |   MXF QC Player V.1.0"
             self.statusBar().showMessage(msg)
             try:
-                self.vp.ai_lbl.setText("✓ 실행 환경 확인 완료 — VLC / FFmpeg / FFprobe / FFplay OK")
+                self.vp.ai_lbl.setText("✓ 실행 환경 확인 완료 — VLC / FFmpeg / FFprobe / FFplay / 저장 위치 OK")
             except Exception as e:
                 log.debug(f'runtime ai label: {e}')
             return
-        missing = ', '.join(runtime.get('missing', []))
-        msg = f"  ⚠ 실행 환경 누락: {missing}"
+        problems = ', '.join(runtime.get('problems', []))
+        msg = f"  ⚠ 실행 환경 확인 필요: {problems}"
         self.statusBar().showMessage(msg)
         try:
-            self.vp.ai_lbl.setText(f"⚠ 필수 프로그램 누락: {missing}")
+            self.vp.ai_lbl.setText(f"⚠ 실행 환경 확인 필요: {problems}")
         except Exception as e:
             log.debug(f'runtime warning label: {e}')
 
@@ -231,11 +234,11 @@ class MainWindow(QMainWindow):
             text.setPlainText(format_runtime_environment(runtime))
             if runtime.get('ok'):
                 title.setText('실행 환경 진단 — 정상')
-                summary.setText('VLC와 FFmpeg 계열 도구가 모두 확인됐습니다.')
+                summary.setText('VLC, FFmpeg 계열 도구, 앱 저장 위치가 모두 확인됐습니다.')
             else:
-                missing = ', '.join(runtime.get('missing', []))
+                missing = ', '.join(runtime.get('problems', []))
                 title.setText('실행 환경 진단 — 확인 필요')
-                summary.setText(f'누락된 구성 요소: {missing}')
+                summary.setText(f'확인이 필요한 항목: {missing}')
 
         _refresh_runtime()
 
@@ -597,10 +600,11 @@ def main():
         QMessageBox.warning(
             None,
             "실행 환경 확인",
-            "필수 프로그램 경로를 확인했습니다.\n\n"
+            "실행 환경을 확인했습니다.\n\n"
             f"{details}\n\n"
             "VLC가 없으면 MXF 영상 재생이 불가능하고, "
-            "FFmpeg/FFplay가 없으면 오디오 믹스와 검출 기능이 제한됩니다."
+            "FFmpeg/FFplay가 없으면 오디오 믹스와 검출 기능이 제한됩니다. "
+            "저장 위치 쓰기 권한이 없으면 설정, 로그, 분석 캐시가 제한됩니다."
         )
         if 'VLC' in runtime.get('missing', []):
             log.error('VLC runtime missing; abort startup before player construction')
