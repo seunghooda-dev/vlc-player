@@ -13,6 +13,7 @@
 - [x] Add fast development run/check scripts to avoid unnecessary EXE builds.
 - [x] Harden app shutdown for transcode, preconvert, black, and mute worker threads.
 - [x] Clean stale orphan audio mix processes on startup.
+- [x] Add visible in-app cache summary and cleanup action.
 - [x] Update `실행.bat` to launch the PyQt desktop app.
 - [x] Rebuild `dist/MXF QC Player.exe` after script cleanup.
 - [x] Launch rebuilt app and confirm it stays running.
@@ -29,6 +30,6 @@
 
 - [ ] Add recent folders and recent files.
 - [ ] Add quick search/filter in the file explorer.
-- [ ] Add a visible cache cleanup action.
+- [x] Add a visible cache cleanup action.
 - [ ] Improve error messages for FFmpeg, missing files, and conversion failures.
 - [ ] Decide whether STT should be restored as a PyQt tab or fully removed.

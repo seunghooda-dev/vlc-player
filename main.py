@@ -15,6 +15,7 @@ from constants    import (
     C, STYLE, LOG_DIR, TMP_DIR, BASE_DIR, log, APP_FONT_QT,
     check_runtime_environment, format_runtime_environment,
     cleanup_child_processes, cleanup_orphan_audio_processes,
+    cache_summary, cleanup_runtime_cache, format_bytes, format_cache_summary,
     load_settings, save_settings,
 )
 from video_panel  import VideoPanel
@@ -127,6 +128,18 @@ class MainWindow(QMainWindow):
         )
         env_btn.clicked.connect(self._show_runtime_dialog)
         tbl.addWidget(env_btn)
+        cache_btn = QPushButton("CACHE")
+        cache_btn.setFixedHeight(24)
+        cache_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        cache_btn.setToolTip("tmp 캐시 상태 보기 / 정리")
+        cache_btn.setStyleSheet(
+            f"QPushButton{{background:{C['panel3']};color:{C['text2']};border:1px solid {C['border']};"
+            "border-radius:5px;font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;font-weight:700;"
+            "padding:0 8px;}"
+            f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
+        )
+        cache_btn.clicked.connect(self._show_cache_dialog)
+        tbl.addWidget(cache_btn)
         log_btn = QPushButton("LOG")
         log_btn.setFixedHeight(24)
         log_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -269,6 +282,124 @@ class MainWindow(QMainWindow):
         rl.addWidget(copy_btn)
         rl.addWidget(refresh_btn)
         rl.addWidget(log_btn)
+        rl.addWidget(close_btn)
+        lay.addWidget(row)
+        dlg.exec()
+
+    def _show_cache_dialog(self):
+        dlg = QDialog(self)
+        dlg.setWindowTitle('캐시 관리')
+        dlg.resize(860, 560)
+        dlg.setStyleSheet(
+            f"background:{C['panel']};color:{C['text0']};"
+            f"font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';font-size:12px;"
+        )
+        lay = QVBoxLayout(dlg)
+        lay.setContentsMargins(16,14,16,14)
+        lay.setSpacing(10)
+
+        title = QLabel('캐시 관리')
+        title.setStyleSheet(
+            f"color:{C['text0']};font-size:14px;font-weight:700;"
+            "padding-bottom:4px;background:transparent;"
+        )
+        lay.addWidget(title)
+
+        summary = QLabel('')
+        summary.setStyleSheet(f"color:{C['text1']};font-size:12px;background:transparent;")
+        lay.addWidget(summary)
+
+        text = QPlainTextEdit()
+        text.setReadOnly(True)
+        text.setStyleSheet(
+            f"QPlainTextEdit{{background:{C['panel2']};color:{C['text1']};border:1px solid {C['border']};"
+            f"border-radius:6px;font-family:'Cascadia Mono','Consolas','D2Coding';font-size:11px;"
+            "padding:10px;selection-background-color:#264f78;}}"
+        )
+        lay.addWidget(text, 1)
+
+        def _refresh_cache(label=None):
+            data = cache_summary()
+            text.setPlainText(format_cache_summary(data))
+            base = (
+                f"tmp 캐시 {data.get('total_files', 0)}개 파일 / "
+                f"{format_bytes(data.get('total_bytes', 0))}"
+            )
+            summary.setText(label or base)
+            title.setText('캐시 관리')
+
+        def _cleanup_cache():
+            data = cache_summary()
+            if data.get('total_files', 0) == 0 and not data.get('entries'):
+                _refresh_cache('정리할 캐시가 없습니다.')
+                return
+            answer = QMessageBox.question(
+                dlg,
+                '캐시 정리',
+                "앱 tmp 폴더 안의 캐시만 삭제합니다.\n\n"
+                f"{TMP_DIR}\n\n"
+                "원본 MXF, 바탕화면 파일, 파일 목록은 삭제하지 않습니다.\n"
+                "재생 또는 분석 중이라면 먼저 정지한 뒤 실행하는 것을 권장합니다.\n\n"
+                f"현재 캐시: {data.get('total_files', 0)}개 파일 / {format_bytes(data.get('total_bytes', 0))}\n\n"
+                "정리할까요?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            result = cleanup_runtime_cache()
+            failed = result.get('failed', [])
+            label = (
+                f"정리 완료: {result.get('deleted_entries', 0)}개 항목, "
+                f"{format_bytes(result.get('freed_bytes', 0))} 확보"
+            )
+            if failed:
+                label += f" / 실패 {len(failed)}개"
+            log.info(
+                f"cache cleanup: entries={result.get('deleted_entries', 0)} "
+                f"files={result.get('deleted_files', 0)} "
+                f"freed={format_bytes(result.get('freed_bytes', 0))} "
+                f"failed={len(failed)}"
+            )
+            _refresh_cache(label)
+            if failed:
+                text.appendPlainText('\n정리 실패 항목\n' + '-' * 42)
+                for item in failed[:20]:
+                    text.appendPlainText(item)
+
+        _refresh_cache()
+
+        row = QWidget()
+        rl = QHBoxLayout(row)
+        rl.setContentsMargins(0,0,0,0)
+        rl.addStretch()
+        copy_btn = QPushButton('복사')
+        refresh_btn = QPushButton('새로고침')
+        cleanup_btn = QPushButton('캐시 정리')
+        close_btn = QPushButton('닫기')
+        for btn in (copy_btn, refresh_btn, cleanup_btn, close_btn):
+            btn.setFixedHeight(30)
+            btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            btn.setStyleSheet(
+                f"QPushButton{{background:{C['panel3']};color:{C['text1']};border:1px solid {C['border']};"
+                "border-radius:6px;font-size:12px;padding:0 14px;}"
+                f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
+            )
+        cleanup_btn.setStyleSheet(
+            f"QPushButton{{background:#2a1f21;color:{C['orange']};border:1px solid #5a3a2b;"
+            "border-radius:6px;font-size:12px;padding:0 14px;}"
+            f"QPushButton:hover{{background:#37241f;color:{C['yellow']};border-color:{C['orange']};}}"
+        )
+        copy_btn.clicked.connect(lambda: (
+            QApplication.clipboard().setText(text.toPlainText()),
+            title.setText('캐시 관리 — 복사됨')
+        ))
+        refresh_btn.clicked.connect(lambda: _refresh_cache())
+        cleanup_btn.clicked.connect(_cleanup_cache)
+        close_btn.clicked.connect(dlg.accept)
+        rl.addWidget(copy_btn)
+        rl.addWidget(refresh_btn)
+        rl.addWidget(cleanup_btn)
         rl.addWidget(close_btn)
         lay.addWidget(row)
         dlg.exec()

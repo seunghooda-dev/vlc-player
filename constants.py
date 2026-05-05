@@ -369,6 +369,173 @@ def check_runtime_storage():
         _check_write_location('임시 폴더', TMP_DIR, '분석 캐시와 임시 작업 파일 생성'),
     ]
 
+def format_bytes(size):
+    try:
+        value = float(size or 0)
+    except Exception:
+        value = 0.0
+    units = ['B', 'KB', 'MB', 'GB', 'TB']
+    idx = 0
+    while value >= 1024 and idx < len(units) - 1:
+        value /= 1024.0
+        idx += 1
+    if idx == 0:
+        return f'{int(value)} {units[idx]}'
+    return f'{value:.1f} {units[idx]}'
+
+def _safe_cache_child(path):
+    root = TMP_DIR.resolve()
+    resolved = Path(path).resolve()
+    try:
+        resolved.relative_to(root)
+    except Exception:
+        raise ValueError(f'캐시 폴더 밖 경로는 처리하지 않습니다: {resolved}')
+    if resolved == root:
+        raise ValueError('캐시 루트 폴더 자체는 삭제하지 않습니다.')
+    return resolved
+
+def _cache_entry_info(path):
+    path = _safe_cache_child(path)
+    files = 0
+    dirs = 0
+    bytes_total = 0
+    modified = 0.0
+    if path.is_file():
+        files = 1
+        try:
+            stat = path.stat()
+            bytes_total = stat.st_size
+            modified = stat.st_mtime
+        except Exception:
+            pass
+    elif path.is_dir():
+        dirs = 1
+        for child in path.rglob('*'):
+            try:
+                child_resolved = _safe_cache_child(child)
+                if child_resolved.is_file():
+                    stat = child_resolved.stat()
+                    files += 1
+                    bytes_total += stat.st_size
+                    modified = max(modified, stat.st_mtime)
+                elif child_resolved.is_dir():
+                    dirs += 1
+            except Exception:
+                continue
+        try:
+            modified = max(modified, path.stat().st_mtime)
+        except Exception:
+            pass
+    return {
+        'name': path.name,
+        'path': str(path),
+        'is_dir': path.is_dir(),
+        'files': files,
+        'dirs': dirs,
+        'bytes': bytes_total,
+        'modified': modified,
+    }
+
+def cache_summary():
+    try:
+        TMP_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    entries = []
+    errors = []
+    try:
+        children = list(TMP_DIR.iterdir()) if TMP_DIR.exists() else []
+    except Exception as e:
+        children = []
+        errors.append(str(e))
+    for child in children:
+        try:
+            entries.append(_cache_entry_info(child))
+        except Exception as e:
+            errors.append(str(e))
+    total_bytes = sum(item.get('bytes', 0) for item in entries)
+    total_files = sum(item.get('files', 0) for item in entries)
+    total_dirs = sum(item.get('dirs', 0) for item in entries)
+    entries.sort(key=lambda item: (item.get('bytes', 0), item.get('modified', 0)), reverse=True)
+    return {
+        'root': str(TMP_DIR),
+        'exists': TMP_DIR.exists(),
+        'entries': entries,
+        'errors': errors,
+        'total_bytes': total_bytes,
+        'total_files': total_files,
+        'total_dirs': total_dirs,
+    }
+
+def format_cache_summary(summary=None, max_entries=30):
+    summary = summary or cache_summary()
+    lines = []
+    lines.append('MXF QC Player 캐시 상태')
+    lines.append('=' * 42)
+    lines.append(f"위치: {summary.get('root')}")
+    lines.append(f"전체 용량: {format_bytes(summary.get('total_bytes', 0))}")
+    lines.append(f"파일: {summary.get('total_files', 0)}개")
+    lines.append(f"폴더: {summary.get('total_dirs', 0)}개")
+    if summary.get('errors'):
+        lines.append('')
+        lines.append('읽기 오류')
+        lines.append('-' * 42)
+        for err in summary.get('errors', [])[:10]:
+            lines.append(f"- {err}")
+    lines.append('')
+    lines.append('상위 캐시 항목')
+    lines.append('-' * 42)
+    entries = summary.get('entries', [])
+    if not entries:
+        lines.append('캐시 항목이 없습니다.')
+    else:
+        for item in entries[:max_entries]:
+            kind = 'DIR ' if item.get('is_dir') else 'FILE'
+            file_info = f"{item.get('files', 0)} files" if item.get('is_dir') else '1 file'
+            lines.append(f"{kind}  {format_bytes(item.get('bytes', 0)):>10}  {file_info:<10}  {item.get('name')}")
+        if len(entries) > max_entries:
+            lines.append(f"... {len(entries) - max_entries}개 더 있음")
+    lines.append('')
+    lines.append('안전 기준')
+    lines.append('-' * 42)
+    lines.append('캐시 정리는 위 tmp 폴더 안의 항목만 대상으로 합니다.')
+    lines.append('원본 MXF, 바탕화면 파일, 파일 목록은 삭제하지 않습니다.')
+    return '\n'.join(lines)
+
+def cleanup_runtime_cache():
+    before = cache_summary()
+    root = TMP_DIR.resolve()
+    deleted_entries = 0
+    deleted_files = 0
+    deleted_dirs = 0
+    failed = []
+    for item in before.get('entries', []):
+        path = Path(item.get('path', ''))
+        try:
+            target = _safe_cache_child(path)
+            target.relative_to(root)
+            if target.is_dir():
+                deleted_files += int(item.get('files', 0))
+                deleted_dirs += int(item.get('dirs', 0))
+                shutil.rmtree(target)
+            elif target.is_file():
+                deleted_files += 1
+                target.unlink()
+            deleted_entries += 1
+        except Exception as e:
+            failed.append(f"{path}: {e}")
+    after = cache_summary()
+    freed = max(0, int(before.get('total_bytes', 0)) - int(after.get('total_bytes', 0)))
+    return {
+        'before': before,
+        'after': after,
+        'freed_bytes': freed,
+        'deleted_entries': deleted_entries,
+        'deleted_files': deleted_files,
+        'deleted_dirs': deleted_dirs,
+        'failed': failed,
+    }
+
 DEFAULT_SETTINGS = {
     'volume': 80,
     'playback_rate': 1.0,
