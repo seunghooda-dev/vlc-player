@@ -92,6 +92,27 @@ class AudioMixPlayer(QObject):
         self._ffplay = None
         self._ffmpeg = None
 
+    def _proc_state(self, proc):
+        if proc is None:
+            return 'missing'
+        rc = proc.poll()
+        return 'running' if rc is None else f'exited({rc})'
+
+    def process_status(self):
+        return {
+            'playing': bool(self._playing),
+            'ffmpeg': self._proc_state(self._ffmpeg),
+            'ffplay': self._proc_state(self._ffplay),
+        }
+
+    def is_running(self):
+        status = self.process_status()
+        return (
+            status['playing']
+            and status['ffmpeg'] == 'running'
+            and status['ffplay'] == 'running'
+        )
+
     def restart(self, pos_sec=0.0, lead_sec=None):
         self.stop()
         self.play(pos_sec, lead_sec=lead_sec)
@@ -150,6 +171,11 @@ class AudioMixPlayer(QObject):
             if self._ffmpeg.stdout:
                 self._ffmpeg.stdout.close()
             self._playing = True
+            log.info(
+                'audio mix started '
+                f'ffmpeg={self._ffmpeg.pid} ffplay={self._ffplay.pid} '
+                f'ch={self.channels} start={start_sec:.3f}s rate={self.rate:.3f}'
+            )
         except Exception as e:
             log.error(f'audio mix start failed: {e}')
             self.stop()
@@ -420,6 +446,7 @@ class VideoPanel(QWidget):
         self._preconvert_threads = []
         self._preconvert_jobs = {}
         self._routing_gen  = 0    # 라우팅 세대 ID (stale 시그널 무시용)
+        self._play_watchdog_seq = 0
         self.setAcceptDrops(True)
         self._frame_display_timer = QTimer(self)
         self._frame_display_timer.setTimerType(Qt.TimerType.PreciseTimer)
@@ -1827,6 +1854,69 @@ class VideoPanel(QWidget):
 
         QTimer.singleShot(max(0, int(delay_ms)), _run)
 
+    def _arm_play_start_watchdog(self, reason='play'):
+        if not self.cur_file:
+            return
+        self._play_watchdog_seq += 1
+        seq = self._play_watchdog_seq
+        file_at_start = self.cur_file
+        start_ms = int(self.player.position() or 0)
+        QTimer.singleShot(
+            3500,
+            lambda: self._check_play_start_watchdog(seq, file_at_start, start_ms, reason)
+        )
+        log.debug(
+            f'play watchdog armed reason={reason} '
+            f'file={Path(file_at_start).name} pos={start_ms}ms'
+        )
+
+    def _cancel_play_start_watchdog(self):
+        self._play_watchdog_seq += 1
+
+    def _check_play_start_watchdog(self, seq, file_at_start, start_ms, reason):
+        if seq != self._play_watchdog_seq:
+            return
+        if self.cur_file != file_at_start:
+            return
+        if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+            return
+
+        now_ms = int(self.player.position() or 0)
+        moved_ms = max(0, now_ms - int(start_ms or 0))
+        remaining_ms = int(max(0.0, self.duration * 1000.0 - start_ms))
+        near_end = 0 < remaining_ms < 1500
+        video_ok = moved_ms >= 150 or near_end
+
+        selected = self._get_selected_audio_channels()
+        audio_expected = bool(
+            selected
+            and (
+                int(self.cur_info.get('audio_stream_count', 0) or 0) > 0
+                or int(self.cur_info.get('channels', 0) or 0) > 0
+            )
+        )
+        audio_status = self.audio_mix.process_status()
+        audio_ok = True if not audio_expected else self.audio_mix.is_running()
+
+        if video_ok and audio_ok:
+            log.debug(
+                f'play watchdog ok reason={reason} '
+                f'file={Path(file_at_start).name} moved={moved_ms}ms '
+                f'audio={audio_status}'
+            )
+            return
+
+        problems = []
+        if not video_ok:
+            problems.append(f'video stagnant {start_ms}->{now_ms}ms')
+        if not audio_ok:
+            problems.append(f'audio mix {audio_status}')
+        detail = '; '.join(problems)
+        file_name = Path(file_at_start).name
+        log.warning(f'play watchdog warning reason={reason} file={file_name}: {detail}')
+        self.status_changed.emit(f'  ⚠ 재생 시작 확인 필요 — {file_name}')
+        self.ai_lbl.setText('⚠ 재생 시작 확인 필요 — LOG 확인')
+
     def _set_position(self, ms):
         ms = max(0, min(int(self.duration * 1000), int(ms))) if self.duration > 0 else max(0, int(ms))
         self.player.setPosition(ms)
@@ -1854,6 +1944,7 @@ class VideoPanel(QWidget):
         else: self.player.play()
 
     def stop(self):
+        self._cancel_play_start_watchdog()
         self._cancel_audio_mix()
         self.player.stop(); self.player.setPosition(0)
         self.meter_ctrl.set_playing(False)
@@ -1960,7 +2051,9 @@ class VideoPanel(QWidget):
             self.player.audio_set_volume(0)
             delay = 160 if getattr(self, '_first_audio_start_after_cue', False) else 60
             self._schedule_audio_mix(delay_ms=delay)
+            self._arm_play_start_watchdog('state')
         else:
+            self._cancel_play_start_watchdog()
             self._frame_clock_active = False
             self._frame_display_timer.stop()
             self._set_display_position_ms(self.player.position())
