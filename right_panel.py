@@ -30,6 +30,11 @@ class RightPanel(QWidget):
         self._analysis_active = None
         self._analysis_paused_playback = False
         self._analysis_paused_meters = False
+        self._analysis_timeout_kind = None
+        self._analysis_timeout_label = ''
+        self._analysis_timeout_timer = QTimer(self)
+        self._analysis_timeout_timer.setSingleShot(True)
+        self._analysis_timeout_timer.timeout.connect(self._on_analysis_timeout)
         self._settings = load_settings()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0,0,0,0)
@@ -64,18 +69,18 @@ class RightPanel(QWidget):
             f"border-radius:6px;font-size:11px;font-weight:600;padding:0 12px;height:30px;}}"
             f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
         )
-        btn_file = QPushButton("📄  파일 추가"); btn_file.setFixedHeight(32)
-        btn_file.setToolTip("개별 영상 파일 추가")
-        btn_file.setStyleSheet(_exp_btn_style)
-        btn_file.setFocusPolicy(Qt.FocusPolicy.NoFocus)   # Space 버블링 차단
-        btn_file.clicked.connect(self.vp.add_files)
-        tbl.addWidget(btn_file)
-        btn_recent = QPushButton("↺  최근"); btn_recent.setFixedHeight(32)
-        btn_recent.setToolTip("최근 파일 / 최근 폴더")
-        btn_recent.setStyleSheet(_exp_btn_style)
-        btn_recent.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        btn_recent.clicked.connect(self._show_recent_menu)
-        tbl.addWidget(btn_recent)
+        self.btn_file = QPushButton("📄  파일 추가"); self.btn_file.setFixedHeight(32)
+        self.btn_file.setToolTip("개별 영상 파일 추가")
+        self.btn_file.setStyleSheet(_exp_btn_style)
+        self.btn_file.setFocusPolicy(Qt.FocusPolicy.NoFocus)   # Space 버블링 차단
+        self.btn_file.clicked.connect(self.vp.add_files)
+        tbl.addWidget(self.btn_file)
+        self.btn_recent = QPushButton("↺  최근"); self.btn_recent.setFixedHeight(32)
+        self.btn_recent.setToolTip("최근 파일 / 최근 폴더")
+        self.btn_recent.setStyleSheet(_exp_btn_style)
+        self.btn_recent.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_recent.clicked.connect(self._show_recent_menu)
+        tbl.addWidget(self.btn_recent)
         tbl.addStretch()
 
         # 정렬 버튼
@@ -462,6 +467,67 @@ class RightPanel(QWidget):
                 pass
         return False
 
+    def _analysis_timeout_seconds(self):
+        try:
+            duration = float(getattr(self.vp, 'duration', 0) or self.vp.cur_info.get('duration', 0) or 0)
+        except Exception:
+            duration = 0
+        return int(max(120, min(3600, duration * 4 + 60)))
+
+    def _start_analysis_timeout(self, kind, label):
+        seconds = self._analysis_timeout_seconds()
+        self._analysis_timeout_kind = kind
+        self._analysis_timeout_label = label
+        self._analysis_timeout_timer.start(seconds * 1000)
+        log.info(f'analysis timeout armed kind={kind} seconds={seconds}')
+
+    def _stop_analysis_timeout(self):
+        self._analysis_timeout_timer.stop()
+        self._analysis_timeout_kind = None
+        self._analysis_timeout_label = ''
+
+    def _on_analysis_timeout(self):
+        kind = self._analysis_timeout_kind
+        label = self._analysis_timeout_label or '분석'
+        self._analysis_timeout_kind = None
+        self._analysis_timeout_label = ''
+        msg = f'{label} 시간 초과 — FFmpeg 작업을 중단했습니다'
+        log.warning(f'analysis timeout fired kind={kind}')
+        if kind == 'black':
+            thread = getattr(self, '_black_thread', None)
+            try:
+                if thread and thread.isRunning():
+                    thread.abort()
+            except Exception as e:
+                log.debug(f'black timeout abort: {e}')
+            self._on_black_error(msg)
+        elif kind == 'audio':
+            thread = getattr(self, '_audio_thread', None)
+            try:
+                if thread and thread.isRunning():
+                    thread.abort()
+            except Exception as e:
+                log.debug(f'audio timeout abort: {e}')
+            self._on_audio_error(msg)
+
+    def set_loading_state(self, loading):
+        enabled = not bool(loading)
+        for name in ('btn_file', 'btn_recent'):
+            btn = getattr(self, name, None)
+            if btn:
+                btn.setEnabled(enabled)
+        for btn in getattr(self, '_sort_btns', {}).values():
+            btn.setEnabled(enabled)
+        if hasattr(self, 'exp_list'):
+            self.exp_list.setEnabled(enabled)
+        if getattr(self, '_analysis_active', None):
+            return
+        has_file = bool(getattr(self.vp, 'cur_file', None))
+        if hasattr(self, 'btn_run_black'):
+            self.btn_run_black.setEnabled(enabled and has_file)
+        if hasattr(self, 'btn_run_audio'):
+            self.btn_run_audio.setEnabled(enabled and has_file)
+
     def _set_transport_enabled(self, enabled):
         for name in (
             'btn_folder', 'btn_m1', 'btn_gos', 'btn_rew', 'btn_play',
@@ -572,8 +638,10 @@ class RightPanel(QWidget):
         self._black_thread.finished.connect(self._on_black_done)
         self._black_thread.error.connect(self._on_black_error)
         self._black_thread.start()
+        self._start_analysis_timeout('black', '블랙 검출')
 
     def _on_black_done(self, ranges):
+        self._stop_analysis_timeout()
         self.btn_run_black.setEnabled(True)
         if hasattr(self.vp, '_set_file_status'):
             fp = getattr(self, '_black_file', self.vp.cur_file)
@@ -608,6 +676,7 @@ class RightPanel(QWidget):
         self._finish_analysis_mode()
 
     def _on_black_error(self, err):
+        self._stop_analysis_timeout()
         self.black_status.setText(f"  ⚠ 오류: {err}")
         self.btn_run_black.setEnabled(True)
         if hasattr(self.vp, '_set_file_status'):
@@ -775,8 +844,10 @@ class RightPanel(QWidget):
         self._audio_thread.finished.connect(self._on_audio_done)
         self._audio_thread.error.connect(self._on_audio_error)
         self._audio_thread.start()
+        self._start_analysis_timeout('audio', '뮤트 검출')
 
     def _on_audio_done(self, result):
+        self._stop_analysis_timeout()
         self.btn_run_audio.setEnabled(True)
         mutes    = result.get('mutes', [])
         if hasattr(self.vp, '_set_file_status'):
@@ -831,6 +902,7 @@ class RightPanel(QWidget):
         self._finish_analysis_mode()
 
     def _on_audio_error(self, err):
+        self._stop_analysis_timeout()
         self.audio_status.setText(f"  ⚠ 오류: {err}")
         self.btn_run_audio.setEnabled(True)
         if hasattr(self.vp, '_set_file_status'):

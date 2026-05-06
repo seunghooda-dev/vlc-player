@@ -341,6 +341,12 @@ class VlcPlayerAdapter(QObject):
         except Exception:
             return 0
 
+    def media_length(self):
+        try:
+            return max(0, int(self._player.get_length()))
+        except Exception:
+            return 0
+
     def playbackState(self):
         return self._state
 
@@ -449,6 +455,7 @@ class VideoPanel(QWidget):
         self._play_watchdog_seq = 0
         self._audio_start_gate_seq = 0
         self._audio_start_gate_active = False
+        self._cue_ready_seq = 0
         self._audio_recovery_attempts = 0
         self._audio_recovery_max_attempts = 3
         self._audio_recovery_cooldown_until = 0.0
@@ -1468,10 +1475,91 @@ class VideoPanel(QWidget):
             self._dead_threads.append(t)
             t.abort()   # abort는 finished 시그널 연결 후 호출 (순서 중요)
 
+    def _set_loading_state(self, loading, message=None):
+        self._loading = bool(loading)
+        enabled = not self._loading
+        for name in (
+            'btn_m1', 'btn_gos', 'btn_rew', 'btn_play', 'btn_fwd',
+            'btn_goe', 'btn_p1', 'btn_cue',
+        ):
+            btn = getattr(self, name, None)
+            if btn:
+                btn.setEnabled(enabled)
+        for btn in getattr(self, '_speed_btns', {}).values():
+            btn.setEnabled(enabled)
+        stream_count = 0
+        try:
+            stream_count = int(
+                self.cur_info.get('audio_stream_count', 0)
+                or self.cur_info.get('channels', 0)
+                or 0
+            )
+        except Exception:
+            stream_count = 0
+        for cb, ch_no in getattr(self, '_ch_checks', []):
+            cb.setEnabled(enabled and stream_count > 0 and ch_no <= stream_count)
+        has_file = bool(self.cur_file)
+        for name in ('btn_black', 'btn_audio'):
+            btn = getattr(self, name, None)
+            if btn:
+                btn.setEnabled(enabled and has_file)
+        rp = getattr(self, '_right_panel', None)
+        if rp and hasattr(rp, 'set_loading_state'):
+            rp.set_loading_state(self._loading)
+        if message:
+            self.ai_lbl.setText(message)
+
+    def _complete_file_load(self, filepath, message, status_message):
+        if filepath != self.cur_file:
+            return
+        self._set_loading_state(False)
+        self.ai_lbl.setText(message)
+        self.status_changed.emit(status_message)
+        self.file_loaded.emit(self.cur_info, self.cur_id or "")
+
+    def _prepare_vlc_cue(self, filepath, target_ms=0):
+        self._cue_ready_seq += 1
+        seq = self._cue_ready_seq
+        start = time.monotonic()
+        timeout_sec = 1.5
+        target_ms = max(0, int(target_ms))
+
+        def _poll():
+            if seq != self._cue_ready_seq or filepath != self.cur_file:
+                return
+            ready = False
+            try:
+                media_len = self.player.media_length() if hasattr(self.player, 'media_length') else 0
+                ready = bool(media_len and media_len > 0)
+            except Exception:
+                pass
+            timed_out = time.monotonic() - start >= timeout_sec
+            if not ready and not timed_out:
+                QTimer.singleShot(100, _poll)
+                return
+
+            if timed_out and not ready:
+                log.warning(f'VLC cue readiness timeout: {Path(filepath).name}')
+            self._empty_proxy.hide()
+            self._video_item.show()
+            self.player.pause()
+            QTimer.singleShot(90, lambda: self._show_cue_first_frame(target_ms))
+            QTimer.singleShot(
+                560,
+                lambda: self._complete_file_load(
+                    filepath,
+                    "✓ VLC 원본 MXF CUE 완료 — ▶ 재생버튼을 누르세요",
+                    f"  ▌CUE  {Path(filepath).name}  |  VLC MXF 원본 재생  —  ▶ 재생버튼을 누르세요",
+                )
+            )
+
+        QTimer.singleShot(80, _poll)
+
     def _stop_all(self):
         if hasattr(self, '_audio_recovery_timer'):
             self._audio_recovery_timer.stop()
         self._reset_audio_recovery()
+        self._cue_ready_seq += 1
         if hasattr(self, 'meter_ctrl'):
             self.meter_ctrl.set_playing(False)
         if hasattr(self, 'audio_mix'):
@@ -1493,7 +1581,7 @@ class VideoPanel(QWidget):
         self._stop_all()
         self._cancel_preconvert_job(filepath)
         self._reset_audio_recovery()
-        self._loading = True   # 로딩 중 플래그 — 체크박스 이벤트 차단
+        self._set_loading_state(True, f"⏳ CUE 준비 중: {Path(filepath).name}")
         self.cur_file = filepath
         for f in self._files:
             f["cue"] = (f.get("filepath") == filepath)
@@ -1553,7 +1641,7 @@ class VideoPanel(QWidget):
         first_enabled = None
         for cb, ch_no in self._ch_checks:
             enabled = ch_no <= stream_count
-            cb.setEnabled(enabled)
+            cb.setEnabled(enabled and not getattr(self, '_loading', False))
             if enabled and first_enabled is None:
                 first_enabled = cb
         # 기본 모니터링은 저장된 채널을 우선 사용하고, 없으면 1/2CH 동시 출력
@@ -1589,8 +1677,8 @@ class VideoPanel(QWidget):
         self.lbl_dbsaved.setText("✓ DB 저장됨")
         QTimer.singleShot(2500, lambda: self.lbl_dbsaved.setText(""))
 
-        self.btn_black.setEnabled(True)
-        self.btn_audio.setEnabled(True)
+        self.btn_black.setEnabled(False)
+        self.btn_audio.setEnabled(False)
         self.ai_lbl.setText("AI 분석 준비됨")
 
         # 실시간 오디오 미터 시작 (채널 수 전달)
@@ -1612,16 +1700,11 @@ class VideoPanel(QWidget):
             try:
                 self.player.setSource(QUrl.fromLocalFile(filepath))
                 self.player.audio_set_volume(0)
-                self._empty_proxy.hide(); self._video_item.show()
-                self.player.pause()
-                QTimer.singleShot(120, lambda: self._show_cue_first_frame(0))
-                self.ai_lbl.setText("✓ VLC 원본 MXF CUE 완료 — ▶ 재생버튼을 누르세요")
+                self._prepare_vlc_cue(filepath, 0)
             except Exception as e:
                 self.empty_label.setText(f'⚠ VLC 로드 실패\n{e}')
                 self.ai_lbl.setText('⚠ VLC 로드 오류')
-            self._loading = False
-            self.status_changed.emit(f"  ▌CUE  {Path(filepath).name}  |  VLC MXF 원본 재생  —  ▶ 재생버튼을 누르세요")
-            self.file_loaded.emit(self.cur_info, self.cur_id or "")
+                self._set_loading_state(False)
             return
 
         # CUE — 캐시 확인 후 즉시 또는 변환 후 player에 올림
@@ -1678,9 +1761,11 @@ class VideoPanel(QWidget):
 
         # 미터 위치 갱신
 
-        self._loading = False   # 로딩 완료, 이벤트 재활성화
-        self.status_changed.emit(f"  ▌CUE  {Path(filepath).name}  |  {info.get('format_short','—')}  {info.get('width',0)}×{info.get('height',0)}  —  ▶ 재생버튼을 누르세요")
-        self.file_loaded.emit(self.cur_info, self.cur_id or "")
+        self._complete_file_load(
+            filepath,
+            "✓ CUE 완료 — ▶ 재생버튼을 누르세요",
+            f"  ▌CUE  {Path(filepath).name}  |  {info.get('format_short','—')}  {info.get('width',0)}×{info.get('height',0)}  —  ▶ 재생버튼을 누르세요",
+        )
 
     def _show_cue_first_frame(self, ms=0):
         ms = max(0, int(ms))

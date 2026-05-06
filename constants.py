@@ -554,19 +554,59 @@ DEFAULT_SETTINGS = {
 _settings_cache = None
 _settings_lock = threading.RLock()
 
+def _default_settings_copy():
+    return json.loads(json.dumps(DEFAULT_SETTINGS))
+
+def _settings_log_warning(message):
+    try:
+        if '_safe_proc_log' in globals():
+            _safe_proc_log(_logging.WARNING if '_logging' in globals() else 30, message)
+            return
+    except Exception:
+        pass
+    try:
+        logger = globals().get('log')
+        if logger:
+            logger.warning(message)
+    except Exception:
+        pass
+
+def _backup_corrupt_settings(exc):
+    if not SETTINGS_PATH.exists():
+        return None
+    stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    backup = SETTINGS_PATH.with_name(f'{SETTINGS_PATH.stem}.corrupt-{stamp}{SETTINGS_PATH.suffix}')
+    try:
+        shutil.copy2(SETTINGS_PATH, backup)
+        _settings_log_warning(f'settings.json corrupt; backed up to {backup.name}: {exc}')
+        return backup
+    except Exception as backup_exc:
+        _settings_log_warning(f'settings.json corrupt; backup failed: {backup_exc}')
+        return None
+
 def load_settings():
     global _settings_cache
     with _settings_lock:
         if _settings_cache is not None:
             return dict(_settings_cache)
-        data = dict(DEFAULT_SETTINGS)
+        data = _default_settings_copy()
         try:
             if SETTINGS_PATH.exists():
                 loaded = json.loads(SETTINGS_PATH.read_text(encoding='utf-8'))
                 if isinstance(loaded, dict):
                     data.update(loaded)
-        except Exception:
-            pass
+                else:
+                    raise ValueError('settings root is not an object')
+        except Exception as e:
+            _backup_corrupt_settings(e)
+            data = _default_settings_copy()
+            try:
+                SETTINGS_PATH.write_text(
+                    json.dumps(data, ensure_ascii=False, indent=2),
+                    encoding='utf-8'
+                )
+            except Exception as write_exc:
+                _settings_log_warning(f'settings.json reset failed: {write_exc}')
         _settings_cache = data
         return dict(_settings_cache)
 
@@ -577,10 +617,12 @@ def save_settings(**updates):
         data.update(updates)
         _settings_cache = data
         try:
-            SETTINGS_PATH.write_text(
+            tmp_path = SETTINGS_PATH.with_suffix(f'{SETTINGS_PATH.suffix}.tmp')
+            tmp_path.write_text(
                 json.dumps(data, ensure_ascii=False, indent=2),
                 encoding='utf-8'
             )
+            tmp_path.replace(SETTINGS_PATH)
         except Exception:
             pass
         return dict(data)
@@ -1003,6 +1045,33 @@ foreach ($p in $targets) {
 import logging as _logging
 from logging.handlers import TimedRotatingFileHandler as _TRFHandler
 
+_LOG_MAX_BYTES = 10 * 1024 * 1024
+_LOG_BACKUP_COUNT = 30
+
+def _rotate_large_log_file():
+    warnings = []
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        current = LOG_DIR / 'player.log'
+        if current.exists() and current.stat().st_size > _LOG_MAX_BYTES:
+            stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            rotated = LOG_DIR / f'player.log.{stamp}'
+            current.replace(rotated)
+            warnings.append(f'large log rotated: {rotated.name}')
+        backups = sorted(
+            LOG_DIR.glob('player.log.*'),
+            key=lambda p: p.stat().st_mtime if p.exists() else 0,
+            reverse=True
+        )
+        for old in backups[_LOG_BACKUP_COUNT:]:
+            try:
+                old.unlink()
+            except Exception as e:
+                warnings.append(f'old log cleanup failed: {old.name} ({e})')
+    except Exception as e:
+        warnings.append(f'large log rotation skipped: {e}')
+    return warnings
+
 def _make_logger():
     logger = _logging.getLogger('player')
     logger.setLevel(_logging.DEBUG)
@@ -1020,6 +1089,7 @@ def _make_logger():
     # 날짜별 로그 파일 (30일 보관)
     try:
         LOG_DIR.mkdir(parents=True, exist_ok=True)
+        rotation_warnings = _rotate_large_log_file()
         fh = _TRFHandler(
             LOG_DIR / 'player.log',
             when='midnight', interval=1, backupCount=30,
@@ -1028,6 +1098,8 @@ def _make_logger():
         fh.setLevel(_logging.DEBUG)
         fh.setFormatter(fmt)
         logger.addHandler(fh)
+        for msg in rotation_warnings:
+            logger.warning(msg)
     except Exception as e:
         logger.warning(f'log file disabled: {LOG_DIR / "player.log"} ({e})')
     for path, err in _RUNTIME_DIR_ERRORS:
