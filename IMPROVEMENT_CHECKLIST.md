@@ -16,6 +16,7 @@
 - [x] Add visible in-app cache summary and cleanup action.
 - [x] Add playback start watchdog for stalled VLC video or dead audio mix processes.
 - [x] Gate first audio mix start until VLC video position actually advances.
+- [x] Auto-recover dead audio mix processes during playback with retry limits.
 - [x] Update `실행.bat` to launch the PyQt desktop app.
 - [x] Rebuild `dist/MXF QC Player.exe` after script cleanup.
 - [x] Launch rebuilt app and confirm it stays running.

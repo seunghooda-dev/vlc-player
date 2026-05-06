@@ -448,6 +448,11 @@ class VideoPanel(QWidget):
         self._routing_gen  = 0    # 라우팅 세대 ID (stale 시그널 무시용)
         self._play_watchdog_seq = 0
         self._audio_start_gate_seq = 0
+        self._audio_start_gate_active = False
+        self._audio_recovery_attempts = 0
+        self._audio_recovery_max_attempts = 3
+        self._audio_recovery_cooldown_until = 0.0
+        self._audio_recovery_limit_logged = False
         self.setAcceptDrops(True)
         self._frame_display_timer = QTimer(self)
         self._frame_display_timer.setTimerType(Qt.TimerType.PreciseTimer)
@@ -690,6 +695,9 @@ class VideoPanel(QWidget):
         except Exception:
             self._playback_rate = 1.0
         self._audio_mix_seq = 0
+        self._audio_recovery_timer = QTimer(self)
+        self._audio_recovery_timer.setInterval(900)
+        self._audio_recovery_timer.timeout.connect(self._check_audio_mix_recovery)
 
         # MEDIA PLAYER
         self.player = VlcPlayerAdapter(self.video_view.viewport())
@@ -1461,6 +1469,9 @@ class VideoPanel(QWidget):
             t.abort()   # abort는 finished 시그널 연결 후 호출 (순서 중요)
 
     def _stop_all(self):
+        if hasattr(self, '_audio_recovery_timer'):
+            self._audio_recovery_timer.stop()
+        self._reset_audio_recovery()
         if hasattr(self, 'meter_ctrl'):
             self.meter_ctrl.set_playing(False)
         if hasattr(self, 'audio_mix'):
@@ -1481,6 +1492,7 @@ class VideoPanel(QWidget):
         log.info(f'load_file: {Path(filepath).name}')
         self._stop_all()
         self._cancel_preconvert_job(filepath)
+        self._reset_audio_recovery()
         self._loading = True   # 로딩 중 플래그 — 체크박스 이벤트 차단
         self.cur_file = filepath
         for f in self._files:
@@ -1771,6 +1783,7 @@ class VideoPanel(QWidget):
             self.player.audio_set_volume(0)
             self.audio_mix.set_channels(selected)
             if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+                self._reset_audio_recovery()
                 self._schedule_audio_mix(delay_ms=120, restart=True)
             label = "/".join(str(ch) for ch in selected)
             self._settings = save_settings(audio_channels=selected)
@@ -1837,6 +1850,7 @@ class VideoPanel(QWidget):
 
     def _cancel_audio_start_gate(self):
         self._audio_start_gate_seq += 1
+        self._audio_start_gate_active = False
 
     def _cancel_audio_mix(self):
         self._cancel_audio_start_gate()
@@ -1870,6 +1884,7 @@ class VideoPanel(QWidget):
             return
         self._audio_mix_seq += 1
         self._audio_start_gate_seq += 1
+        self._audio_start_gate_active = True
         seq = self._audio_start_gate_seq
         file_at_schedule = self.cur_file
         start_ms = int(self.player.position() or 0)
@@ -1902,6 +1917,7 @@ class VideoPanel(QWidget):
         file_name = Path(file_at_schedule).name
         if moved_ms >= target_delta_ms:
             self._audio_start_gate_seq += 1
+            self._audio_start_gate_active = False
             log.info(
                 f'audio start gate opened file={file_name} '
                 f'pos={now_ms}ms moved={moved_ms}ms'
@@ -1911,6 +1927,7 @@ class VideoPanel(QWidget):
 
         if time.monotonic() >= deadline:
             self._audio_start_gate_seq += 1
+            self._audio_start_gate_active = False
             log.warning(
                 f'audio start gate timeout file={file_name} '
                 f'pos={now_ms}ms moved={moved_ms}ms'
@@ -1924,6 +1941,70 @@ class VideoPanel(QWidget):
                 seq, file_at_schedule, start_ms, target_delta_ms, deadline
             )
         )
+
+    def _audio_mix_expected(self):
+        if not self.cur_file:
+            return False
+        selected = self._get_selected_audio_channels()
+        if not selected:
+            return False
+        try:
+            audio_streams = int(self.cur_info.get('audio_stream_count', 0) or 0)
+            channels = int(self.cur_info.get('channels', 0) or 0)
+        except Exception:
+            audio_streams = 0
+            channels = 0
+        return audio_streams > 0 or channels > 0
+
+    def _reset_audio_recovery(self):
+        self._audio_recovery_attempts = 0
+        self._audio_recovery_cooldown_until = 0.0
+        self._audio_recovery_limit_logged = False
+
+    def _check_audio_mix_recovery(self):
+        if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+            return
+        if not self._audio_mix_expected():
+            return
+        if getattr(self, '_audio_start_gate_active', False):
+            return
+        if self.audio_mix.is_running():
+            return
+
+        now = time.monotonic()
+        if now < self._audio_recovery_cooldown_until:
+            return
+
+        status = self.audio_mix.process_status()
+        file_name = Path(self.cur_file).name if self.cur_file else '?'
+        if self._audio_recovery_attempts >= self._audio_recovery_max_attempts:
+            if not self._audio_recovery_limit_logged:
+                self._audio_recovery_limit_logged = True
+                log.warning(
+                    f'audio mix recovery limit reached file={file_name} '
+                    f'status={status}'
+                )
+                self.status_changed.emit(f'  ⚠ 오디오 자동 복구 한도 도달 — {file_name}')
+                self.ai_lbl.setText('⚠ 오디오 자동 복구 한도 도달 — LOG 확인')
+            return
+
+        self._audio_recovery_attempts += 1
+        self._audio_recovery_cooldown_until = now + 1.8
+        pos_ms = int(self.player.position() or 0)
+        log.warning(
+            f'audio mix recovery {self._audio_recovery_attempts}/'
+            f'{self._audio_recovery_max_attempts} file={file_name} '
+            f'pos={pos_ms}ms status={status}'
+        )
+        self.status_changed.emit(
+            f'  ⚠ 오디오 자동 복구 {self._audio_recovery_attempts}/'
+            f'{self._audio_recovery_max_attempts} — {file_name}'
+        )
+        self.ai_lbl.setText(
+            f'⚠ 오디오 믹스 자동 복구 '
+            f'{self._audio_recovery_attempts}/{self._audio_recovery_max_attempts}'
+        )
+        self._restart_audio_mix(pos_ms=pos_ms, lead_sec=0.0)
 
     def _arm_play_start_watchdog(self, reason='play'):
         if not self.cur_file:
@@ -1994,6 +2075,7 @@ class VideoPanel(QWidget):
         self._sync_frame_clock(ms)
         if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
             self._cancel_audio_mix()
+            self._reset_audio_recovery()
             self._schedule_audio_mix(delay_ms=80, pos_ms=ms, restart=True)
 
     def _set_frame_position(self, frame):
@@ -2115,9 +2197,12 @@ class VideoPanel(QWidget):
                 self._right_panel.refresh_explorer()
         # LED 깜빡임 제어
         if playing:
+            self._reset_audio_recovery()
             self._frame_clock_active = True
             self._sync_frame_clock(self.player.position())
             self._frame_display_timer.start()
+            if not self._audio_recovery_timer.isActive():
+                self._audio_recovery_timer.start()
             self._led_timer.start()
             self.player.audio_set_volume(0)
             if getattr(self, '_first_audio_start_after_cue', False):
@@ -2129,6 +2214,7 @@ class VideoPanel(QWidget):
             self._cancel_play_start_watchdog()
             self._frame_clock_active = False
             self._frame_display_timer.stop()
+            self._audio_recovery_timer.stop()
             self._set_display_position_ms(self.player.position())
             self._cancel_audio_mix()
             self._led_timer.stop()
