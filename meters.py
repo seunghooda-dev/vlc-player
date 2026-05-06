@@ -232,20 +232,43 @@ class LoudnessMeter(QWidget):
         self.setFixedWidth(60)
         self.setFixedHeight(220)
         self._lkfs_m=-99.0; self._lkfs_i=-99.0; self._true_peak=-99.0
+        self._qc_i = None
+        self._qc_lra = None
+        self._qc_tp = None
+        self._qc_status = ''
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setStyleSheet("background:transparent;")
     def update_lkfs(self, m, i, tp=-99.0):
         self._lkfs_m=m; self._lkfs_i=i; self._true_peak=tp; self.update()
-    def reset(self):
+    def set_analysis_pending(self, message='SCAN'):
+        self._qc_i = None; self._qc_lra = None; self._qc_tp = None
+        self._qc_status = message or 'SCAN'
+        self.update()
+    def set_analysis_result(self, integrated, lra=None, true_peak=None):
+        self._qc_i = integrated
+        self._qc_lra = lra
+        self._qc_tp = true_peak
+        self._qc_status = 'QC'
+        self.update()
+    def set_analysis_error(self, message='ERR'):
+        self._qc_i = None; self._qc_lra = None; self._qc_tp = None
+        self._qc_status = message or 'ERR'
+        self.update()
+    def reset_live(self):
         self._lkfs_m=-99.0; self._lkfs_i=-99.0; self._true_peak=-99.0; self.update()
+    def reset(self):
+        self._lkfs_m=-99.0; self._lkfs_i=-99.0; self._true_peak=-99.0
+        self._qc_i = None; self._qc_lra = None; self._qc_tp = None; self._qc_status = ''
+        self.update()
     def paintEvent(self, e):
         from PyQt6.QtGui import QPainter, QColor, QLinearGradient, QFont
         p=QPainter(self); p.setRenderHint(QPainter.RenderHint.Antialiasing)
         W=self.width(); H=self.height()
         # 반투명 배경
         p.fillRect(0,0,W,H,QColor(0,0,0,140))
-        LMIN=-60.0; LMAX=0.0; LBL_H=18; BOT_H=38
+        LMIN=-60.0; LMAX=0.0; LBL_H=18; BOT_H=56
         BAR_Y=LBL_H; BAR_H=H-LBL_H-BOT_H; BAR_X=6; BAR_W=W-12
+        tp_display = self._qc_tp if self._qc_tp is not None else self._true_peak
         def ly(val):
             r=(val-LMIN)/(LMAX-LMIN); r=max(0.0,min(1.0,r))
             return int(BAR_Y+BAR_H*(1.0-r))
@@ -271,25 +294,35 @@ class LoudnessMeter(QWidget):
                 p.setPen(QColor('#FFD700') if is_ref else QColor('#383838'))
                 p.drawText(0,gy-6,W,12,Qt.AlignmentFlag.AlignHCenter|Qt.AlignmentFlag.AlignVCenter,str(db))
         # True Peak 수평선
-        if self._true_peak > -99.0:
-            tp_y = ly(min(self._true_peak, 0.0))
-            tp_col = QColor(255,0,0,200) if self._true_peak > -1.0 else QColor(255,140,0,180)
+        if tp_display is not None and tp_display > -99.0:
+            tp_y = ly(min(tp_display, 0.0))
+            tp_col = QColor(255,0,0,200) if tp_display > -1.0 else QColor(255,140,0,180)
             p.setPen(tp_col)
             from PyQt6.QtCore import Qt as _Qt
             p.drawLine(BAR_X-3, tp_y, BAR_X+BAR_W+3, tp_y)
             # TP 수치
             p.setFont(QFont('Cascadia Mono',6,QFont.Weight.Bold))
-            p.drawText(0, tp_y-8, W, 8, _Qt.AlignmentFlag.AlignHCenter, f'TP{self._true_peak:.1f}')
+            p.drawText(0, tp_y-8, W, 8, _Qt.AlignmentFlag.AlignHCenter, f'TP{tp_display:.1f}')
         p.setFont(QFont('Cascadia Mono',7,QFont.Weight.Bold)); p.setPen(QColor('#444'))
         p.drawText(0,0,W,LBL_H,Qt.AlignmentFlag.AlignHCenter|Qt.AlignmentFlag.AlignVCenter,'LKFS')
         m_str=f'{self._lkfs_m:.1f}' if self._lkfs_m>LMIN else '---'
-        i_str=f'{self._lkfs_i:.1f}' if self._lkfs_i>LMIN else '---'
+        i_source = self._qc_i if self._qc_i is not None else self._lkfs_i
+        i_str=f'{i_source:.1f}' if i_source is not None and i_source>LMIN else '---'
         m_col=QColor('#ff4444') if self._lkfs_m>-18 else QColor('#ffcc00') if self._lkfs_m>-24 else QColor('#00e676')
-        p.setFont(QFont('Cascadia Mono',7)); p.setPen(QColor('#555')); p.drawText(0,H-BOT_H,W,14,Qt.AlignmentFlag.AlignHCenter,'M')
+        qc_col = QColor('#00e676') if self._qc_i is not None else QColor('#ffcc00') if self._qc_status else QColor('#888')
+        p.setFont(QFont('Cascadia Mono',7)); p.setPen(QColor('#555')); p.drawText(0,H-BOT_H,W,11,Qt.AlignmentFlag.AlignHCenter,'M')
         p.setPen(m_col); p.setFont(QFont('Cascadia Mono',9,QFont.Weight.Bold))
-        p.drawText(0,H-BOT_H+12,W,16,Qt.AlignmentFlag.AlignHCenter,m_str)
-        p.setFont(QFont('Cascadia Mono',7)); p.setPen(QColor('#888'))
-        p.drawText(0,H-12,W,12,Qt.AlignmentFlag.AlignHCenter,f'I:{i_str}')
+        p.drawText(0,H-BOT_H+9,W,14,Qt.AlignmentFlag.AlignHCenter,m_str)
+        p.setFont(QFont('Cascadia Mono',6,QFont.Weight.Bold)); p.setPen(qc_col)
+        p.drawText(0,H-BOT_H+24,W,10,Qt.AlignmentFlag.AlignHCenter,f'I:{i_str}')
+        p.setFont(QFont('Cascadia Mono',5,QFont.Weight.Bold)); p.setPen(QColor('#888'))
+        if self._qc_i is None and self._qc_status:
+            p.drawText(0,H-BOT_H+36,W,9,Qt.AlignmentFlag.AlignHCenter,self._qc_status[:8])
+        else:
+            lra_str = f'{self._qc_lra:.1f}' if self._qc_lra is not None else '--'
+            tp_str = f'{self._qc_tp:.1f}' if self._qc_tp is not None else '--'
+            p.drawText(0,H-BOT_H+36,W,9,Qt.AlignmentFlag.AlignHCenter,f'LRA:{lra_str}')
+            p.drawText(0,H-BOT_H+46,W,9,Qt.AlignmentFlag.AlignHCenter,f'TP:{tp_str}')
         p.end()
 
 # ══════════════════════════════════════════════════════════
@@ -488,6 +521,7 @@ class MeterController(QObject):
         self.lm   = lm
         self.rm   = rm
         self.loud = loud
+        self._meter_file = None
         self._thread = AudioLevelThread()
         self._thread.levels_ready.connect(self._on_levels)
         self._pos_timer = QTimer()
@@ -496,6 +530,9 @@ class MeterController(QObject):
     def start_file(self, filepath, ch_count, player, lkfs_ch=(1,2), audio_stream_count=0):
         self._pos_timer.stop()
         self._thread.stop_meter()
+        if filepath != self._meter_file:
+            self._meter_file = filepath
+            self.loud.reset()
         self._thread.start_file(filepath, ch_count, (1, 2), audio_stream_count)
         try: self._pos_timer.timeout.disconnect()
         except: pass  # 연결 없으면 정상
@@ -510,7 +547,20 @@ class MeterController(QObject):
             self._thread._kill_proc()    # 진행 중인 프로세스 즉시 kill
             self.lm.set_levels([0]*8, [0]*8)
             self.rm.set_levels([0]*8, [0]*8)
-            self.loud.reset()
+            self.loud.reset_live()
+
+    def reset_loudness_analysis(self):
+        self._meter_file = None
+        self.loud.reset()
+
+    def set_loudness_analysis_pending(self, message='SCAN'):
+        self.loud.set_analysis_pending(message)
+
+    def set_loudness_analysis_result(self, integrated, lra=None, true_peak=None):
+        self.loud.set_analysis_result(integrated, lra, true_peak)
+
+    def set_loudness_analysis_error(self, message='ERR'):
+        self.loud.set_analysis_error(message)
 
     def set_channel_filter(self, selected_pairs):
         self._ch_filter = selected_pairs

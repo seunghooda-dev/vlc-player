@@ -28,7 +28,7 @@ from constants  import (
     register_child_process, terminate_child_process, load_settings, save_settings,
 )
 from db_models  import probe, save_clip, frames_to_tc, tc_to_frames
-from threads    import TranscodeThread
+from threads    import TranscodeThread, LoudnessAnalyzeThread
 from meters     import SideMeter, SafeAreaItem, LoudnessMeter, MeterController, mk_btn, mk_label, separator
 
 
@@ -446,6 +446,8 @@ class VideoPanel(QWidget):
         self._settings = load_settings()
         self._first_audio_start_after_cue = False
         self._tc_thread=None
+        self._loudness_thread = None
+        self._loudness_cache = {}
         self._dead_threads = []   # abort된 스레드 보관 (GC 소멸 방지)
         self._tc_cache = {}
         self._tc_cache_order = []
@@ -1475,6 +1477,108 @@ class VideoPanel(QWidget):
             self._dead_threads.append(t)
             t.abort()   # abort는 finished 시그널 연결 후 호출 (순서 중요)
 
+    def _retire_loudness_analysis(self):
+        if not self._loudness_thread:
+            return
+        t = self._loudness_thread
+        self._loudness_thread = None
+
+        def _on_finished(thread=t):
+            try:
+                self._dead_threads.remove(thread)
+            except ValueError:
+                pass
+
+        try:
+            t.finished.connect(_on_finished)
+        except Exception:
+            pass
+        self._dead_threads.append(t)
+        try:
+            t.abort()
+        except Exception as e:
+            log.debug(f'loudness abort: {e}')
+
+    def _loudness_cache_key(self, filepath):
+        try:
+            st = Path(filepath).stat()
+            return f'{Path(filepath).resolve()}|{st.st_size}|{st.st_mtime_ns}'
+        except Exception:
+            return str(filepath)
+
+    def _start_loudness_analysis(self, filepath):
+        self._retire_loudness_analysis()
+        if not filepath or not Path(filepath).exists():
+            return
+        try:
+            stream_count = int(self.cur_info.get('audio_stream_count', 0) or 0)
+            ch_count = int(self.cur_info.get('channels', 0) or 0)
+        except Exception:
+            stream_count = 0
+            ch_count = 0
+        if stream_count <= 0 and ch_count <= 0:
+            self.meter_ctrl.set_loudness_analysis_error('NO AUD')
+            return
+
+        key = self._loudness_cache_key(filepath)
+        cached = self._loudness_cache.get(key)
+        if cached:
+            self._apply_loudness_result(filepath, cached, from_cache=True)
+            return
+
+        self.meter_ctrl.set_loudness_analysis_pending('SCAN')
+        t = LoudnessAnalyzeThread(
+            filepath,
+            stream_count,
+            ch_count or 2,
+            self.cur_info.get('duration', self.duration),
+        )
+        self._loudness_thread = t
+        file_at_start = filepath
+
+        def _progress(msg, fp=file_at_start):
+            if fp != self.cur_file:
+                return
+            text = 'SCAN'
+            if '%' in msg:
+                pct = msg.rsplit(' ', 1)[-1]
+                text = pct[:8]
+            self.meter_ctrl.set_loudness_analysis_pending(text)
+
+        def _done(result, fp=file_at_start, cache_key=key, thread=t):
+            if self._loudness_thread is thread:
+                self._loudness_thread = None
+            self._loudness_cache[cache_key] = dict(result)
+            self._apply_loudness_result(fp, result)
+
+        def _error(err, fp=file_at_start, thread=t):
+            if self._loudness_thread is thread:
+                self._loudness_thread = None
+            if fp == self.cur_file:
+                self.meter_ctrl.set_loudness_analysis_error('ERR')
+                self.status_changed.emit(f'  ⚠ LKFS 분석 오류 — {Path(fp).name}')
+            log.error(f'LoudnessAnalyze UI error: {err}')
+
+        t.progress.connect(_progress)
+        t.finished.connect(_done)
+        t.error.connect(_error)
+        t.start()
+        log.info(f'loudness auto analysis started: {Path(filepath).name}')
+
+    def _apply_loudness_result(self, filepath, result, from_cache=False):
+        if filepath != self.cur_file:
+            return
+        integrated = result.get('integrated')
+        lra = result.get('lra')
+        true_peak = result.get('true_peak')
+        self.meter_ctrl.set_loudness_analysis_result(integrated, lra, true_peak)
+        src = '캐시' if from_cache else '완료'
+        lra_text = f'{lra:.1f}' if isinstance(lra, (int, float)) else '--'
+        tp_text = f'{true_peak:.1f}' if isinstance(true_peak, (int, float)) else '--'
+        self.status_changed.emit(
+            f'  ▌LKFS {src}  I {integrated:.1f}  LRA {lra_text}  TP {tp_text}  |  1/2CH'
+        )
+
     def _set_loading_state(self, loading, message=None):
         self._loading = bool(loading)
         enabled = not self._loading
@@ -1566,6 +1670,9 @@ class VideoPanel(QWidget):
             self._cancel_audio_mix()
         self._cancel_preconvert_job()
         self._retire_tc()
+        self._retire_loudness_analysis()
+        if hasattr(self, 'meter_ctrl'):
+            self.meter_ctrl.reset_loudness_analysis()
         try:
             self.player.stop()
             self.player.setSource(QUrl())
@@ -1693,6 +1800,7 @@ class VideoPanel(QWidget):
             ch_count
         )
         self.audio_mix.set_channels(self._selected_chs)
+        self._start_loudness_analysis(filepath)
 
         if Path(filepath).suffix.lower() == '.mxf':
             self.empty_label.setText('⏳  VLC로 MXF 원본 로딩 중...')

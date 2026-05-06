@@ -22,6 +22,7 @@
 - [x] Add UI timeout handling for black and mute analysis jobs.
 - [x] Recover from corrupt `settings.json` by backing it up and restoring defaults.
 - [x] Rotate oversized `player.log` files and prune old log backups.
+- [x] Auto-scan full-file EBU R128 loudness on CUE and show exact I/LRA/TP on the meter.
 - [x] Update `실행.bat` to launch the PyQt desktop app.
 - [x] Rebuild `dist/MXF QC Player.exe` after script cleanup.
 - [x] Launch rebuilt app and confirm it stays running.

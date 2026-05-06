@@ -1,10 +1,10 @@
 """
 threads.py — 백그라운드 스레드
-TranscodeThread, AudioAnalyzeThread, BlackDetectThread
+TranscodeThread, AudioAnalyzeThread, LoudnessAnalyzeThread, BlackDetectThread
 """
 
-__all__ = ['TranscodeThread', 'AudioAnalyzeThread', 'BlackDetectThread']
-import sys, re, json, subprocess, threading as _th, hashlib, math, os
+__all__ = ['TranscodeThread', 'AudioAnalyzeThread', 'LoudnessAnalyzeThread', 'BlackDetectThread']
+import sys, re, json, subprocess, threading as _th, hashlib, math, os, time
 from pathlib import Path
 from PyQt6.QtCore import QThread, pyqtSignal
 
@@ -449,6 +449,181 @@ class AudioAnalyzeThread(QThread):
         except Exception as e:
             log.error(f'AudioAnalyzeThread 오류: {e}')
             self.error.emit(str(e))
+
+
+class LoudnessAnalyzeThread(QThread):
+    """파일 전체 1/2CH 기준 EBU R128 Integrated/LRA/True Peak 분석"""
+    progress = pyqtSignal(str)
+    finished = pyqtSignal(dict)
+    error    = pyqtSignal(str)
+
+    NUM_RE = r'([+-]?(?:\d+(?:\.\d*)?|\.\d+|inf|nan|-inf))'
+
+    def __init__(self, fp, audio_stream_count=0, channel_count=2, duration=0.0):
+        super().__init__()
+        self.fp = fp
+        self.audio_stream_count = max(0, int(audio_stream_count or 0))
+        self.channel_count = max(1, int(channel_count or 2))
+        try:
+            self.duration = max(0.0, float(duration or 0.0))
+        except Exception:
+            self.duration = 0.0
+        self._abort = False
+        self._proc = None
+
+    def abort(self):
+        self._abort = True
+        if self._proc and self._proc.poll() is None:
+            terminate_child_process(self._proc, 'loudness analyze ffmpeg')
+
+    def _channel_filter(self):
+        if self.audio_stream_count > 1:
+            if self.audio_stream_count >= 2:
+                return '[0:a:0][0:a:1]amerge=inputs=2[aud]'
+            return '[0:a:0]anull[aud]'
+        if self.channel_count >= 2:
+            return '[0:a:0]pan=stereo|c0=c0|c1=c1[aud]'
+        return '[0:a:0]anull[aud]'
+
+    def _float_or_none(self, value):
+        try:
+            parsed = float(value)
+        except Exception:
+            return None
+        return parsed if math.isfinite(parsed) else None
+
+    def _parse_summary(self, text):
+        summary_idx = text.rfind('Summary:')
+        summary = text[summary_idx:] if summary_idx >= 0 else text
+        integrated = None
+        lra = None
+        true_peak = None
+
+        m = re.search(
+            rf'Integrated loudness:\s*.*?I:\s*{self.NUM_RE}\s*LUFS',
+            summary, re.IGNORECASE | re.DOTALL
+        )
+        if m:
+            integrated = self._float_or_none(m.group(1))
+        m = re.search(
+            rf'Loudness range:\s*.*?LRA:\s*{self.NUM_RE}\s*LU',
+            summary, re.IGNORECASE | re.DOTALL
+        )
+        if m:
+            lra = self._float_or_none(m.group(1))
+        m = re.search(
+            rf'True peak:\s*.*?Peak:\s*{self.NUM_RE}\s*dBFS',
+            summary, re.IGNORECASE | re.DOTALL
+        )
+        if m:
+            true_peak = self._float_or_none(m.group(1))
+
+        if integrated is None:
+            values = [
+                self._float_or_none(m.group(1))
+                for m in re.finditer(rf'\bI:\s*{self.NUM_RE}\s*LUFS', summary, re.IGNORECASE)
+            ]
+            values = [v for v in values if v is not None]
+            integrated = values[-1] if values else None
+        if lra is None:
+            values = [
+                self._float_or_none(m.group(1))
+                for m in re.finditer(rf'\bLRA:\s*{self.NUM_RE}\s*LU', summary, re.IGNORECASE)
+            ]
+            values = [v for v in values if v is not None]
+            lra = values[-1] if values else None
+        if true_peak is None:
+            values = [
+                self._float_or_none(m.group(1))
+                for m in re.finditer(rf'\bPeak:\s*{self.NUM_RE}\s*dBFS', summary, re.IGNORECASE)
+            ]
+            values = [v for v in values if v is not None]
+            true_peak = values[-1] if values else None
+
+        if integrated is None:
+            raise ValueError('Integrated LKFS 값을 찾지 못했습니다')
+        return {
+            'integrated': integrated,
+            'lra': lra,
+            'true_peak': true_peak,
+            'basis': '1/2CH' if self.channel_count >= 2 or self.audio_stream_count >= 2 else '1CH',
+        }
+
+    def run(self):
+        tail = []
+        try:
+            self.progress.emit('라우드니스 전체 분석 준비 중...')
+            fc = f'{self._channel_filter()};[aud]ebur128=peak=true[loud]'
+            cmd = [
+                FFMPEG, '-hide_banner', '-nostdin', '-nostats', '-loglevel', 'info',
+                '-threads', '1',
+                '-i', self.fp, '-vn',
+                '-filter_complex', fc,
+                '-map', '[loud]',
+                '-f', 'null', '-',
+            ]
+            self._proc = register_child_process(subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                encoding='utf-8',
+                errors='replace',
+                creationflags=0x08000000
+            ), 'loudness analyze ffmpeg')
+
+            assert self._proc.stderr is not None
+            last_emit = 0.0
+            start = time.monotonic()
+            while True:
+                if self._abort:
+                    self.abort()
+                    return
+                line = self._proc.stderr.readline()
+                if line:
+                    tail.append(line)
+                    if len(tail) > 420:
+                        tail.pop(0)
+                    m = re.search(r't:\s*([\d.]+)', line)
+                    if m:
+                        pos = float(m.group(1))
+                        now = time.monotonic()
+                        if now - last_emit >= 1.0:
+                            last_emit = now
+                            if self.duration > 0:
+                                pct = max(0, min(99, int(pos / self.duration * 100)))
+                                self.progress.emit(f'라우드니스 전체 분석 중... {pct}%')
+                            else:
+                                self.progress.emit(f'라우드니스 전체 분석 중... {pos:.1f}s')
+                    continue
+                if self._proc.poll() is not None:
+                    break
+                if time.monotonic() - start > max(180.0, min(7200.0, self.duration * 6.0 + 120.0)):
+                    self.abort()
+                    raise TimeoutError('라우드니스 분석 시간 초과')
+                self.msleep(50)
+
+            rc = self._proc.wait()
+            if self._abort:
+                return
+            text = ''.join(tail)
+            if rc != 0:
+                raise RuntimeError(f'FFmpeg loudness 실패 (rc={rc}): {text[-500:]}')
+            result = self._parse_summary(text)
+            self.progress.emit(
+                f"라우드니스 완료 — I {result['integrated']:.1f} LKFS"
+            )
+            log.info(
+                f"LoudnessAnalyze 완료: I={result['integrated']:.2f}, "
+                f"LRA={result.get('lra')}, TP={result.get('true_peak')}, "
+                f"basis={result.get('basis')}"
+            )
+            self.finished.emit(result)
+        except Exception as e:
+            log.error(f'LoudnessAnalyzeThread 오류: {e}')
+            if not self._abort:
+                self.error.emit(str(e))
+        finally:
+            unregister_child_process(self._proc)
 
 
 class BlackDetectThread(QThread):
