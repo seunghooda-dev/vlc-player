@@ -447,6 +447,7 @@ class VideoPanel(QWidget):
         self._preconvert_jobs = {}
         self._routing_gen  = 0    # 라우팅 세대 ID (stale 시그널 무시용)
         self._play_watchdog_seq = 0
+        self._audio_start_gate_seq = 0
         self.setAcceptDrops(True)
         self._frame_display_timer = QTimer(self)
         self._frame_display_timer.setTimerType(Qt.TimerType.PreciseTimer)
@@ -1794,24 +1795,7 @@ class VideoPanel(QWidget):
         except Exception as e:
             self.ai_lbl.setText(f"⚠ 채널 라우팅 오류 (프로그램 유지): {e}")
 
-    def _start_audio_mix(self):
-        if not self.cur_file:
-            return
-        if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
-            return
-        self.player.audio_set_volume(0)
-        self.audio_mix.set_file(
-            self.cur_file,
-            self.cur_info.get('audio_stream_count', 0),
-            self.cur_info.get('channels', 2)
-        )
-        self.audio_mix.set_channels(self._get_selected_audio_channels())
-        self.audio_mix.set_rate(self._playback_rate)
-        lead = 0.0 if getattr(self, '_first_audio_start_after_cue', False) else None
-        self._first_audio_start_after_cue = False
-        self.audio_mix.play(max(0.0, self.player.position() / 1000.0), lead_sec=lead)
-
-    def _restart_audio_mix(self, pos_ms=None):
+    def _start_audio_mix(self, pos_ms=None, lead_sec=None):
         if not self.cur_file:
             return
         if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
@@ -1825,17 +1809,44 @@ class VideoPanel(QWidget):
         )
         self.audio_mix.set_channels(self._get_selected_audio_channels())
         self.audio_mix.set_rate(self._playback_rate)
-        lead = 0.0 if getattr(self, '_first_audio_start_after_cue', False) else None
+        lead = lead_sec
+        if lead is None:
+            lead = 0.0 if getattr(self, '_first_audio_start_after_cue', False) else None
+        self._first_audio_start_after_cue = False
+        self.audio_mix.play(max(0.0, pos / 1000.0), lead_sec=lead)
+
+    def _restart_audio_mix(self, pos_ms=None, lead_sec=None):
+        if not self.cur_file:
+            return
+        if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+            return
+        pos = self.player.position() if pos_ms is None else int(pos_ms)
+        self.player.audio_set_volume(0)
+        self.audio_mix.set_file(
+            self.cur_file,
+            self.cur_info.get('audio_stream_count', 0),
+            self.cur_info.get('channels', 2)
+        )
+        self.audio_mix.set_channels(self._get_selected_audio_channels())
+        self.audio_mix.set_rate(self._playback_rate)
+        lead = lead_sec
+        if lead is None:
+            lead = 0.0 if getattr(self, '_first_audio_start_after_cue', False) else None
         self._first_audio_start_after_cue = False
         self.audio_mix.restart(max(0.0, pos / 1000.0), lead_sec=lead)
 
+    def _cancel_audio_start_gate(self):
+        self._audio_start_gate_seq += 1
+
     def _cancel_audio_mix(self):
+        self._cancel_audio_start_gate()
         self._audio_mix_seq += 1
         self.audio_mix.stop()
 
-    def _schedule_audio_mix(self, delay_ms=80, pos_ms=None, restart=False):
+    def _schedule_audio_mix(self, delay_ms=80, pos_ms=None, restart=False, lead_sec=None):
         if not self.cur_file:
             return
+        self._cancel_audio_start_gate()
         self._audio_mix_seq += 1
         seq = self._audio_mix_seq
         file_at_schedule = self.cur_file
@@ -1848,11 +1859,71 @@ class VideoPanel(QWidget):
             if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
                 return
             if restart:
-                self._restart_audio_mix(pos_ms)
+                self._restart_audio_mix(pos_ms, lead_sec=lead_sec)
             else:
-                self._start_audio_mix()
+                self._start_audio_mix(pos_ms, lead_sec=lead_sec)
 
         QTimer.singleShot(max(0, int(delay_ms)), _run)
+
+    def _schedule_gated_audio_mix(self):
+        if not self.cur_file:
+            return
+        self._audio_mix_seq += 1
+        self._audio_start_gate_seq += 1
+        seq = self._audio_start_gate_seq
+        file_at_schedule = self.cur_file
+        start_ms = int(self.player.position() or 0)
+        fps = max(1.0, float(self._media_fps() or 29.97))
+        target_delta_ms = max(45, min(120, int(round(1000.0 * 2.0 / fps))))
+        deadline = time.monotonic() + 4.5
+        file_name = Path(file_at_schedule).name
+        log.info(
+            f'audio start gate armed file={file_name} '
+            f'pos={start_ms}ms target={target_delta_ms}ms'
+        )
+        self.ai_lbl.setText('영상 시작 확인 후 오디오 출력 준비...')
+        QTimer.singleShot(
+            30,
+            lambda: self._poll_gated_audio_mix(
+                seq, file_at_schedule, start_ms, target_delta_ms, deadline
+            )
+        )
+
+    def _poll_gated_audio_mix(self, seq, file_at_schedule, start_ms, target_delta_ms, deadline):
+        if seq != self._audio_start_gate_seq:
+            return
+        if self.cur_file != file_at_schedule:
+            return
+        if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+            return
+
+        now_ms = int(self.player.position() or 0)
+        moved_ms = max(0, now_ms - int(start_ms or 0))
+        file_name = Path(file_at_schedule).name
+        if moved_ms >= target_delta_ms:
+            self._audio_start_gate_seq += 1
+            log.info(
+                f'audio start gate opened file={file_name} '
+                f'pos={now_ms}ms moved={moved_ms}ms'
+            )
+            self._start_audio_mix(pos_ms=now_ms, lead_sec=0.0)
+            return
+
+        if time.monotonic() >= deadline:
+            self._audio_start_gate_seq += 1
+            log.warning(
+                f'audio start gate timeout file={file_name} '
+                f'pos={now_ms}ms moved={moved_ms}ms'
+            )
+            self._start_audio_mix(pos_ms=now_ms, lead_sec=0.0)
+            return
+
+        QTimer.singleShot(
+            30,
+            lambda: self._poll_gated_audio_mix(
+                seq, file_at_schedule, start_ms, target_delta_ms, deadline
+            )
+        )
 
     def _arm_play_start_watchdog(self, reason='play'):
         if not self.cur_file:
@@ -2049,8 +2120,10 @@ class VideoPanel(QWidget):
             self._frame_display_timer.start()
             self._led_timer.start()
             self.player.audio_set_volume(0)
-            delay = 160 if getattr(self, '_first_audio_start_after_cue', False) else 60
-            self._schedule_audio_mix(delay_ms=delay)
+            if getattr(self, '_first_audio_start_after_cue', False):
+                self._schedule_gated_audio_mix()
+            else:
+                self._schedule_audio_mix(delay_ms=60)
             self._arm_play_start_watchdog('state')
         else:
             self._cancel_play_start_watchdog()
