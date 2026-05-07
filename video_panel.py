@@ -1626,18 +1626,40 @@ class VideoPanel(QWidget):
         target_ms = max(0, int(target_ms))
         file_name = Path(filepath).name
 
+        def _force_cue_position(label='cue'):
+            if seq != self._cue_ready_seq or filepath != self.cur_file:
+                return False
+            try:
+                before = int(self.player.position() or 0)
+                self.player.pause()
+                self.player.setPosition(target_ms)
+                self._sync_frame_clock(target_ms)
+                if abs(before - target_ms) > 120:
+                    log.debug(
+                        f'VLC cue position settle {label}: '
+                        f'{file_name} {before}ms -> {target_ms}ms'
+                    )
+                return True
+            except Exception as e:
+                log.debug(f'vlc cue position settle {label}: {e}')
+                return False
+
         def _finish_cue():
             if seq != self._cue_ready_seq or filepath != self.cur_file:
                 return
-            try:
-                self.player.pause()
-            except Exception as e:
-                log.debug(f'vlc cue pause: {e}')
-            self._complete_file_load(
-                filepath,
-                "✓ VLC 원본 MXF CUE 완료 — ▶ 재생버튼을 누르세요",
-                f"  ▌CUE  {file_name}  |  VLC MXF 원본 재생  —  ▶ 재생버튼을 누르세요",
-            )
+            _force_cue_position('pre-complete')
+
+            def _complete_after_settle():
+                if seq != self._cue_ready_seq or filepath != self.cur_file:
+                    return
+                _force_cue_position('complete')
+                self._complete_file_load(
+                    filepath,
+                    "✓ VLC 원본 MXF CUE 완료 — ▶ 재생버튼을 누르세요",
+                    f"  ▌CUE  {file_name}  |  VLC MXF 원본 재생  —  ▶ 재생버튼을 누르세요",
+                )
+
+            QTimer.singleShot(140, _complete_after_settle)
 
         def _poll():
             if seq != self._cue_ready_seq or filepath != self.cur_file:
