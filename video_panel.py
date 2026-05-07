@@ -579,7 +579,7 @@ class VideoPanel(QWidget):
         self.vlc_side_right.setFixedWidth(116)
         self.vlc_side_left.setFixedHeight(74)
         self.vlc_side_right.setFixedHeight(74)
-        self.vlc_loud_meter.setFixedWidth(54)
+        self.vlc_loud_meter.setFixedWidth(70)
         self.vlc_loud_meter.setFixedHeight(208)
         for w in (self.vlc_side_left, self.vlc_side_right, self.vlc_loud_meter):
             w.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
