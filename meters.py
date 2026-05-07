@@ -262,7 +262,7 @@ class LoudnessMeter(QWidget):
         W=self.width(); H=self.height()
         # 반투명 배경
         p.fillRect(0,0,W,H,QColor(0,0,0,140))
-        LMIN=-60.0; LMAX=0.0; LBL_H=18; BOT_H=54
+        LMIN=-60.0; LMAX=0.0; LBL_H=18; BOT_H=40
         BAR_Y=LBL_H; BAR_H=H-LBL_H-BOT_H; BAR_X=8; BAR_W=W-16
         def ly(val):
             r=(val-LMIN)/(LMAX-LMIN); r=max(0.0,min(1.0,r))
@@ -271,10 +271,10 @@ class LoudnessMeter(QWidget):
             if val <= LMIN:
                 return QColor('#68708a')
             if val > -18:
-                return QColor('#ff4d4d')
+                return QColor('#ff4444')
             if val > -24:
-                return QColor('#ffd23f')
-            return QColor('#29e36d')
+                return QColor('#ffcc00')
+            return QColor('#00e676')
         # 존 배경
         p.fillRect(BAR_X,BAR_Y,BAR_W,BAR_H,QColor(20,20,20,180))
         for top,bot,col in [(0,-18,QColor(80,10,10,120)),(-18,-24,QColor(70,45,0,120)),
@@ -306,19 +306,16 @@ class LoudnessMeter(QWidget):
         else:
             i_str=f'{self._lkfs_i:.1f}' if self._lkfs_i>LMIN else '---'
         s_col=meter_color(self._lkfs_s)
-        i_col=QColor('#00e676') if self._qc_i is not None else QColor('#ffcc00') if self._qc_status else QColor('#888')
+        i_col=QColor('#8fb4ff') if self._qc_i is not None else QColor('#ff9f43') if self._qc_status else QColor('#7d879e')
 
         p.fillRect(0,H-BOT_H,W,BOT_H,QColor(0,0,0,95))
         p.setPen(QColor(255,255,255,24))
         p.drawLine(6,H-BOT_H,W-6,H-BOT_H)
-        p.setFont(QFont('Segoe UI Variable',7,QFont.Weight.Bold))
-        p.setPen(s_col)
-        p.drawText(0,H-BOT_H+2,W,10,Qt.AlignmentFlag.AlignHCenter,'S')
-        p.setFont(QFont('Cascadia Mono',12,QFont.Weight.Bold))
-        p.drawText(0,H-BOT_H+11,W,23,Qt.AlignmentFlag.AlignHCenter|Qt.AlignmentFlag.AlignVCenter,s_str)
         p.setFont(QFont('Cascadia Mono',8,QFont.Weight.Bold))
+        p.setPen(s_col)
+        p.drawText(0,H-BOT_H+5,W,15,Qt.AlignmentFlag.AlignHCenter|Qt.AlignmentFlag.AlignVCenter,f'S {s_str}')
         p.setPen(i_col)
-        p.drawText(0,H-BOT_H+36,W,15,Qt.AlignmentFlag.AlignHCenter|Qt.AlignmentFlag.AlignVCenter,f'I {i_str}')
+        p.drawText(0,H-BOT_H+22,W,15,Qt.AlignmentFlag.AlignHCenter|Qt.AlignmentFlag.AlignVCenter,f'I {i_str}')
         p.end()
 
 # ══════════════════════════════════════════════════════════
