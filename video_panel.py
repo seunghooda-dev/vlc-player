@@ -444,6 +444,7 @@ class VideoPanel(QWidget):
         self.cur_file=None; self.cur_info={}; self.cur_id=None
         self._seeking=False
         self._settings = load_settings()
+        self._tc_show_source = self._settings.get('timecode_display', 'source') != 'elapsed'
         self._first_audio_start_after_cue = False
         self._tc_thread=None
         self._loudness_thread = None
@@ -724,6 +725,14 @@ class VideoPanel(QWidget):
         tc_w = QWidget(); tc_w.setFixedHeight(88)
         tc_w.setStyleSheet(f"background:{C['panel2']};border-top:1px solid {C['border']};border-bottom:1px solid {C['border']};")
         tcl = QHBoxLayout(tc_w); tcl.setContentsMargins(16,6,16,6); tcl.setSpacing(0)
+        self.btn_tc_mode = QPushButton()
+        self.btn_tc_mode.setCheckable(True)
+        self.btn_tc_mode.setFixedSize(86, 28)
+        self.btn_tc_mode.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_tc_mode.clicked.connect(lambda checked: self._set_tc_display_mode(bool(checked)))
+        tcl.addWidget(self.btn_tc_mode)
+        tcl.addSpacing(10)
+        self._refresh_tc_mode_button()
         self.tc_main = QLabel('00:00:00;00')
         self.tc_main.setStyleSheet(f"color:{C['yellow']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:38px;font-weight:500;background:transparent;")
         self.tc_main.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1115,6 +1124,46 @@ class VideoPanel(QWidget):
     def _frame_to_ms(self, frame):
         return int(round(max(0, int(frame)) / self._media_fps() * 1000))
 
+    def _tc_include_offset(self):
+        return bool(getattr(self, '_tc_show_source', True))
+
+    def _refresh_tc_mode_button(self):
+        btn = getattr(self, 'btn_tc_mode', None)
+        if not btn:
+            return
+        source_mode = self._tc_include_offset()
+        btn.blockSignals(True)
+        btn.setChecked(source_mode)
+        btn.blockSignals(False)
+        btn.setText('SRC TC' if source_mode else 'ELAPSED')
+        btn.setToolTip(
+            'SRC TC: 파일 내장 시작 타임코드 기준\n'
+            'ELAPSED: 재생 경과시간 00:00:00;00 기준'
+        )
+        btn.setStyleSheet(
+            f"QPushButton{{background:{C['panel3']};color:{C['text2']};"
+            f"border:1px solid {C['border']};border-radius:4px;"
+            "font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;font-weight:700;}}"
+            f"QPushButton:checked{{background:rgba(255,209,102,26);color:{C['yellow']};"
+            f"border-color:rgba(255,209,102,120);}}"
+            f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
+        )
+
+    def _set_tc_display_mode(self, source_mode, persist=True):
+        self._tc_show_source = bool(source_mode)
+        self._refresh_tc_mode_button()
+        if persist:
+            self._settings = save_settings(
+                timecode_display='source' if self._tc_show_source else 'elapsed'
+            )
+        self._set_display_frame(getattr(self, '_display_frame', 0), update_slider=False)
+        if self.in_pt is not None:
+            in_frame = int(round(self.in_pt * self._media_fps()))
+            self.tc_in_l.setText(self._frames_to_tc(in_frame, include_offset=self._tc_include_offset()))
+        if self.out_pt is not None:
+            out_frame = int(round(self.out_pt * self._media_fps()))
+            self.tc_out_l.setText(self._frames_to_tc(out_frame, include_offset=self._tc_include_offset()))
+
     def _parse_tc_offset_frames(self, tc):
         if tc:
             return tc_to_frames(tc, self._media_fps(), self._drop_frame_enabled())
@@ -1131,7 +1180,7 @@ class VideoPanel(QWidget):
         else:
             frame = max(0, int(frame))
         self._display_frame = frame
-        self.tc_main.setText(self._frames_to_tc(frame, include_offset=True))
+        self.tc_main.setText(self._frames_to_tc(frame, include_offset=self._tc_include_offset()))
         rem_frames = max(0, dur_frames - frame)
         self.tc_rem.setText(self._frames_to_tc(rem_frames, include_offset=False))
         if update_slider and self.duration > 0 and not self._seeking:
@@ -2361,7 +2410,9 @@ class VideoPanel(QWidget):
     # ── IN / OUT ─────────────────────────────────────────
     def _set_in(self):
         self.in_pt = self._display_frame / self._media_fps()
-        self.tc_in_l.setText(self._frames_to_tc(self._display_frame, include_offset=True))
+        self.tc_in_l.setText(
+            self._frames_to_tc(self._display_frame, include_offset=self._tc_include_offset())
+        )
         self.tc_in_l.setStyleSheet(f"color:{C['yellow']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:16px;background:transparent;")
 
     def _clr_in(self):
@@ -2370,7 +2421,9 @@ class VideoPanel(QWidget):
 
     def _set_out(self):
         self.out_pt = self._display_frame / self._media_fps()
-        self.tc_out_l.setText(self._frames_to_tc(self._display_frame, include_offset=True))
+        self.tc_out_l.setText(
+            self._frames_to_tc(self._display_frame, include_offset=self._tc_include_offset())
+        )
         self.tc_out_l.setStyleSheet(f"color:{C['orange']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:16px;background:transparent;")
 
     def _clr_out(self):

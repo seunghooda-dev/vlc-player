@@ -540,6 +540,7 @@ DEFAULT_SETTINGS = {
     'volume': 80,
     'playback_rate': 1.0,
     'audio_channels': [1, 2],
+    'timecode_display': 'source',
     'black_amount': '98',
     'black_threshold': '32',
     'mute_threshold': '-50',
