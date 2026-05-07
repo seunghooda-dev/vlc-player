@@ -240,9 +240,17 @@ class VlcPlayerAdapter(QObject):
         self._state = QMediaPlayer.PlaybackState.StoppedState
         self._selected_audio_channel = 1
         self._audio_apply_attempts = 0
+        self._op_seq = 0
         self._timer = QTimer(self)
         self._timer.setInterval(16)
         self._timer.timeout.connect(self._tick)
+
+    def _next_op(self):
+        self._op_seq += 1
+        return self._op_seq
+
+    def _is_current_op(self, seq):
+        return seq is None or seq == self._op_seq
 
     def _bind_hwnd(self):
         try:
@@ -258,20 +266,24 @@ class VlcPlayerAdapter(QObject):
         path = url.toLocalFile()
         if not path:
             return
+        seq = self._next_op()
         self._bind_hwnd()
         media = self._instance.media_new(path)
         self._player.set_media(media)
         self._audio_apply_attempts = 0
         self.mediaStatusChanged.emit(QMediaPlayer.MediaStatus.LoadedMedia)
-        QTimer.singleShot(300, self._emit_duration)
-        QTimer.singleShot(500, self._apply_audio_channel)
+        QTimer.singleShot(300, lambda s=seq: self._emit_duration(s))
+        QTimer.singleShot(500, lambda s=seq: self._apply_audio_channel(s))
 
-    def _emit_duration(self):
+    def _emit_duration(self, seq=None):
+        if not self._is_current_op(seq):
+            return
         length = self._player.get_length()
         if length and length > 0:
             self.durationChanged.emit(length)
 
     def play(self):
+        seq = self._next_op()
         self._bind_hwnd()
         rc = self._player.play()
         if rc == -1:
@@ -280,11 +292,11 @@ class VlcPlayerAdapter(QObject):
         self._state = QMediaPlayer.PlaybackState.PlayingState
         self.playbackStateChanged.emit(self._state)
         self._timer.start()
-        QTimer.singleShot(500, self._emit_duration)
+        QTimer.singleShot(500, lambda s=seq: self._emit_duration(s))
         self._audio_apply_attempts = 0
-        QTimer.singleShot(200, self._apply_audio_channel)
-        QTimer.singleShot(700, self._apply_audio_channel)
-        QTimer.singleShot(1200, self._apply_audio_channel)
+        QTimer.singleShot(200, lambda s=seq: self._apply_audio_channel(s))
+        QTimer.singleShot(700, lambda s=seq: self._apply_audio_channel(s))
+        QTimer.singleShot(1200, lambda s=seq: self._apply_audio_channel(s))
 
     def pause(self):
         self._player.pause()
@@ -293,6 +305,7 @@ class VlcPlayerAdapter(QObject):
 
     def show_first_frame(self, ms=0):
         target = max(0, int(ms))
+        seq = self._next_op()
         try:
             self._bind_hwnd()
             self._player.audio_set_volume(0)
@@ -305,6 +318,8 @@ class VlcPlayerAdapter(QObject):
             return
 
         def _freeze():
+            if not self._is_current_op(seq):
+                return
             try:
                 self._player.set_time(target)
                 self._player.pause()
@@ -313,12 +328,16 @@ class VlcPlayerAdapter(QObject):
             self._state = QMediaPlayer.PlaybackState.PausedState
             self.positionChanged.emit(target)
             self.playbackStateChanged.emit(self._state)
-            self._emit_duration()
+            self._emit_duration(seq)
 
         QTimer.singleShot(160, _freeze)
-        QTimer.singleShot(420, lambda: self.setPosition(target))
+        QTimer.singleShot(
+            420,
+            lambda s=seq: self.setPosition(target) if self._is_current_op(s) else None
+        )
 
     def stop(self):
+        self._next_op()
         self._timer.stop()
         try:
             self._player.stop()
@@ -365,7 +384,7 @@ class VlcPlayerAdapter(QObject):
         except Exception:
             self._selected_audio_channel = 1
         self._audio_apply_attempts = 0
-        self._apply_audio_channel()
+        self._apply_audio_channel(self._op_seq)
 
     def _iter_audio_track_ids(self):
         tracks = []
@@ -394,7 +413,9 @@ class VlcPlayerAdapter(QObject):
             log.debug(f'vlc audio tracks: {e}')
         return tracks
 
-    def _apply_audio_channel(self):
+    def _apply_audio_channel(self, seq=None):
+        if not self._is_current_op(seq):
+            return
         try:
             tracks = self._iter_audio_track_ids()
             if tracks:
@@ -404,7 +425,7 @@ class VlcPlayerAdapter(QObject):
                 current = self._player.audio_get_track()
                 if current != target and self._audio_apply_attempts < 6:
                     self._audio_apply_attempts += 1
-                    QTimer.singleShot(250, self._apply_audio_channel)
+                    QTimer.singleShot(250, lambda s=seq: self._apply_audio_channel(s))
             else:
                 self._player.audio_set_track(self._selected_audio_channel)
         except Exception as e:
