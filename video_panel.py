@@ -1569,15 +1569,9 @@ class VideoPanel(QWidget):
         if filepath != self.cur_file:
             return
         integrated = result.get('integrated')
-        lra = result.get('lra')
-        true_peak = result.get('true_peak')
-        self.meter_ctrl.set_loudness_analysis_result(integrated, lra, true_peak)
+        self.meter_ctrl.set_loudness_analysis_result(integrated)
         src = '캐시' if from_cache else '완료'
-        lra_text = f'{lra:.1f}' if isinstance(lra, (int, float)) else '--'
-        tp_text = f'{true_peak:.1f}' if isinstance(true_peak, (int, float)) else '--'
-        self.status_changed.emit(
-            f'  ▌LKFS {src}  I {integrated:.1f}  LRA {lra_text}  TP {tp_text}  |  1/2CH'
-        )
+        self.status_changed.emit(f'  ▌LKFS {src}  I {integrated:.1f}  |  1/2CH')
 
     def _set_loading_state(self, loading, message=None):
         self._loading = bool(loading)

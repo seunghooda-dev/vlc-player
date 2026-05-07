@@ -231,34 +231,30 @@ class LoudnessMeter(QWidget):
         super().__init__(parent)
         self.setFixedWidth(60)
         self.setFixedHeight(220)
-        self._lkfs_m=-99.0; self._lkfs_i=-99.0; self._true_peak=-99.0
+        self._lkfs_m=-99.0; self._lkfs_s=-99.0; self._lkfs_i=-99.0
         self._qc_i = None
-        self._qc_lra = None
-        self._qc_tp = None
         self._qc_status = ''
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setStyleSheet("background:transparent;")
-    def update_lkfs(self, m, i, tp=-99.0):
-        self._lkfs_m=m; self._lkfs_i=i; self._true_peak=tp; self.update()
+    def update_lkfs(self, m, s, i):
+        self._lkfs_m=m; self._lkfs_s=s; self._lkfs_i=i; self.update()
     def set_analysis_pending(self, message='SCAN'):
-        self._qc_i = None; self._qc_lra = None; self._qc_tp = None
+        self._qc_i = None
         self._qc_status = message or 'SCAN'
         self.update()
     def set_analysis_result(self, integrated, lra=None, true_peak=None):
         self._qc_i = integrated
-        self._qc_lra = lra
-        self._qc_tp = true_peak
         self._qc_status = 'QC'
         self.update()
     def set_analysis_error(self, message='ERR'):
-        self._qc_i = None; self._qc_lra = None; self._qc_tp = None
+        self._qc_i = None
         self._qc_status = message or 'ERR'
         self.update()
     def reset_live(self):
-        self._lkfs_m=-99.0; self._lkfs_i=-99.0; self._true_peak=-99.0; self.update()
+        self._lkfs_m=-99.0; self._lkfs_s=-99.0; self._lkfs_i=-99.0; self.update()
     def reset(self):
-        self._lkfs_m=-99.0; self._lkfs_i=-99.0; self._true_peak=-99.0
-        self._qc_i = None; self._qc_lra = None; self._qc_tp = None; self._qc_status = ''
+        self._lkfs_m=-99.0; self._lkfs_s=-99.0; self._lkfs_i=-99.0
+        self._qc_i = None; self._qc_status = ''
         self.update()
     def paintEvent(self, e):
         from PyQt6.QtGui import QPainter, QColor, QLinearGradient, QFont
@@ -266,9 +262,8 @@ class LoudnessMeter(QWidget):
         W=self.width(); H=self.height()
         # 반투명 배경
         p.fillRect(0,0,W,H,QColor(0,0,0,140))
-        LMIN=-60.0; LMAX=0.0; LBL_H=18; BOT_H=56
+        LMIN=-60.0; LMAX=0.0; LBL_H=18; BOT_H=48
         BAR_Y=LBL_H; BAR_H=H-LBL_H-BOT_H; BAR_X=6; BAR_W=W-12
-        tp_display = self._qc_tp if self._qc_tp is not None else self._true_peak
         def ly(val):
             r=(val-LMIN)/(LMAX-LMIN); r=max(0.0,min(1.0,r))
             return int(BAR_Y+BAR_H*(1.0-r))
@@ -293,36 +288,26 @@ class LoudnessMeter(QWidget):
                 p.setFont(QFont('Cascadia Mono',6,QFont.Weight.Bold if is_ref else QFont.Weight.Normal))
                 p.setPen(QColor('#FFD700') if is_ref else QColor('#383838'))
                 p.drawText(0,gy-6,W,12,Qt.AlignmentFlag.AlignHCenter|Qt.AlignmentFlag.AlignVCenter,str(db))
-        # True Peak 수평선
-        if tp_display is not None and tp_display > -99.0:
-            tp_y = ly(min(tp_display, 0.0))
-            tp_col = QColor(255,0,0,200) if tp_display > -1.0 else QColor(255,140,0,180)
-            p.setPen(tp_col)
-            from PyQt6.QtCore import Qt as _Qt
-            p.drawLine(BAR_X-3, tp_y, BAR_X+BAR_W+3, tp_y)
-            # TP 수치
-            p.setFont(QFont('Cascadia Mono',6,QFont.Weight.Bold))
-            p.drawText(0, tp_y-8, W, 8, _Qt.AlignmentFlag.AlignHCenter, f'TP{tp_display:.1f}')
         p.setFont(QFont('Cascadia Mono',7,QFont.Weight.Bold)); p.setPen(QColor('#444'))
         p.drawText(0,0,W,LBL_H,Qt.AlignmentFlag.AlignHCenter|Qt.AlignmentFlag.AlignVCenter,'LKFS')
         m_str=f'{self._lkfs_m:.1f}' if self._lkfs_m>LMIN else '---'
-        i_source = self._qc_i if self._qc_i is not None else self._lkfs_i
-        i_str=f'{i_source:.1f}' if i_source is not None and i_source>LMIN else '---'
-        m_col=QColor('#ff4444') if self._lkfs_m>-18 else QColor('#ffcc00') if self._lkfs_m>-24 else QColor('#00e676')
-        qc_col = QColor('#00e676') if self._qc_i is not None else QColor('#ffcc00') if self._qc_status else QColor('#888')
-        p.setFont(QFont('Cascadia Mono',7)); p.setPen(QColor('#555')); p.drawText(0,H-BOT_H,W,11,Qt.AlignmentFlag.AlignHCenter,'M')
-        p.setPen(m_col); p.setFont(QFont('Cascadia Mono',9,QFont.Weight.Bold))
-        p.drawText(0,H-BOT_H+9,W,14,Qt.AlignmentFlag.AlignHCenter,m_str)
-        p.setFont(QFont('Cascadia Mono',6,QFont.Weight.Bold)); p.setPen(qc_col)
-        p.drawText(0,H-BOT_H+24,W,10,Qt.AlignmentFlag.AlignHCenter,f'I:{i_str}')
-        p.setFont(QFont('Cascadia Mono',5,QFont.Weight.Bold)); p.setPen(QColor('#888'))
-        if self._qc_i is None and self._qc_status:
-            p.drawText(0,H-BOT_H+36,W,9,Qt.AlignmentFlag.AlignHCenter,self._qc_status[:8])
+        s_str=f'{self._lkfs_s:.1f}' if self._lkfs_s>LMIN else '---'
+        if self._qc_i is not None:
+            i_str=f'{self._qc_i:.1f}' if self._qc_i>LMIN else '---'
+        elif self._qc_status:
+            i_str=self._qc_status[:6]
         else:
-            lra_str = f'{self._qc_lra:.1f}' if self._qc_lra is not None else '--'
-            tp_str = f'{self._qc_tp:.1f}' if self._qc_tp is not None else '--'
-            p.drawText(0,H-BOT_H+36,W,9,Qt.AlignmentFlag.AlignHCenter,f'LRA:{lra_str}')
-            p.drawText(0,H-BOT_H+46,W,9,Qt.AlignmentFlag.AlignHCenter,f'TP:{tp_str}')
+            i_str=f'{self._lkfs_i:.1f}' if self._lkfs_i>LMIN else '---'
+        m_col=QColor('#ff4444') if self._lkfs_m>-18 else QColor('#ffcc00') if self._lkfs_m>-24 else QColor('#00e676')
+        s_col=QColor('#ff4444') if self._lkfs_s>-18 else QColor('#ffcc00') if self._lkfs_s>-24 else QColor('#00e676')
+        i_col=QColor('#00e676') if self._qc_i is not None else QColor('#ffcc00') if self._qc_status else QColor('#888')
+        p.setFont(QFont('Cascadia Mono',8,QFont.Weight.Bold))
+        p.setPen(m_col)
+        p.drawText(0,H-BOT_H,W,15,Qt.AlignmentFlag.AlignHCenter,f'M {m_str}')
+        p.setPen(s_col)
+        p.drawText(0,H-BOT_H+16,W,15,Qt.AlignmentFlag.AlignHCenter,f'S {s_str}')
+        p.setPen(i_col)
+        p.drawText(0,H-BOT_H+32,W,15,Qt.AlignmentFlag.AlignHCenter,f'I {i_str}')
         p.end()
 
 # ══════════════════════════════════════════════════════════
@@ -341,6 +326,7 @@ class AudioLevelThread(QThread):
         self._lock     = __import__('threading').Lock()
         self._proc     = None   # 현재 실행중인 FFmpeg 프로세스
         self._lkfs_ch  = (1, 2)  # LKFS 측정 채널쌍
+        self._s_hist   = []
         self._i_hist   = []
         self._i_lufs   = -99.0
 
@@ -353,6 +339,7 @@ class AudioLevelThread(QThread):
             self._audio_stream_count = max(0, int(audio_stream_count or 0))
             self._lkfs_ch  = lkfs_ch
             self._running  = True
+            self._s_hist   = []
             self._i_hist   = []
             self._i_lufs   = -99.0
         if not self.isRunning():
@@ -366,6 +353,7 @@ class AudioLevelThread(QThread):
         self._running  = False
         self._filepath = None   # 루프에서 fp 체크로 즉시 정지
         self._kill_proc()
+        self._s_hist   = []
         self._i_hist   = []
         self._i_lufs   = -99.0
 
@@ -377,6 +365,7 @@ class AudioLevelThread(QThread):
             terminate_child_process(p, 'audio meter ffmpeg')
 
     def run(self):
+        import math
         import re
         peaks = [0.0] * 16
         hold  = [0]   * 16
@@ -411,9 +400,8 @@ class AudioLevelThread(QThread):
                 rms_branch = f'astats=metadata=1:reset=1,{rms_metas}'
                 # LKFS 브랜치: 선택 채널쌍만 추출 → ebur128
                 lufs_branch = (f'pan=stereo|c0=c{c1}|c1=c{c2}'
-                               f',ebur128=metadata=1:peak=true'
-                               f',ametadata=print:key=lavfi.r128.M'
-                               f',ametadata=print:key=lavfi.r128.true_peak')
+                               f',ebur128=metadata=1'
+                               f',ametadata=print:key=lavfi.r128.M')
 
                 if nstreams > 1:
                     inputs = ''.join(f'[0:a:{i}]' for i in range(min(nstreams, nch)))
@@ -466,18 +454,20 @@ class AudioLevelThread(QThread):
                 for ci, db in ch_vals.items():
                     rms_levels[ci] = max(0.0, min(1.0, (db + 60.0) / 60.0))
 
-                # ── LKFS Momentary: 마지막 M값 (정규식 분리로 혼용 방지) ──
+                # ── LKFS Momentary: 마지막 M값 ──
                 lkfs_m = -99.0
-                true_peak_db = -99.0
-                # M과 true_peak 정규식 완전 분리 — 혼용 버그 방지
                 for m in re.finditer(rf'lavfi\.r128\.M={NUM_RE}', out, re.IGNORECASE):
                     val = _finite_float(m.group(1))
                     if val is not None:
                         lkfs_m = val  # 마지막값으로 덮어쓰기
-                for m in re.finditer(rf'lavfi\.r128\.true_peak={NUM_RE}', out, re.IGNORECASE):
-                    val = _finite_float(m.group(1))
-                    if val is not None and val > true_peak_db:
-                        true_peak_db = val
+
+                # ── Short-term LKFS: 최근 3초 Momentary 값을 에너지 평균 ──
+                cutoff = pos - 3.0
+                self._s_hist = [(t, v) for t, v in self._s_hist if cutoff <= t <= pos + 0.25]
+                if lkfs_m > -70.0:
+                    self._s_hist.append((pos, lkfs_m))
+                s_power = [10.0 ** (v / 10.0) for _, v in self._s_hist if v > -70.0]
+                lkfs_s = 10.0 * math.log10(sum(s_power) / len(s_power)) if s_power else -99.0
 
                 # ── Integrated LUFS (BS.1770 게이팅) ──
                 if lkfs_m > -70.0:
@@ -504,7 +494,7 @@ class AudioLevelThread(QThread):
                 if self._running:
                     self.levels_ready.emit(
                         list(rms_levels), list(peaks),
-                        lkfs_m, lkfs_i, true_peak_db
+                        lkfs_m, lkfs_s, lkfs_i
                     )
 
             except Exception as _e:
@@ -565,7 +555,7 @@ class MeterController(QObject):
     def set_channel_filter(self, selected_pairs):
         self._ch_filter = selected_pairs
 
-    def _on_levels(self, levels, peaks, lkfs_m, lkfs_i, true_peak):
+    def _on_levels(self, levels, peaks, lkfs_m, lkfs_s, lkfs_i):
         # 오디오 미터는 항상 원본의 전체 채널 레벨을 보여준다.
         # 선택 채널은 출력 라우팅/LKFS 기준으로만 사용하고,
         # 미터 표시 자체는 숨기지 않는다.
@@ -577,7 +567,7 @@ class MeterController(QObject):
         evn_pk = [src_peaks[i]  for i in range(1,8,2)]
         self.lm.set_levels(odd_lv, odd_pk)
         self.rm.set_levels(evn_lv, evn_pk)
-        self.loud.update_lkfs(lkfs_m, lkfs_i, true_peak)
+        self.loud.update_lkfs(lkfs_m, lkfs_s, lkfs_i)
 
 # ══════════════════════════════════════════════════════════
 # 왼쪽: 비디오 패널
