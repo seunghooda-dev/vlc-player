@@ -1619,39 +1619,74 @@ class VideoPanel(QWidget):
         self._cue_ready_seq += 1
         seq = self._cue_ready_seq
         start = time.monotonic()
-        timeout_sec = 1.5
+        timeout_sec = 2.0
         target_ms = max(0, int(target_ms))
+        file_name = Path(filepath).name
+
+        def _finish_cue():
+            if seq != self._cue_ready_seq or filepath != self.cur_file:
+                return
+            try:
+                self.player.pause()
+            except Exception as e:
+                log.debug(f'vlc cue pause: {e}')
+            self._complete_file_load(
+                filepath,
+                "✓ VLC 원본 MXF CUE 완료 — ▶ 재생버튼을 누르세요",
+                f"  ▌CUE  {file_name}  |  VLC MXF 원본 재생  —  ▶ 재생버튼을 누르세요",
+            )
 
         def _poll():
             if seq != self._cue_ready_seq or filepath != self.cur_file:
                 return
-            ready = False
+            elapsed = time.monotonic() - start
+            media_len = 0
             try:
-                media_len = self.player.media_length() if hasattr(self.player, 'media_length') else 0
-                ready = bool(media_len and media_len > 0)
-            except Exception:
-                pass
-            timed_out = time.monotonic() - start >= timeout_sec
-            if not ready and not timed_out:
-                QTimer.singleShot(100, _poll)
+                if hasattr(self.player, 'media_length'):
+                    media_len = self.player.media_length()
+            except Exception as e:
+                log.debug(f'vlc cue length poll: {e}')
+            # MXF는 preroll 전에는 get_length()가 0으로 남는 경우가 많다.
+            # probe duration이 있으면 프리롤/seek 타이머가 지나간 뒤 CUE 완료로 본다.
+            has_duration_hint = bool(media_len and media_len > 0) or bool(self.duration and self.duration > 0)
+            ready = elapsed >= 0.72 and has_duration_hint
+            fallback_ready = elapsed >= 1.15
+            if ready or fallback_ready:
+                if media_len and media_len > 0:
+                    log.debug(f'VLC cue ready: {file_name} length={media_len}ms elapsed={elapsed:.2f}s')
+                elif not has_duration_hint:
+                    log.warning(f'VLC cue fallback without duration: {file_name}')
+                else:
+                    log.debug(f'VLC cue fallback with probe duration: {file_name} elapsed={elapsed:.2f}s')
+                self._empty_proxy.hide()
+                self._video_item.show()
+                QTimer.singleShot(120, _finish_cue)
                 return
 
-            if timed_out and not ready:
-                log.warning(f'VLC cue readiness timeout: {Path(filepath).name}')
+            if elapsed < timeout_sec:
+                QTimer.singleShot(80, _poll)
+                return
+
+            if not has_duration_hint:
+                log.warning(f'VLC cue readiness timeout: {file_name}')
+            else:
+                log.debug(f'VLC cue readiness timeout fallback: {file_name}')
             self._empty_proxy.hide()
             self._video_item.show()
-            self.player.pause()
-            QTimer.singleShot(90, lambda: self._show_cue_first_frame(target_ms))
-            QTimer.singleShot(
-                560,
-                lambda: self._complete_file_load(
-                    filepath,
-                    "✓ VLC 원본 MXF CUE 완료 — ▶ 재생버튼을 누르세요",
-                    f"  ▌CUE  {Path(filepath).name}  |  VLC MXF 원본 재생  —  ▶ 재생버튼을 누르세요",
-                )
-            )
+            QTimer.singleShot(120, _finish_cue)
 
-        QTimer.singleShot(80, _poll)
+        def _start_preroll():
+            if seq != self._cue_ready_seq or filepath != self.cur_file:
+                return
+            self._empty_proxy.hide()
+            self._video_item.show()
+            try:
+                self._show_cue_first_frame(target_ms)
+            except Exception as e:
+                log.debug(f'vlc cue preroll: {e}')
+            QTimer.singleShot(80, _poll)
+
+        QTimer.singleShot(80, _start_preroll)
 
     def _stop_all(self):
         if hasattr(self, '_audio_recovery_timer'):
