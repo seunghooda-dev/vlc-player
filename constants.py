@@ -584,6 +584,19 @@ def _backup_corrupt_settings(exc):
         _settings_log_warning(f'settings.json corrupt; backup failed: {backup_exc}')
         return None
 
+def _write_settings_atomic(data):
+    tmp_path = SETTINGS_PATH.with_suffix(f'{SETTINGS_PATH.suffix}.tmp')
+    payload = json.dumps(data, ensure_ascii=False, indent=2)
+    with tmp_path.open('w', encoding='utf-8') as fh:
+        fh.write(payload)
+        fh.write('\n')
+        fh.flush()
+        try:
+            os.fsync(fh.fileno())
+        except Exception:
+            pass
+    tmp_path.replace(SETTINGS_PATH)
+
 def load_settings():
     global _settings_cache
     with _settings_lock:
@@ -601,10 +614,7 @@ def load_settings():
             _backup_corrupt_settings(e)
             data = _default_settings_copy()
             try:
-                SETTINGS_PATH.write_text(
-                    json.dumps(data, ensure_ascii=False, indent=2),
-                    encoding='utf-8'
-                )
+                _write_settings_atomic(data)
             except Exception as write_exc:
                 _settings_log_warning(f'settings.json reset failed: {write_exc}')
         _settings_cache = data
@@ -617,14 +627,9 @@ def save_settings(**updates):
         data.update(updates)
         _settings_cache = data
         try:
-            tmp_path = SETTINGS_PATH.with_suffix(f'{SETTINGS_PATH.suffix}.tmp')
-            tmp_path.write_text(
-                json.dumps(data, ensure_ascii=False, indent=2),
-                encoding='utf-8'
-            )
-            tmp_path.replace(SETTINGS_PATH)
-        except Exception:
-            pass
+            _write_settings_atomic(data)
+        except Exception as e:
+            _settings_log_warning(f'settings.json save failed: {e}')
         return dict(data)
 
 def _hidden_subprocess_flags():
