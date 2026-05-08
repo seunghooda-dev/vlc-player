@@ -1847,7 +1847,7 @@ class VideoPanel(QWidget):
             cb.setChecked(False)
         default_selected = []
         for cb, ch_no in self._ch_checks:
-            if cb.isEnabled() and ch_no in default_channels:
+            if ch_no <= stream_count and ch_no in default_channels:
                 cb.setChecked(True)
                 default_selected.append(ch_no)
         if not default_selected and first_enabled:
