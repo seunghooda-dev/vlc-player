@@ -15,7 +15,10 @@ from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui  import QColor
 from PyQt6.QtMultimedia import QMediaPlayer
 
-from constants   import C, VIDEO_EXTS, BASE_DIR, log, load_settings, save_settings
+from constants   import (
+    C, VIDEO_EXTS, BASE_DIR, log, load_settings, save_settings,
+    friendly_error_title,
+)
 from db_models   import sec_to_tc
 from threads     import AudioAnalyzeThread, BlackDetectThread
 from meters      import mk_label
@@ -728,17 +731,18 @@ class RightPanel(QWidget):
             self._log_stale_analysis('black', seq, 'error')
             return
         self._stop_analysis_timeout()
-        self.black_status.setText(f"  ⚠ 오류: {err}")
+        fp = getattr(self, '_black_file', self.vp.cur_file)
+        title = friendly_error_title('black', err, fp)
+        self.black_status.setText(f"  ⚠ {title}")
         self.btn_run_black.setEnabled(True)
         if getattr(self, '_black_thread', None) and not self._black_thread.isRunning():
             self._black_thread = None
         if hasattr(self.vp, '_set_file_status'):
-            fp = getattr(self, '_black_file', self.vp.cur_file)
             self.vp._set_file_status(fp, analysis=None, black="error")
         try:
             self.vp.btn_black.setEnabled(True)
             self.vp.prog_ai.hide()
-            self.vp.ai_lbl.setText(f"블랙 오류: {err}")
+            self.vp.ai_lbl.setText(f"블랙: {title}")
             self._finish_black_elapsed_timer(prefix='BLACK ERR')
         except Exception as e:
             log.debug(f'black ai error state: {e}')
@@ -967,17 +971,18 @@ class RightPanel(QWidget):
             self._log_stale_analysis('audio', seq, 'error')
             return
         self._stop_analysis_timeout()
-        self.audio_status.setText(f"  ⚠ 오류: {err}")
+        fp = getattr(self, '_audio_file', self.vp.cur_file)
+        title = friendly_error_title('audio', err, fp)
+        self.audio_status.setText(f"  ⚠ {title}")
         self.btn_run_audio.setEnabled(True)
         if getattr(self, '_audio_thread', None) and not self._audio_thread.isRunning():
             self._audio_thread = None
         if hasattr(self.vp, '_set_file_status'):
-            fp = getattr(self, '_audio_file', self.vp.cur_file)
             self.vp._set_file_status(fp, analysis=None, mute="error")
         try:
             self.vp.btn_audio.setEnabled(True)
             self.vp.prog_ai.hide()
-            self.vp.ai_lbl.setText(f"뮤트 오류: {err}")
+            self.vp.ai_lbl.setText(f"뮤트: {title}")
             self._finish_audio_elapsed_timer(prefix='MUTE ERR')
         except Exception as e:
             log.debug(f'audio ai error state: {e}')

@@ -26,6 +26,7 @@ from PyQt6.QtMultimediaWidgets import QGraphicsVideoItem
 from constants  import (
     C, FFMPEG, FFPROBE, FFPLAY, VLC_DIR, VIDEO_EXTS, TMP_DIR, BASE_DIR, log,
     register_child_process, terminate_child_process, load_settings, save_settings,
+    friendly_error_text, friendly_error_title,
 )
 from db_models  import probe, save_clip, frames_to_tc, tc_to_frames
 from threads    import TranscodeThread, LoudnessAnalyzeThread
@@ -1580,7 +1581,8 @@ class VideoPanel(QWidget):
                 self._loudness_thread = None
             if fp == self.cur_file:
                 self.meter_ctrl.set_loudness_analysis_error('ERR')
-                self.status_changed.emit(f'  ⚠ LKFS 분석 오류 — {Path(fp).name}')
+                self.status_changed.emit(
+                    f'  ⚠ {friendly_error_title("loudness", err, fp)} — {Path(fp).name}')
             log.error(f'LoudnessAnalyze UI error: {err}')
 
         t.progress.connect(_progress)
@@ -1756,7 +1758,8 @@ class VideoPanel(QWidget):
     def load_file(self, filepath):
         if not filepath or not Path(filepath).exists():
             log.warning(f'load_file: 파일 없음 또는 None — {filepath}')
-            self.ai_lbl.setText(f'⚠ 파일 없음: {Path(filepath).name if filepath else "?"}')
+            title = friendly_error_title('file_missing', '', filepath)
+            self.ai_lbl.setText(f'⚠ {title}: {Path(filepath).name if filepath else "?"}')
             return
         self._remember_recent_file(filepath)
         log.info(f'load_file: {Path(filepath).name}')
@@ -1885,9 +1888,11 @@ class VideoPanel(QWidget):
                 self.player.audio_set_volume(0)
                 self._prepare_vlc_cue(filepath, 0)
             except Exception as e:
-                self.empty_label.setText(f'⚠ VLC 로드 실패\n{e}')
-                self.ai_lbl.setText('⚠ VLC 로드 오류')
+                msg = friendly_error_text('vlc_load', e, filepath)
+                self.empty_label.setText(f'⚠ {msg}')
+                self.ai_lbl.setText(f'⚠ {friendly_error_title("vlc_load", e, filepath)}')
                 self._set_loading_state(False)
+                log.error(f'VLC load failed: {Path(filepath).name} | {e}')
             return
 
         # CUE — 캐시 확인 후 즉시 또는 변환 후 player에 올림
@@ -1935,9 +1940,10 @@ class VideoPanel(QWidget):
                     self.prog_ai.hide()
                     self.prog_ai.setRange(0, 0)  # indeterminate로 복원
             self._tc_thread.progress.connect(_tc_progress)
-            def _tc_err(msg, el=self.empty_label, ai=self.ai_lbl):
-                el.setText(f'⚠ 변환 실패\n{msg[:80]}')
-                ai.setText(f'⚠ 변환 오류 — FFmpeg 로그 확인 필요')
+            def _tc_err(msg, el=self.empty_label, ai=self.ai_lbl, fp=filepath):
+                friendly = friendly_error_text('ffmpeg_transcode', msg, fp)
+                el.setText(f'⚠ {friendly}')
+                ai.setText(f'⚠ {friendly_error_title("ffmpeg_transcode", msg, fp)}')
                 self.prog_ai.hide(); self.prog_ai.setRange(0, 0)
             self._tc_thread.error.connect(_tc_err)
             self._tc_thread.start()
@@ -1980,7 +1986,8 @@ class VideoPanel(QWidget):
                 self.cur_info.get('audio_stream_count', 0))
         except Exception as e:
             # setSource 실패해도 프로그램 유지
-            self.ai_lbl.setText(f"⚠ 로드 오류 (프로그램 유지): {e}")
+            self.ai_lbl.setText(f'⚠ {friendly_error_title("player_load", e, self.cur_file)}')
+            log.error(f'transcode ready load error: {e}')
 
     def _on_transcode_full(self, tmp):
         if not self.cur_file or getattr(self, '_loading', False): return
@@ -2010,7 +2017,8 @@ class VideoPanel(QWidget):
                 self._evict_tc_cache()
             self.ai_lbl.setText("✓ CUE 완료 — ▶ 재생버튼을 누르세요")
         except Exception as e:
-            self.ai_lbl.setText(f"⚠ 전체파일 교체 오류 (프로그램 유지): {e}")
+            self.ai_lbl.setText(f'⚠ {friendly_error_title("player_load", e, self.cur_file)}')
+            log.error(f'transcode full swap error: {e}')
 
     # ── 재생 제어 ────────────────────────────────────────
     def _get_selected_ch_pair(self):
@@ -2074,7 +2082,8 @@ class VideoPanel(QWidget):
             ch_pair = self._get_selected_ch_pair()
             self.ai_lbl.setText(f"✓ {ch_pair[0]}/{ch_pair[1]}CH 출력 중")
         except Exception as e:
-            self.ai_lbl.setText(f"⚠ 채널 라우팅 오류 (프로그램 유지): {e}")
+            self.ai_lbl.setText(f'⚠ {friendly_error_title("audio_route", e, self.cur_file)}')
+            log.error(f'channel route failed: {e}')
 
     def _start_audio_mix(self, pos_ms=None, lead_sec=None):
         if not self.cur_file:
@@ -2505,27 +2514,28 @@ class VideoPanel(QWidget):
         """QMediaPlayer 재생 오류 핸들러"""
         if error == QMediaPlayer.Error.NoError:
             return
-        # 에러 종류별 메시지
-        msg_map = {
-            QMediaPlayer.Error.ResourceError:    '파일을 열 수 없습니다 (손상/삭제)',
-            QMediaPlayer.Error.FormatError:      '지원하지 않는 포맷입니다',
-            QMediaPlayer.Error.NetworkError:     '네트워크 오류',
-            QMediaPlayer.Error.AccessDeniedError:'파일 접근 권한 없음',
+        area_map = {
+            QMediaPlayer.Error.ResourceError: 'file_access',
+            QMediaPlayer.Error.FormatError: 'vlc_playback',
+            QMediaPlayer.Error.NetworkError: 'network',
+            QMediaPlayer.Error.AccessDeniedError: 'permission',
         }
-        friendly = msg_map.get(error, f'재생 오류 (코드 {error})')
-        detail   = error_string or ''
+        area = area_map.get(error, 'vlc_playback')
+        detail = error_string or ''
+        friendly = friendly_error_text(area, detail, self.cur_file)
+        title = friendly.splitlines()[0]
         # UI 상태 복원
         self._led_timer.stop()
         self.led.setStyleSheet(f"color:{C['red']};font-size:10px;background:transparent;")
-        self.ai_lbl.setText(f'⚠ {friendly}')
+        self.ai_lbl.setText(f'⚠ {title}')
         self.btn_play.setText('▶')
         # 빈 화면 표시
-        self.empty_label.setText(f'⚠ {friendly}\n\n{detail[:120]}')
+        self.empty_label.setText(f'⚠ {friendly}')
         self.empty_label.setStyleSheet(
             f"color:{C['red']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:13px;background:#000;")
         self._empty_proxy.setVisible(True)
         # 로그
-        log.error(f'[PLAYER ERROR] {friendly} | {detail}')
+        log.error(f'[PLAYER ERROR] {title} | {detail}')
 
     def _on_media_status(self, status):
         """미디어 로드 상태 추적 — InvalidMedia 별도 처리"""

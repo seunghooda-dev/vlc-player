@@ -369,6 +369,91 @@ def check_runtime_storage():
         _check_write_location('임시 폴더', TMP_DIR, '분석 캐시와 임시 작업 파일 생성'),
     ]
 
+def friendly_error_text(area, detail='', filename=None, max_detail=160):
+    """Convert technical VLC/FFmpeg errors into short operator-facing Korean text."""
+    area_key = str(area or '').lower()
+    raw = str(detail or '').strip()
+    low = raw.lower()
+    name = ''
+    if filename:
+        try:
+            name = Path(filename).name
+        except Exception:
+            name = str(filename)
+
+    title = '작업 중 오류가 발생했습니다'
+    hint = '오류 로그를 확인하고 같은 파일에서 반복되는지 점검하세요.'
+
+    if (
+        'file_missing' in area_key
+        or 'no such file' in low
+        or 'cannot find the file' in low
+        or 'not found' in low
+        or 'does not exist' in low
+    ):
+        title = '파일을 찾을 수 없습니다'
+        hint = '파일이 이동/삭제됐거나 외장 드라이브 연결이 끊겼는지 확인하세요.'
+    elif (
+        'permission' in area_key
+        or 'access_denied' in area_key
+        or 'access-denied' in area_key
+        or 'permission' in low
+        or 'access is denied' in low
+        or 'access denied' in low
+        or 'permission denied' in low
+        or '접근' in low
+    ):
+        title = '파일 접근 권한이 없습니다'
+        hint = '다른 프로그램이 파일을 사용 중인지, 읽기 권한이 있는 위치인지 확인하세요.'
+    elif 'timeout' in low or 'timed out' in low or '시간이 초과' in low:
+        title = '작업 시간이 초과되었습니다'
+        hint = '파일이 크거나 저장장치 응답이 느릴 수 있습니다. 다시 시도해도 반복되면 로그를 확인하세요.'
+    elif 'audio' in area_key or 'mute' in area_key or '오디오' in low:
+        title = '오디오 분석에 실패했습니다'
+        hint = '오디오 스트림이 없거나 파일을 읽는 중 문제가 발생했습니다. 로그에서 FFmpeg 상세 내용을 확인하세요.'
+    elif 'black' in area_key or 'blackframe' in low:
+        title = '블랙 검출에 실패했습니다'
+        hint = '비디오 스트림을 읽지 못했거나 FFmpeg 분석 중 문제가 발생했습니다.'
+    elif 'loudness' in area_key or 'lkfs' in area_key or 'ebur128' in low:
+        title = '라우드니스 분석에 실패했습니다'
+        hint = '1/2CH 오디오 스트림을 읽지 못했거나 FFmpeg ebur128 분석 중 문제가 발생했습니다.'
+    elif (
+        'vlc' in area_key
+        or 'vlc could not play' in low
+        or 'unsupported' in low
+        or 'invalidmedia' in low
+    ):
+        title = 'VLC가 이 파일을 재생하지 못했습니다'
+        hint = 'MXF 코덱/컨테이너 호환성, 파일 손상 여부, VLC 설치 상태를 확인하세요.'
+    elif 'file_access' in area_key or 'resource' in area_key:
+        title = '파일을 열 수 없습니다'
+        hint = '파일이 손상됐거나 다른 프로그램에서 사용 중인지 확인하세요.'
+    elif 'ffmpeg' in area_key or 'ffmpeg' in low or 'ffprobe' in low:
+        title = 'FFmpeg 작업 중 오류가 발생했습니다'
+        hint = 'FFmpeg/FFprobe 경로, 파일 손상 여부, 오디오/비디오 스트림 존재 여부를 확인하세요.'
+    elif 'format' in area_key or '지원하지 않는' in low:
+        title = '지원하지 않는 영상 형식입니다'
+        hint = '이 파일의 코덱 또는 컨테이너를 VLC가 열 수 없는 상태입니다.'
+    elif 'network' in area_key:
+        title = '네트워크 오류가 발생했습니다'
+        hint = '네트워크 경로의 파일이면 연결 상태와 권한을 확인하세요.'
+
+    hide_detail = any(pattern in low for pattern in (
+        'vlc could not play this file',
+        '재생 불가:',
+        'unsupported format',
+    ))
+    lines = [title, hint]
+    if name:
+        lines.append(f'파일: {name}')
+    if raw and not hide_detail and max_detail:
+        one_line = ' '.join(raw.split())
+        lines.append(f'상세: {one_line[:max_detail]}')
+    return '\n'.join(lines)
+
+def friendly_error_title(area, detail='', filename=None):
+    return friendly_error_text(area, detail, filename).splitlines()[0]
+
 def format_bytes(size):
     try:
         value = float(size or 0)
