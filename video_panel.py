@@ -1767,18 +1767,96 @@ class VideoPanel(QWidget):
             self.player.setSource(QUrl())
         except Exception as e: log.debug(f'player stop/clear: {e}')
 
+    def _show_file_load_error(self, title, detail='', filepath=None, replace_stage=False):
+        name = Path(filepath).name if filepath else '?'
+        self.ai_lbl.setText(f'⚠ {title}')
+        self.status_changed.emit(f'  ⚠ {title} — {name}')
+        if replace_stage or not self.cur_file:
+            lines = [f'⚠ {title}']
+            if detail:
+                lines.append('')
+                lines.append(detail)
+            lines.append('')
+            lines.append(f'파일: {name}')
+            self.empty_label.setText('\n'.join(lines))
+            self.empty_label.setStyleSheet(
+                f"color:{C['red']};font-family:'Cascadia Mono','Consolas','D2Coding';"
+                "font-size:13px;background:#000;")
+            self._empty_proxy.show()
+            self._video_item.hide()
+
+    def _quick_file_preflight(self, filepath):
+        if not filepath:
+            return False, '파일을 찾을 수 없습니다', '파일 경로가 비어 있습니다.'
+        path = Path(filepath)
+        if not path.exists():
+            return False, '파일을 찾을 수 없습니다', '파일이 이동/삭제됐거나 외장 드라이브 연결이 끊겼는지 확인하세요.'
+        if not path.is_file():
+            return False, '파일이 아닙니다', '폴더나 특수 경로는 열 수 없습니다.'
+        if path.suffix.lower() not in VIDEO_EXTS:
+            return False, '지원하지 않는 파일 형식입니다', 'MXF 같은 지원 영상 파일을 선택하세요.'
+        try:
+            size = path.stat().st_size
+        except PermissionError:
+            return False, '파일 접근 권한이 없습니다', '읽기 권한이 있는 위치인지, 다른 프로그램이 잠그고 있지 않은지 확인하세요.'
+        except OSError as e:
+            return False, '파일 정보를 읽을 수 없습니다', str(e)
+        if size <= 0:
+            return False, '빈 파일입니다', '파일 크기가 0바이트입니다. 정상 MXF 파일인지 확인하세요.'
+        try:
+            with path.open('rb') as fh:
+                fh.read(4096)
+        except PermissionError:
+            return False, '파일 접근 권한이 없습니다', '읽기 권한이 있는 위치인지, 다른 프로그램이 잠그고 있지 않은지 확인하세요.'
+        except OSError as e:
+            return False, '파일을 읽을 수 없습니다', str(e)
+        return True, '', ''
+
+    def _validate_probe_info(self, filepath, info):
+        if not info:
+            return (
+                False,
+                '파일 메타데이터 확인 실패',
+                'FFprobe가 파일 구조를 읽지 못했습니다. 파일 손상, 권한, 또는 지원되지 않는 컨테이너인지 확인하세요.',
+                [],
+            )
+        width = int(info.get('width', 0) or 0)
+        height = int(info.get('height', 0) or 0)
+        codec = str(info.get('codec', '') or '').strip()
+        if width <= 0 or height <= 0 or not codec:
+            return (
+                False,
+                '비디오 스트림을 찾지 못했습니다',
+                '이 파일에 재생 가능한 비디오 스트림이 없거나 FFprobe가 비디오 정보를 읽지 못했습니다.',
+                [],
+            )
+        warnings = []
+        audio_streams = int(info.get('audio_stream_count', 0) or 0)
+        channels = int(info.get('channels', 0) or 0)
+        if audio_streams <= 0 and channels <= 0:
+            warnings.append('오디오 스트림 없음 — 영상만 재생됩니다')
+        try:
+            if float(info.get('duration', 0) or 0) <= 0:
+                warnings.append('길이 정보 없음 — 탐색/REM 표시가 제한될 수 있습니다')
+        except Exception:
+            warnings.append('길이 정보 확인 실패 — 탐색/REM 표시가 제한될 수 있습니다')
+        return True, '', '', warnings
+
     def load_file(self, filepath):
-        if not filepath or not Path(filepath).exists():
-            log.warning(f'load_file: 파일 없음 또는 None — {filepath}')
-            title = friendly_error_title('file_missing', '', filepath)
-            self.ai_lbl.setText(f'⚠ {title}: {Path(filepath).name if filepath else "?"}')
+        preflight_start = time.monotonic()
+        ok, title, detail = self._quick_file_preflight(filepath)
+        if not ok:
+            log.warning(f'load_file preflight blocked: {filepath} | {title} | {detail}')
+            self._show_file_load_error(title, detail, filepath)
             return
+        probe_start = time.monotonic()
         self._remember_recent_file(filepath)
         log.info(f'load_file: {Path(filepath).name}')
         self._stop_all()
         self._cancel_preconvert_job(filepath)
         self._reset_audio_recovery()
-        self._set_loading_state(True, f"⏳ CUE 준비 중: {Path(filepath).name}")
+        self._set_loading_state(True, f"⏳ 파일 점검 중: {Path(filepath).name}")
+        QApplication.processEvents()
         self.cur_file = filepath
         for f in self._files:
             f["cue"] = (f.get("filepath") == filepath)
@@ -1804,7 +1882,27 @@ class VideoPanel(QWidget):
 
         # 메타데이터 probe
         info = probe(filepath)
-        if not info: info = {"filename":Path(filepath).name,"filepath":filepath,"fps":29.97,"duration":0,"size":0}
+        ok, title, detail, warnings = self._validate_probe_info(filepath, info)
+        if not ok:
+            log.warning(f'load_file probe blocked: {Path(filepath).name} | {title} | {detail}')
+            for f in self._files:
+                if f.get("filepath") == filepath:
+                    f["cue"] = False
+                    f["playing"] = False
+            self.cur_file = None
+            self.cur_info = {}
+            self._refresh_clip_list()
+            self._set_loading_state(False)
+            self._show_file_load_error(title, detail, filepath, replace_stage=True)
+            return
+        if warnings:
+            log.warning(f'load_file probe warning: {Path(filepath).name} | {"; ".join(warnings)}')
+        log.info(
+            f'file preflight ok: {Path(filepath).name} '
+            f'quick={probe_start - preflight_start:.3f}s '
+            f'probe={time.monotonic() - probe_start:.3f}s'
+        )
+        self._set_loading_state(True, f"⏳ CUE 준비 중: {Path(filepath).name}")
         self.cur_info = info
         self.fps       = info.get("fps", 29.97)
         self.df        = bool(info.get("df", False)) and self._nominal_fps() in (30, 60)
@@ -1865,7 +1963,7 @@ class VideoPanel(QWidget):
 
         self.btn_black.setEnabled(False)
         self.btn_audio.setEnabled(False)
-        self.ai_lbl.setText("AI 분석 준비됨")
+        self.ai_lbl.setText(f"⚠ {warnings[0]}" if warnings else "AI 분석 준비됨")
 
         # 실시간 오디오 미터 시작 (채널 수 전달)
         ch_count = info.get('channels', 2)
