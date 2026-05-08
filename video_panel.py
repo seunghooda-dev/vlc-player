@@ -1195,17 +1195,49 @@ class VideoPanel(QWidget):
         self._set_display_frame(frame)
 
     # ── 파일 열기 ────────────────────────────────────────
+    def _existing_dir(self, value):
+        try:
+            if not value or not isinstance(value, (str, os.PathLike)):
+                return ''
+            p = Path(value)
+            if p.exists() and p.is_file():
+                p = p.parent
+            if p.exists() and p.is_dir():
+                return str(p)
+        except Exception:
+            pass
+        return ''
+
+    def _file_dialog_start_dir(self, start_dir=None):
+        explicit = self._existing_dir(start_dir)
+        if explicit:
+            return explicit
+        return self._load_last_dir()
+
     def _load_last_dir(self):
         try:
-            last_dir = load_settings().get('last_dir')
+            settings = load_settings()
+            for fp in settings.get('recent_files', []):
+                try:
+                    p = Path(fp)
+                    if p.exists() and p.is_file():
+                        return str(p.parent)
+                except Exception:
+                    pass
+            last_dir = self._existing_dir(settings.get('last_dir'))
             if last_dir:
                 return last_dir
+            for folder in settings.get('recent_dirs', []):
+                recent_dir = self._existing_dir(folder)
+                if recent_dir:
+                    return recent_dir
         except Exception:
             pass
         try:
             import json as _j
             p = BASE_DIR / 'last_dir.json'
-            return _j.loads(p.read_text()).get('folder', 'C:/')
+            legacy_dir = self._existing_dir(_j.loads(p.read_text()).get('folder', ''))
+            return legacy_dir or 'C:/'
         except: return 'C:/'
 
     def _save_last_dir(self, folder):
@@ -1478,7 +1510,8 @@ class VideoPanel(QWidget):
         self.ai_lbl.setText(f"⏳ 백그라운드 변환 중: {Path(filepath).name}")
 
     def add_files(self, start_dir=None):
-        start = start_dir or self._load_last_dir()
+        start = self._file_dialog_start_dir(start_dir)
+        log.info(f'file dialog start dir: {start}')
         files,_ = QFileDialog.getOpenFileNames(self,"파일 선택", start,
             "Video Files (*.mxf *.mp4 *.mov *.mts *.m2ts *.mkv *.avi);;All Files (*)")
         if files:
