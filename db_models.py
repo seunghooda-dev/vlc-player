@@ -149,8 +149,21 @@ def sec_fmt(s):
 
 def probe(filepath):
     try:
+        probe_entries = (
+            "format=duration,size,bit_rate:format_tags=timecode:"
+            "stream=index,codec_type,codec_name,width,height,r_frame_rate,channels:"
+            "stream_tags=timecode"
+        )
         r = subprocess.run(
-            [FFPROBE,"-v","quiet","-print_format","json","-show_format","-show_streams",filepath],
+            [
+                FFPROBE,
+                "-v", "quiet",
+                "-print_format", "json",
+                "-show_entries", probe_entries,
+                "-show_format",
+                "-show_streams",
+                filepath,
+            ],
             capture_output=True, text=True, timeout=15)
         if r.returncode != 0: return {}
         d = json.loads(r.stdout); fmt = d.get("format",{})
