@@ -28,10 +28,14 @@ class RightPanel(QWidget):
         self.vp = video_panel
         self.cur_id = None
         self._analysis_active = None
+        self._analysis_seq = 0
+        self._analysis_seq_kind = None
+        self._analysis_seq_file = None
         self._analysis_paused_playback = False
         self._analysis_paused_meters = False
         self._analysis_timeout_kind = None
         self._analysis_timeout_label = ''
+        self._analysis_timeout_seq = None
         self._analysis_timeout_timer = QTimer(self)
         self._analysis_timeout_timer.setSingleShot(True)
         self._analysis_timeout_timer.timeout.connect(self._on_analysis_timeout)
@@ -474,25 +478,53 @@ class RightPanel(QWidget):
             duration = 0
         return int(max(120, min(3600, duration * 4 + 60)))
 
-    def _start_analysis_timeout(self, kind, label):
+    def _next_analysis_seq(self, kind, filepath):
+        self._analysis_seq += 1
+        self._analysis_seq_kind = kind
+        self._analysis_seq_file = filepath
+        return self._analysis_seq
+
+    def _analysis_matches(self, kind, seq, filepath=None):
+        if seq is None:
+            return True
+        if seq != self._analysis_seq or kind != self._analysis_seq_kind:
+            return False
+        if filepath and filepath != self._analysis_seq_file:
+            return False
+        return True
+
+    def _log_stale_analysis(self, kind, seq, where):
+        log.debug(
+            f'stale analysis callback ignored kind={kind} seq={seq} '
+            f'current={self._analysis_seq}/{self._analysis_seq_kind} where={where}'
+        )
+
+    def _start_analysis_timeout(self, kind, label, seq):
         seconds = self._analysis_timeout_seconds()
         self._analysis_timeout_kind = kind
         self._analysis_timeout_label = label
+        self._analysis_timeout_seq = seq
         self._analysis_timeout_timer.start(seconds * 1000)
-        log.info(f'analysis timeout armed kind={kind} seconds={seconds}')
+        log.info(f'analysis timeout armed kind={kind} seq={seq} seconds={seconds}')
 
     def _stop_analysis_timeout(self):
         self._analysis_timeout_timer.stop()
         self._analysis_timeout_kind = None
         self._analysis_timeout_label = ''
+        self._analysis_timeout_seq = None
 
     def _on_analysis_timeout(self):
         kind = self._analysis_timeout_kind
+        seq = self._analysis_timeout_seq
         label = self._analysis_timeout_label or '분석'
         self._analysis_timeout_kind = None
         self._analysis_timeout_label = ''
+        self._analysis_timeout_seq = None
+        if not self._analysis_matches(kind, seq):
+            self._log_stale_analysis(kind, seq, 'timeout')
+            return
         msg = f'{label} 시간 초과 — FFmpeg 작업을 중단했습니다'
-        log.warning(f'analysis timeout fired kind={kind}')
+        log.warning(f'analysis timeout fired kind={kind} seq={seq}')
         if kind == 'black':
             thread = getattr(self, '_black_thread', None)
             try:
@@ -500,7 +532,7 @@ class RightPanel(QWidget):
                     thread.abort()
             except Exception as e:
                 log.debug(f'black timeout abort: {e}')
-            self._on_black_error(msg)
+            self._on_black_error(msg, seq=seq)
         elif kind == 'audio':
             thread = getattr(self, '_audio_thread', None)
             try:
@@ -508,7 +540,7 @@ class RightPanel(QWidget):
                     thread.abort()
             except Exception as e:
                 log.debug(f'audio timeout abort: {e}')
-            self._on_audio_error(msg)
+            self._on_audio_error(msg, seq=seq)
 
     def set_loading_state(self, loading):
         enabled = not bool(loading)
@@ -616,6 +648,7 @@ class RightPanel(QWidget):
         self.black_list.clear()
         self.black_status.setText("  ⏳ 블랙 프레임 검출 중...")
         self._black_file = self.vp.cur_file
+        seq = self._next_analysis_seq('black', self._black_file)
         if hasattr(self.vp, '_set_file_status'):
             self.vp._set_file_status(self._black_file, analysis="black")
         try:
@@ -634,15 +667,30 @@ class RightPanel(QWidget):
             getattr(self.vp, 'df', None),
             getattr(self.vp, '_tc_offset_frames', 0),
         )
-        self._black_thread.progress.connect(lambda m: self.black_status.setText(f"  ⏳ {m}"))
-        self._black_thread.finished.connect(self._on_black_done)
-        self._black_thread.error.connect(self._on_black_error)
+        self._black_thread.progress.connect(
+            lambda m, s=seq: self._on_analysis_progress('black', s, m)
+        )
+        self._black_thread.finished.connect(lambda ranges, s=seq: self._on_black_done(ranges, seq=s))
+        self._black_thread.error.connect(lambda err, s=seq: self._on_black_error(err, seq=s))
         self._black_thread.start()
-        self._start_analysis_timeout('black', '블랙 검출')
+        self._start_analysis_timeout('black', '블랙 검출', seq)
 
-    def _on_black_done(self, ranges):
+    def _on_analysis_progress(self, kind, seq, message):
+        if not self._analysis_matches(kind, seq):
+            return
+        if kind == 'black':
+            self.black_status.setText(f"  ⏳ {message}")
+        elif kind == 'audio':
+            self.audio_status.setText(f"  ⏳ {message}")
+
+    def _on_black_done(self, ranges, seq=None):
+        if not self._analysis_matches('black', seq, getattr(self, '_black_file', None)):
+            self._log_stale_analysis('black', seq, 'done')
+            return
         self._stop_analysis_timeout()
         self.btn_run_black.setEnabled(True)
+        if getattr(self, '_black_thread', None) and not self._black_thread.isRunning():
+            self._black_thread = None
         if hasattr(self.vp, '_set_file_status'):
             fp = getattr(self, '_black_file', self.vp.cur_file)
             self.vp._set_file_status(
@@ -675,10 +723,15 @@ class RightPanel(QWidget):
         self.black_status.setText(f"  ✓ 완료 — 블랙 {len(ranges)}구간")
         self._finish_analysis_mode()
 
-    def _on_black_error(self, err):
+    def _on_black_error(self, err, seq=None):
+        if not self._analysis_matches('black', seq, getattr(self, '_black_file', None)):
+            self._log_stale_analysis('black', seq, 'error')
+            return
         self._stop_analysis_timeout()
         self.black_status.setText(f"  ⚠ 오류: {err}")
         self.btn_run_black.setEnabled(True)
+        if getattr(self, '_black_thread', None) and not self._black_thread.isRunning():
+            self._black_thread = None
         if hasattr(self.vp, '_set_file_status'):
             fp = getattr(self, '_black_file', self.vp.cur_file)
             self.vp._set_file_status(fp, analysis=None, black="error")
@@ -816,6 +869,7 @@ class RightPanel(QWidget):
         self.mute_list.clear(); self.peak_table.setRowCount(0)
         self.audio_status.setText(f"  ⏳ 1/2CH 레벨 인덱스 확인 중... ({dur:.1f}초 이상)")
         self._audio_file = self.vp.cur_file
+        seq = self._next_analysis_seq('audio', self._audio_file)
         if hasattr(self.vp, '_set_file_status'):
             self.vp._set_file_status(self._audio_file, analysis="mute")
         self.peak_table.setRowCount(1)
@@ -840,15 +894,22 @@ class RightPanel(QWidget):
             getattr(self.vp, 'df', None),
             getattr(self.vp, '_tc_offset_frames', 0),
         )
-        self._audio_thread.progress.connect(lambda m: self.audio_status.setText(f"  ⏳ {m}"))
-        self._audio_thread.finished.connect(self._on_audio_done)
-        self._audio_thread.error.connect(self._on_audio_error)
+        self._audio_thread.progress.connect(
+            lambda m, s=seq: self._on_analysis_progress('audio', s, m)
+        )
+        self._audio_thread.finished.connect(lambda result, s=seq: self._on_audio_done(result, seq=s))
+        self._audio_thread.error.connect(lambda err, s=seq: self._on_audio_error(err, seq=s))
         self._audio_thread.start()
-        self._start_analysis_timeout('audio', '뮤트 검출')
+        self._start_analysis_timeout('audio', '뮤트 검출', seq)
 
-    def _on_audio_done(self, result):
+    def _on_audio_done(self, result, seq=None):
+        if not self._analysis_matches('audio', seq, getattr(self, '_audio_file', None)):
+            self._log_stale_analysis('audio', seq, 'done')
+            return
         self._stop_analysis_timeout()
         self.btn_run_audio.setEnabled(True)
+        if getattr(self, '_audio_thread', None) and not self._audio_thread.isRunning():
+            self._audio_thread = None
         mutes    = result.get('mutes', [])
         if hasattr(self.vp, '_set_file_status'):
             fp = getattr(self, '_audio_file', self.vp.cur_file)
@@ -901,10 +962,15 @@ class RightPanel(QWidget):
             log.debug(f'audio ai done state: {e}')
         self._finish_analysis_mode()
 
-    def _on_audio_error(self, err):
+    def _on_audio_error(self, err, seq=None):
+        if not self._analysis_matches('audio', seq, getattr(self, '_audio_file', None)):
+            self._log_stale_analysis('audio', seq, 'error')
+            return
         self._stop_analysis_timeout()
         self.audio_status.setText(f"  ⚠ 오류: {err}")
         self.btn_run_audio.setEnabled(True)
+        if getattr(self, '_audio_thread', None) and not self._audio_thread.isRunning():
+            self._audio_thread = None
         if hasattr(self.vp, '_set_file_status'):
             fp = getattr(self, '_audio_file', self.vp.cur_file)
             self.vp._set_file_status(fp, analysis=None, mute="error")
