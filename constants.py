@@ -320,6 +320,29 @@ FFMPEG     = resolve_tool_command("ffmpeg")
 FFPROBE    = resolve_tool_command("ffprobe")
 FFPLAY     = resolve_tool_command("ffplay")
 
+_RUNTIME_TOOL_META = {
+    'FFmpeg': {
+        'command': lambda: FFMPEG,
+        'role': '오디오 미터, 블랙/뮤트 검출, 선택 채널 믹스',
+        'hint': r'ffmpeg.exe를 앱 폴더의 tools\ 안에 넣거나 Windows PATH에 등록하세요.',
+    },
+    'FFprobe': {
+        'command': lambda: FFPROBE,
+        'role': 'MXF 메타데이터, 길이, 해상도, 오디오 채널 확인',
+        'hint': r'ffprobe.exe를 앱 폴더의 tools\ 안에 넣거나 Windows PATH에 등록하세요.',
+    },
+    'FFplay': {
+        'command': lambda: FFPLAY,
+        'role': '체크된 오디오 채널 실제 출력',
+        'hint': r'ffplay.exe를 앱 폴더의 tools\ 안에 넣거나 Windows PATH에 등록하세요.',
+    },
+    'VLC': {
+        'command': lambda: VLC_DIR,
+        'role': 'MXF 원본 영상 재생',
+        'hint': r'VLC를 설치하거나 libvlc.dll이 포함된 VLC 폴더를 앱 폴더\VLC 또는 C:\Program Files\VideoLAN\VLC에 두세요.',
+    },
+}
+
 def _runtime_search_paths():
     paths = []
     seen = set()
@@ -330,6 +353,56 @@ def _runtime_search_paths():
             paths.append(str(path))
     paths.append('Windows PATH')
     return paths
+
+def _runtime_tool_state(name):
+    canonical = next((key for key in _RUNTIME_TOOL_META if key.lower() == str(name).lower()), str(name))
+    meta = _RUNTIME_TOOL_META.get(canonical)
+    if not meta:
+        return {
+            'name': canonical,
+            'ok': False,
+            'path': '',
+            'role': '',
+            'hint': '알 수 없는 실행 도구입니다.',
+        }
+    if canonical == 'VLC':
+        ok = bool(VLC_DIR and (Path(VLC_DIR) / 'libvlc.dll').exists())
+        return {
+            'name': canonical,
+            'ok': ok,
+            'path': str(VLC_DIR or ''),
+            'role': meta['role'],
+            'hint': meta['hint'],
+        }
+    command = str(meta['command']() or '')
+    exe = str(command) if command and Path(command).exists() else shutil.which(command)
+    return {
+        'name': canonical,
+        'ok': bool(exe),
+        'path': exe or '',
+        'role': meta['role'],
+        'hint': meta['hint'],
+    }
+
+def missing_runtime_tools(names):
+    return [item for item in (_runtime_tool_state(name) for name in names) if not item.get('ok')]
+
+def runtime_tools_ok(names):
+    return not missing_runtime_tools(names)
+
+def format_missing_runtime_tools(names):
+    missing = missing_runtime_tools(names)
+    if not missing:
+        return ''
+    lines = [f"필수 실행 도구가 없습니다: {', '.join(item['name'] for item in missing)}"]
+    lines.append('영향:')
+    for item in missing:
+        lines.append(f"- {item['name']}: {item.get('role') or '-'}")
+    lines.append('조치:')
+    for item in missing:
+        lines.append(f"- {item.get('hint') or '설치 또는 경로 등록이 필요합니다.'}")
+    lines.append('상단 ENV 버튼에서 전체 실행 환경을 다시 확인할 수 있습니다.')
+    return '\n'.join(lines)
 
 def _check_write_location(name, path, role, required=True):
     path = Path(path)
@@ -825,9 +898,9 @@ def _check_command(name, command, role='', required=True):
 
 def check_runtime_environment():
     items = [
-        _check_command('FFmpeg', FFMPEG, '오디오 미터, 블랙/뮤트 검출, 선택 채널 믹스', True),
-        _check_command('FFprobe', FFPROBE, 'MXF 메타데이터, 길이, 해상도, 오디오 채널 확인', True),
-        _check_command('FFplay', FFPLAY, '체크된 오디오 채널 실제 출력', True),
+        _check_command('FFmpeg', FFMPEG, _RUNTIME_TOOL_META['FFmpeg']['role'], True),
+        _check_command('FFprobe', FFPROBE, _RUNTIME_TOOL_META['FFprobe']['role'], True),
+        _check_command('FFplay', FFPLAY, _RUNTIME_TOOL_META['FFplay']['role'], True),
     ]
     if VLC_DIR:
         items.append({
@@ -837,7 +910,7 @@ def check_runtime_environment():
             'message': str(VLC_DIR / 'libvlc.dll'),
             'version': str(VLC_DIR / 'libvlc.dll'),
             'source': _classify_runtime_source(VLC_DIR),
-            'role': 'MXF 원본 영상 재생',
+            'role': _RUNTIME_TOOL_META['VLC']['role'],
             'required': True,
             'hint': '',
         })
@@ -849,9 +922,9 @@ def check_runtime_environment():
             'message': r'C:\Program Files\VideoLAN\VLC\libvlc.dll 을 찾을 수 없습니다.',
             'version': '',
             'source': '찾을 수 없음',
-            'role': 'MXF 원본 영상 재생',
+            'role': _RUNTIME_TOOL_META['VLC']['role'],
             'required': True,
-            'hint': r'VLC를 설치하거나 libvlc.dll이 포함된 VLC 폴더를 앱 폴더\VLC 또는 C:\Program Files\VideoLAN\VLC에 두세요.',
+            'hint': _RUNTIME_TOOL_META['VLC']['hint'],
         })
     missing = [item['name'] for item in items if not item['ok']]
     missing_required = [item['name'] for item in items if not item['ok'] and item.get('required')]
@@ -916,6 +989,25 @@ def format_runtime_environment(runtime=None):
     lines.append('- FFprobe 누락: 파일 길이/해상도/채널 정보 확인 제한')
     lines.append('- FFplay 누락: 체크박스 기반 오디오 출력 제한')
     lines.append('- 저장 위치 쓰기 실패: 설정 저장, 로그 기록, 분석 캐시 생성 제한')
+    return '\n'.join(lines)
+
+def format_runtime_startup_alert(runtime=None):
+    runtime = runtime or check_runtime_environment()
+    if runtime.get('ok'):
+        return '실행 환경이 정상입니다.'
+    lines = ['실행 환경에서 확인이 필요한 항목이 있습니다.', '']
+    for item in runtime.get('items', []):
+        if item.get('ok'):
+            continue
+        lines.append(f"- {item.get('name')}: {item.get('role') or '-'}")
+        lines.append(f"  조치: {item.get('hint') or item.get('message') or '설치 또는 경로 확인이 필요합니다.'}")
+    for item in runtime.get('storage', []):
+        if item.get('ok'):
+            continue
+        lines.append(f"- {item.get('name')}: {item.get('role') or '-'}")
+        lines.append(f"  조치: {item.get('hint') or item.get('message') or '쓰기 권한을 확인하세요.'}")
+    lines.append('')
+    lines.append('상단 ENV 버튼에서 전체 진단 내용을 확인하고 복사할 수 있습니다.')
     return '\n'.join(lines)
 
 # ── 보조 프로세스 추적/정리 ──────────────────────────────

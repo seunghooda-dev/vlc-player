@@ -13,7 +13,7 @@ from PyQt6.QtGui     import QColor, QPalette, QFont
 
 from constants    import (
     C, STYLE, LOG_DIR, TMP_DIR, BASE_DIR, log, APP_FONT_QT,
-    check_runtime_environment, format_runtime_environment,
+    check_runtime_environment, format_runtime_environment, format_runtime_startup_alert,
     cleanup_child_processes, cleanup_orphan_audio_processes,
     cache_summary, cleanup_runtime_cache, format_bytes, format_cache_summary,
     load_settings, save_settings,
@@ -742,16 +742,11 @@ def main():
     _cleanup_tmp_files()
     runtime = check_runtime_environment()
     if not runtime.get('ok'):
-        details = format_runtime_environment(runtime)
         log.warning(f"runtime check failed: {runtime.get('missing')}")
         QMessageBox.warning(
             None,
             "실행 환경 확인",
-            "실행 환경을 확인했습니다.\n\n"
-            f"{details}\n\n"
-            "VLC가 없으면 MXF 영상 재생이 불가능하고, "
-            "FFmpeg/FFplay가 없으면 오디오 믹스와 검출 기능이 제한됩니다. "
-            "저장 위치 쓰기 권한이 없으면 설정, 로그, 분석 캐시가 제한됩니다."
+            format_runtime_startup_alert(runtime)
         )
         if 'VLC' in runtime.get('missing', []):
             log.error('VLC runtime missing; abort startup before player construction')

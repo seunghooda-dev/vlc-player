@@ -17,7 +17,7 @@ from PyQt6.QtMultimedia import QMediaPlayer
 
 from constants   import (
     C, VIDEO_EXTS, BASE_DIR, log, load_settings, save_settings,
-    friendly_error_title,
+    friendly_error_title, format_missing_runtime_tools,
 )
 from db_models   import sec_to_tc
 from threads     import AudioAnalyzeThread, BlackDetectThread
@@ -625,6 +625,14 @@ class RightPanel(QWidget):
     def _run_black_detect(self):
         if not self.vp.cur_file:
             return
+        missing = format_missing_runtime_tools(['FFmpeg'])
+        if missing:
+            self.tabs.setCurrentWidget(self.black_list.parentWidget())
+            title = missing.splitlines()[0]
+            self.black_status.setText(f"  ⚠ {title}")
+            self.vp.ai_lbl.setText(f"⚠ {title}")
+            log.warning(f'black detect blocked: {missing}')
+            return
         if getattr(self, '_black_thread', None) and self._black_thread.isRunning():
             self.tabs.setCurrentWidget(self.black_list.parentWidget())
             self.black_status.setText("  ⏳ 블랙 검출이 이미 진행 중입니다")
@@ -852,6 +860,14 @@ class RightPanel(QWidget):
 
     def _run_audio_analyze(self):
         if not self.vp.cur_file: return
+        missing = format_missing_runtime_tools(['FFmpeg', 'FFprobe'])
+        if missing:
+            self.tabs.setCurrentWidget(self.mute_list.parentWidget())
+            title = missing.splitlines()[0]
+            self.audio_status.setText(f"  ⚠ {title}")
+            self.vp.ai_lbl.setText(f"⚠ {title}")
+            log.warning(f'audio analyze blocked: {missing}')
+            return
         if getattr(self, '_audio_thread', None) and self._audio_thread.isRunning():
             self.tabs.setCurrentWidget(self.mute_list.parentWidget())
             self.audio_status.setText("  ⏳ 뮤트 검출이 이미 진행 중입니다")

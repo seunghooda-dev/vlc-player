@@ -27,6 +27,7 @@ from constants  import (
     C, FFMPEG, FFPROBE, FFPLAY, VLC_DIR, VIDEO_EXTS, TMP_DIR, BASE_DIR, log,
     register_child_process, terminate_child_process, load_settings, save_settings,
     friendly_error_text, friendly_error_title,
+    format_missing_runtime_tools,
 )
 from db_models  import probe, save_clip, frames_to_tc, tc_to_frames
 from threads    import TranscodeThread, LoudnessAnalyzeThread
@@ -57,6 +58,7 @@ class AudioMixPlayer(QObject):
         self._ffmpeg = None
         self._ffplay = None
         self._playing = False
+        self.last_error = ''
         # FFmpeg/ffplay has a small startup/buffer delay after VLC video starts.
         # Seeking the external audio slightly ahead keeps MXF playback closer.
         self.start_lead_sec = 0.20
@@ -116,12 +118,19 @@ class AudioMixPlayer(QObject):
 
     def restart(self, pos_sec=0.0, lead_sec=None):
         self.stop()
-        self.play(pos_sec, lead_sec=lead_sec)
+        return self.play(pos_sec, lead_sec=lead_sec)
 
     def play(self, pos_sec=0.0, lead_sec=None):
         if not self.filepath or not Path(self.filepath).exists():
-            return
+            self.last_error = '오디오 출력 파일을 찾을 수 없습니다.'
+            return False
         self.stop()
+        self.last_error = ''
+        missing = format_missing_runtime_tools(['FFmpeg', 'FFplay'])
+        if missing:
+            self.last_error = missing
+            log.warning(f'audio mix blocked: {missing}')
+            return False
         fc = self._build_filter()
         lead = self.start_lead_sec if lead_sec is None else max(0.0, float(lead_sec))
         start_sec = max(0.0, float(pos_sec) + lead)
@@ -178,8 +187,11 @@ class AudioMixPlayer(QObject):
                 f'ch={self.channels} start={start_sec:.3f}s rate={self.rate:.3f}'
             )
         except Exception as e:
+            self.last_error = friendly_error_text('audio_mix', e, self.filepath)
             log.error(f'audio mix start failed: {e}')
             self.stop()
+            return False
+        return True
 
     def _source_for_channel(self, ch, idx):
         ch = max(1, min(8, int(ch)))
@@ -1544,6 +1556,13 @@ class VideoPanel(QWidget):
         if stream_count <= 0 and ch_count <= 0:
             self.meter_ctrl.set_loudness_analysis_error('NO AUD')
             return
+        missing = format_missing_runtime_tools(['FFmpeg'])
+        if missing:
+            self.meter_ctrl.set_loudness_analysis_error('NO FF')
+            title = missing.splitlines()[0]
+            self.status_changed.emit(f'  ⚠ {title}')
+            log.warning(f'loudness analysis blocked: {missing}')
+            return
 
         key = self._loudness_cache_key(filepath)
         cached = self._loudness_cache.get(key)
@@ -2103,7 +2122,10 @@ class VideoPanel(QWidget):
         if lead is None:
             lead = 0.0 if getattr(self, '_first_audio_start_after_cue', False) else None
         self._first_audio_start_after_cue = False
-        self.audio_mix.play(max(0.0, pos / 1000.0), lead_sec=lead)
+        if not self.audio_mix.play(max(0.0, pos / 1000.0), lead_sec=lead):
+            title = (self.audio_mix.last_error or '오디오 출력 시작에 실패했습니다.').splitlines()[0]
+            self.ai_lbl.setText(f'⚠ {title}')
+            self.status_changed.emit(f'  ⚠ {title}')
 
     def _restart_audio_mix(self, pos_ms=None, lead_sec=None):
         if not self.cur_file:
@@ -2123,7 +2145,10 @@ class VideoPanel(QWidget):
         if lead is None:
             lead = 0.0 if getattr(self, '_first_audio_start_after_cue', False) else None
         self._first_audio_start_after_cue = False
-        self.audio_mix.restart(max(0.0, pos / 1000.0), lead_sec=lead)
+        if not self.audio_mix.restart(max(0.0, pos / 1000.0), lead_sec=lead):
+            title = (self.audio_mix.last_error or '오디오 출력 재시작에 실패했습니다.').splitlines()[0]
+            self.ai_lbl.setText(f'⚠ {title}')
+            self.status_changed.emit(f'  ⚠ {title}')
 
     def _cancel_audio_start_gate(self):
         self._audio_start_gate_seq += 1
