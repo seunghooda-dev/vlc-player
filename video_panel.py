@@ -1810,29 +1810,51 @@ class VideoPanel(QWidget):
         QTimer.singleShot(80, _start_preroll)
 
     def _stop_all(self):
+        timing_t0 = time.monotonic()
+        step_t = timing_t0
+        timings = []
+
+        def mark_step(label):
+            nonlocal step_t
+            now = time.monotonic()
+            timings.append(f'{label}={now - step_t:.3f}s')
+            step_t = now
+
         rp = getattr(self, '_right_panel', None)
         if rp and hasattr(rp, 'cancel_active_analysis'):
             try:
                 rp.cancel_active_analysis('파일 전환')
             except Exception as e:
                 log.debug(f'cancel analysis on stop_all: {e}')
+        mark_step('analysis_cancel')
         if hasattr(self, '_audio_recovery_timer'):
             self._audio_recovery_timer.stop()
         self._reset_audio_recovery()
         self._cue_ready_seq += 1
         if hasattr(self, 'meter_ctrl'):
             self.meter_ctrl.set_playing(False)
+        mark_step('playback_flags')
         if hasattr(self, 'audio_mix'):
             self._cancel_audio_mix()
+        mark_step('audio_mix_stop')
         self._cancel_preconvert_job()
+        mark_step('preconvert_cancel')
         self._retire_tc()
         self._retire_loudness_analysis()
+        mark_step('threads_retire')
         if hasattr(self, 'meter_ctrl'):
             self.meter_ctrl.reset_loudness_analysis()
         try:
             self.player.stop()
             self.player.setSource(QUrl())
         except Exception as e: log.debug(f'player stop/clear: {e}')
+        mark_step('vlc_clear')
+        total = time.monotonic() - timing_t0
+        msg = f'stop_all timing: total={total:.3f}s steps={" ".join(timings)}'
+        if total >= 0.25:
+            log.info(msg)
+        else:
+            log.debug(msg)
 
     def _show_file_load_error(self, title, detail='', filepath=None, replace_stage=False):
         name = Path(filepath).name if filepath else '?'
@@ -1910,20 +1932,35 @@ class VideoPanel(QWidget):
         return True, '', '', warnings
 
     def load_file(self, filepath):
-        preflight_start = time.monotonic()
+        load_t0 = time.monotonic()
+        preflight_start = load_t0
         ok, title, detail = self._quick_file_preflight(filepath)
         if not ok:
             log.warning(f'load_file preflight blocked: {filepath} | {title} | {detail}')
             self._show_file_load_error(title, detail, filepath)
             return
         probe_start = time.monotonic()
+        step_t = probe_start
+        timings = []
+
+        def mark_step(label):
+            nonlocal step_t
+            now = time.monotonic()
+            timings.append(f'{label}={now - step_t:.3f}s')
+            step_t = now
+
         self._remember_recent_file(filepath)
+        mark_step('recent')
         log.info(f'load_file: {Path(filepath).name}')
         self._stop_all()
+        mark_step('stop_all')
         self._cancel_preconvert_job(filepath)
+        mark_step('cancel_preconvert')
         self._reset_audio_recovery()
+        mark_step('reset_audio')
         self._set_loading_state(True, f"⏳ 파일 점검 중: {Path(filepath).name}")
         QApplication.processEvents()
+        mark_step('loading_ui')
         self.cur_file = filepath
         for f in self._files:
             f["cue"] = (f.get("filepath") == filepath)
@@ -1939,6 +1976,7 @@ class VideoPanel(QWidget):
         self.tc_in_l.setText("—"); self.tc_out_l.setText("—")
         self.tc_in_l.setStyleSheet(f"color:{C['text0']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:16px;background:transparent;")
         self.tc_out_l.setStyleSheet(f"color:{C['text0']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:16px;background:transparent;")
+        mark_step('state_reset')
 
         # 클립 리스트 선택 표시
         for i in range(self.clip_list.count()):
@@ -1946,10 +1984,16 @@ class VideoPanel(QWidget):
             if item.data(Qt.ItemDataRole.UserRole) == filepath:
                 self.clip_list.setCurrentItem(item)
                 break
+        mark_step('list_select')
 
         # 메타데이터 probe
+        probe_only_t0 = time.monotonic()
         info = probe(filepath)
+        probe_only = time.monotonic() - probe_only_t0
+        timings.append(f'ffprobe={probe_only:.3f}s')
+        step_t = time.monotonic()
         ok, title, detail, warnings = self._validate_probe_info(filepath, info)
+        mark_step('probe_validate')
         if not ok:
             log.warning(f'load_file probe blocked: {Path(filepath).name} | {title} | {detail}')
             for f in self._files:
@@ -1967,7 +2011,9 @@ class VideoPanel(QWidget):
         log.info(
             f'file preflight ok: {Path(filepath).name} '
             f'quick={probe_start - preflight_start:.3f}s '
-            f'probe={time.monotonic() - probe_start:.3f}s'
+            f'ffprobe={probe_only:.3f}s '
+            f'total_to_probe={time.monotonic() - probe_start:.3f}s '
+            f'steps={" ".join(timings)}'
         )
         self._set_loading_state(True, f"⏳ CUE 준비 중: {Path(filepath).name}")
         self.cur_info = info
@@ -2022,9 +2068,13 @@ class VideoPanel(QWidget):
         self.tc_dur.setText(self._frames_to_tc(self._duration_frames(), include_offset=False))
         vw = info.get('width',0); vh_px = info.get('height',0)
         self._res_text.setPlainText(f"{vw}\u00d7{vh_px}" if vw and vh_px else "")
+        mark_step('metadata_ui')
 
         # DB 저장
+        db_t0 = time.monotonic()
         self.cur_id = save_clip(info)
+        timings.append(f'db_save={time.monotonic() - db_t0:.3f}s')
+        step_t = time.monotonic()
         self.lbl_dbsaved.setText("✓ DB 저장됨")
         QTimer.singleShot(2500, lambda: self.lbl_dbsaved.setText(""))
 
@@ -2045,13 +2095,21 @@ class VideoPanel(QWidget):
         )
         self.audio_mix.set_channels(self._selected_chs)
         self._start_loudness_analysis(filepath)
+        mark_step('meter_loudness_start')
 
         if Path(filepath).suffix.lower() == '.mxf':
             self.empty_label.setText('⏳  VLC로 MXF 원본 로딩 중...')
             self._empty_proxy.show(); self._video_item.hide()
             try:
+                vlc_set_t0 = time.monotonic()
                 self.player.setSource(QUrl.fromLocalFile(filepath))
                 self.player.audio_set_volume(0)
+                timings.append(f'vlc_set_source={time.monotonic() - vlc_set_t0:.3f}s')
+                log.info(
+                    f'load_file timing: {Path(filepath).name} '
+                    f'total_before_cue={time.monotonic() - load_t0:.3f}s '
+                    f'steps={" ".join(timings)}'
+                )
                 self._prepare_vlc_cue(filepath, 0)
             except Exception as e:
                 msg = friendly_error_text('vlc_load', e, filepath)
