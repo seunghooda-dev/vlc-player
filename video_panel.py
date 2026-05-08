@@ -952,13 +952,7 @@ class VideoPanel(QWidget):
 
         self._ch_checks = []   # (checkbox, channel_no) list
         self._ch_group  = QButtonGroup(self); self._ch_group.setExclusive(False)
-        saved_channels = self._settings.get('audio_channels', [1, 2])
-        try:
-            saved_channels = [int(ch) for ch in saved_channels if 1 <= int(ch) <= 8]
-        except Exception:
-            saved_channels = [1, 2]
-        if not saved_channels:
-            saved_channels = [1, 2]
+        default_channels = [1, 2]
 
         CH_STYLE = (
             f"QCheckBox{{color:{C['text2']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;spacing:5px;}}"
@@ -971,7 +965,7 @@ class VideoPanel(QWidget):
             ch_no = i + 1
             cb = QCheckBox(f"{ch_no}")
             cb.setStyleSheet(CH_STYLE)
-            cb.setChecked(ch_no in saved_channels)
+            cb.setChecked(ch_no in default_channels)
             self._ch_checks.append((cb, ch_no))
             self._ch_group.addButton(cb)
             chl.addWidget(cb)
@@ -1632,10 +1626,9 @@ class VideoPanel(QWidget):
             btn.setEnabled(enabled)
         stream_count = 0
         try:
-            stream_count = int(
-                self.cur_info.get('audio_stream_count', 0)
-                or self.cur_info.get('channels', 0)
-                or 0
+            stream_count = max(
+                int(self.cur_info.get('audio_stream_count', 0) or 0),
+                int(self.cur_info.get('channels', 0) or 0),
             )
         except Exception:
             stream_count = 0
@@ -1838,8 +1831,8 @@ class VideoPanel(QWidget):
         df_color = C['teal'] if self._drop_frame_enabled() else C['text2']
         self.lbl_df.setText(df_label)
         self.lbl_df.setStyleSheet(f"color:{df_color};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:11px;")
-        ch_count = info.get('channels', 0)
-        stream_count = info.get('audio_stream_count', 0) or ch_count
+        ch_count = int(info.get('channels', 0) or 0)
+        stream_count = max(int(info.get('audio_stream_count', 0) or 0), ch_count)
         self.lbl_ch.setText(f"{stream_count}CH")
         # 파일 채널 수에 따라 체크박스 활성화/비활성화
         first_enabled = None
@@ -1848,26 +1841,15 @@ class VideoPanel(QWidget):
             cb.setEnabled(enabled and not getattr(self, '_loading', False))
             if enabled and first_enabled is None:
                 first_enabled = cb
-        # 기본 모니터링은 저장된 채널을 우선 사용하고, 없으면 1/2CH 동시 출력
-        saved_channels = self._settings.get('audio_channels', [1, 2])
-        try:
-            saved_channels = [int(ch) for ch in saved_channels if 1 <= int(ch) <= 8]
-        except Exception:
-            saved_channels = [1, 2]
-        if not saved_channels:
-            saved_channels = [1, 2]
+        # 방송 QC 기본 모니터링은 파일을 새로 열 때마다 1/2CH 동시 출력으로 시작한다.
+        default_channels = [1, 2]
         for cb, _ in self._ch_checks:
             cb.setChecked(False)
         default_selected = []
         for cb, ch_no in self._ch_checks:
-            if cb.isEnabled() and ch_no in saved_channels:
+            if cb.isEnabled() and ch_no in default_channels:
                 cb.setChecked(True)
                 default_selected.append(ch_no)
-        if not default_selected and saved_channels != [1, 2]:
-            for cb, ch_no in self._ch_checks:
-                if cb.isEnabled() and ch_no in (1, 2):
-                    cb.setChecked(True)
-                    default_selected.append(ch_no)
         if not default_selected and first_enabled:
             first_enabled.setChecked(True)
             default_selected = [1]
@@ -2081,7 +2063,6 @@ class VideoPanel(QWidget):
                 self._reset_audio_recovery()
                 self._schedule_audio_mix(delay_ms=120, restart=True)
             label = "/".join(str(ch) for ch in selected)
-            self._settings = save_settings(audio_channels=selected)
             self.ai_lbl.setText(f"✓ CH {label} 믹스 출력  |  LKFS 기준은 1/2CH")
 
     def _apply_audio_channel(self):
