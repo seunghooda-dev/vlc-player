@@ -45,6 +45,27 @@ for %%T in (ffmpeg.exe ffprobe.exe ffplay.exe) do (
     )
 )
 
+set "PACKAGE_EXE=%CD%\%PACKAGE_DIR%\%APP_NAME%.exe"
+echo.
+echo Verifying packaged EXE startup path...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$p = Start-Process -FilePath $env:PACKAGE_EXE -ArgumentList '--smoke-test' -Wait -PassThru; exit $p.ExitCode"
+if errorlevel 1 goto fail
+
+echo.
+echo Checking full packaged runtime...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$p = Start-Process -FilePath $env:PACKAGE_EXE -ArgumentList '--runtime-check' -Wait -PassThru; exit $p.ExitCode"
+if errorlevel 1 (
+    echo [warning] Full runtime check found missing optional tools or blocked storage.
+    echo           The app will show details with the ENV button on the target PC.
+)
+
+echo.
+echo Cleaning verification runtime files...
+if exist "%PACKAGE_DIR%\archive.db" del /q "%PACKAGE_DIR%\archive.db" > nul 2>&1
+if exist "%PACKAGE_DIR%\settings.json" del /q "%PACKAGE_DIR%\settings.json" > nul 2>&1
+if exist "%PACKAGE_DIR%\logs" rmdir /s /q "%PACKAGE_DIR%\logs"
+if exist "%PACKAGE_DIR%\tmp" rmdir /s /q "%PACKAGE_DIR%\tmp"
+
 echo.
 echo Creating zip package...
 powershell -NoProfile -ExecutionPolicy Bypass -Command "if (Test-Path -LiteralPath '%ZIP_PATH%') { Remove-Item -LiteralPath '%ZIP_PATH%' -Force }; Compress-Archive -LiteralPath '%PACKAGE_DIR%' -DestinationPath '%ZIP_PATH%' -Force"

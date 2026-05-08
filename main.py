@@ -760,4 +760,12 @@ def main():
     sys.exit(ret)
 
 if __name__ == "__main__":
+    if '--runtime-check' in sys.argv or '--smoke-test' in sys.argv:
+        strict = '--runtime-check' in sys.argv
+        runtime = check_runtime_environment()
+        log.info(format_runtime_environment(runtime))
+        if strict:
+            sys.exit(0 if runtime.get('ok') else 2)
+        can_start = bool(runtime.get('can_start')) and not runtime.get('storage_issues')
+        sys.exit(0 if can_start else 2)
     main()

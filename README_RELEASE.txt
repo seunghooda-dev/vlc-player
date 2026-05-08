@@ -57,6 +57,20 @@ depends on it. It also checks whether the app folder, logs\, and tmp\ are
 writable. If write access fails, move the package to a normal user-writable
 folder such as Desktop, Documents, or a dedicated media tools folder.
 
+Deployment Smoke Test
+---------------------
+For deployment checks, the EXE also supports a no-GUI startup test:
+
+MXF QC Player.exe --smoke-test
+
+This verifies that the packaged app can start and write its runtime files. A
+stricter dependency check is also available:
+
+MXF QC Player.exe --runtime-check
+
+The strict check returns a non-zero exit code when VLC, FFmpeg, FFprobe,
+FFplay, or required writable folders are missing.
+
 Version
 -------
 MXF QC Player V.1.0

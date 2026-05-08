@@ -47,6 +47,17 @@ if not exist "%ProgramFiles%\VideoLAN\VLC\libvlc.dll" (
     main.py
 if errorlevel 1 goto fail
 
+set "DIST_EXE=%CD%\dist\MXF QC Player.exe"
+if not exist "%DIST_EXE%" (
+    echo [error] Built EXE was not found: %DIST_EXE%
+    goto fail
+)
+
+echo.
+echo Verifying built EXE startup path...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$p = Start-Process -FilePath $env:DIST_EXE -ArgumentList '--smoke-test' -Wait -PassThru; exit $p.ExitCode"
+if errorlevel 1 goto fail
+
 echo.
 echo Build complete: dist\MXF QC Player.exe
 echo Runtime files will be created next to the EXE: archive.db, settings.json, logs\, tmp\
