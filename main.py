@@ -619,6 +619,11 @@ class MainWindow(QMainWindow):
                 log.debug(f'save window settings: {ex}')
 
             # 트랜스코드 스레드
+            try:
+                if hasattr(rp, 'cancel_active_analysis'):
+                    rp.cancel_active_analysis('프로그램 종료', wait_ms=1200)
+            except Exception as ex:
+                log.debug(f'cancel active analysis on close: {ex}')
             vp._retire_tc()
 
             # 작업 스레드 — abort 플래그 → quit → wait → 필요 시 terminate

@@ -7,7 +7,7 @@ MXF QC Player - PyQt6 완전판
 파일 탐색 + 비디오 플레이어 + DB + STT + 씬감지 + 검색
 """
 
-import sys, os, json, subprocess, hashlib, csv, shutil, threading, atexit
+import sys, os, json, subprocess, hashlib, csv, shutil, threading, atexit, time
 from pathlib import Path
 from datetime import datetime
 
@@ -290,6 +290,7 @@ DB_PATH    = BASE_DIR / "archive.db"
 SETTINGS_PATH = BASE_DIR / "settings.json"
 LOG_DIR    = BASE_DIR / "logs"
 TMP_DIR    = BASE_DIR / "tmp"
+BACKUP_DIR = BASE_DIR / "backups"
 _RUNTIME_DIR_ERRORS = []
 
 def _ensure_runtime_dir(path):
@@ -302,6 +303,7 @@ def _ensure_runtime_dir(path):
 
 _ensure_runtime_dir(LOG_DIR)
 _ensure_runtime_dir(TMP_DIR)
+_ensure_runtime_dir(BACKUP_DIR)
 
 def _tool_candidates(name):
     exe_name = f'{name}.exe' if os.name == 'nt' and not name.lower().endswith('.exe') else name
@@ -440,6 +442,7 @@ def check_runtime_storage():
         _check_write_location('앱 폴더', BASE_DIR, 'archive.db, settings.json 생성/갱신'),
         _check_write_location('로그 폴더', LOG_DIR, 'logs/player.log 기록'),
         _check_write_location('임시 폴더', TMP_DIR, '분석 캐시와 임시 작업 파일 생성'),
+        _check_write_location('백업 폴더', BACKUP_DIR, 'settings.json, archive.db 자동 백업', required=False),
     ]
 
 def friendly_error_text(area, detail='', filename=None, max_detail=160):
@@ -729,6 +732,49 @@ def _settings_log_warning(message):
     except Exception:
         pass
 
+def _rotate_named_backups(prefix, keep=10):
+    try:
+        backups = sorted(
+            BACKUP_DIR.glob(f'{prefix}-*'),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        for old in backups[int(keep):]:
+            try:
+                old.unlink()
+            except Exception:
+                pass
+    except Exception as e:
+        _settings_log_warning(f'backup rotate failed: {e}')
+
+def backup_file_snapshot(path, prefix, min_interval_sec=300, keep=10):
+    path = Path(path)
+    if not path.exists() or not path.is_file():
+        return None
+    try:
+        now = time.time()
+        marker = BACKUP_DIR / f'.{prefix}.last'
+        last = 0.0
+        if marker.exists():
+            try:
+                last = float(marker.read_text(encoding='utf-8') or '0')
+            except Exception:
+                last = 0.0
+        if min_interval_sec and now - last < float(min_interval_sec):
+            return None
+        stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup = BACKUP_DIR / f'{prefix}-{stamp}{path.suffix}'
+        shutil.copy2(path, backup)
+        try:
+            marker.write_text(str(now), encoding='utf-8')
+        except Exception:
+            pass
+        _rotate_named_backups(prefix, keep=keep)
+        return backup
+    except Exception as e:
+        _settings_log_warning(f'{prefix} backup failed: {e}')
+        return None
+
 def _backup_corrupt_settings(exc):
     if not SETTINGS_PATH.exists():
         return None
@@ -785,6 +831,7 @@ def save_settings(**updates):
         data.update(updates)
         _settings_cache = data
         try:
+            backup_file_snapshot(SETTINGS_PATH, 'settings-auto', min_interval_sec=300, keep=12)
             _write_settings_atomic(data)
         except Exception as e:
             _settings_log_warning(f'settings.json save failed: {e}')
@@ -929,7 +976,8 @@ def check_runtime_environment():
     missing = [item['name'] for item in items if not item['ok']]
     missing_required = [item['name'] for item in items if not item['ok'] and item.get('required')]
     storage = check_runtime_storage()
-    storage_issues = [item['name'] for item in storage if not item['ok']]
+    storage_issues = [item['name'] for item in storage if not item['ok'] and item.get('required', True)]
+    storage_warnings = [item['name'] for item in storage if not item['ok'] and not item.get('required', True)]
     problems = missing + storage_issues
     return {
         'ok': not problems,
@@ -938,6 +986,7 @@ def check_runtime_environment():
         'missing': missing,
         'missing_required': missing_required,
         'storage_issues': storage_issues,
+        'storage_warnings': storage_warnings,
         'problems': problems,
         'can_start': 'VLC' not in missing_required,
         'search_paths': _runtime_search_paths(),

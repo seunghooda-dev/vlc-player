@@ -71,6 +71,16 @@ MXF QC Player.exe --runtime-check
 The strict check returns a non-zero exit code when VLC, FFmpeg, FFprobe,
 FFplay, or required writable folders are missing.
 
+Desktop Update
+--------------
+On the development PC, run this helper after source changes when you want the
+release EXE and desktop shortcut updated together:
+
+update_desktop_release.bat
+
+It rebuilds the portable package, refreshes the Desktop shortcut, performs a
+smoke test, and starts the packaged EXE.
+
 Version
 -------
 MXF QC Player V.1.0

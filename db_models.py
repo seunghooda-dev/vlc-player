@@ -7,7 +7,7 @@ from datetime import datetime
 from sqlalchemy import create_engine, Column, String, Integer, Float, DateTime, Text, Boolean, text
 from sqlalchemy.orm import declarative_base, Session
 
-from constants import BASE_DIR, DB_PATH, FFMPEG, FFPROBE, log
+from constants import BASE_DIR, DB_PATH, FFMPEG, FFPROBE, log, backup_file_snapshot
 
 engine = create_engine(f"sqlite:///{DB_PATH}", echo=False)
 Base   = declarative_base()
@@ -62,12 +62,15 @@ def _check_db_integrity():
         with engine.connect() as conn:
             result = conn.execute(_text('PRAGMA integrity_check')).fetchone()
             if result and result[0] != 'ok':
-                print(f'[DB WARNING] integrity_check: {result[0]}')
-                backup = DB_PATH.with_suffix('.db.bak')
-                import shutil; shutil.copy2(DB_PATH, backup)
-                print(f'[DB] 백업 저장: {backup}')
+                log.warning(f'[DB WARNING] integrity_check: {result[0]}')
+                backup = backup_file_snapshot(DB_PATH, 'archive-corrupt', min_interval_sec=0, keep=5)
+                log.warning(f'[DB] 손상 의심 백업 저장: {backup}')
+            else:
+                backup = backup_file_snapshot(DB_PATH, 'archive-auto', min_interval_sec=3600, keep=12)
+                if backup:
+                    log.info(f'[DB] 자동 백업 저장: {backup.name}')
     except Exception as e:
-        print(f'[DB] 무결성 검사 실패: {e}')
+        log.warning(f'[DB] 무결성 검사 실패: {e}')
 _check_db_integrity()
 
 # ── 유틸 ──────────────────────────────────────────────────

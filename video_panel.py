@@ -478,10 +478,12 @@ class VideoPanel(QWidget):
         self.cur_file=None; self.cur_info={}; self.cur_id=None
         self._seeking=False
         self._settings = load_settings()
+        self._prune_recent_entries()
         self._first_audio_start_after_cue = False
         self._tc_thread=None
         self._loudness_thread = None
         self._loudness_cache = {}
+        self._loudness_seq = 0
         self._dead_threads = []   # abort된 스레드 보관 (GC 소멸 방지)
         self._tc_cache = {}
         self._tc_cache_order = []
@@ -496,6 +498,8 @@ class VideoPanel(QWidget):
         self._audio_recovery_max_attempts = 3
         self._audio_recovery_cooldown_until = 0.0
         self._audio_recovery_limit_logged = False
+        self._transport_guard_until = 0.0
+        self._transport_guard_action = ''
         self.setAcceptDrops(True)
         self._frame_display_timer = QTimer(self)
         self._frame_display_timer.setTimerType(Qt.TimerType.PreciseTimer)
@@ -1209,6 +1213,35 @@ class VideoPanel(QWidget):
             self._remember_recent_dir(folder)
         except Exception as e: log.warning(f'last_dir 저장 실패: {e}')
 
+    def _prune_recent_entries(self):
+        try:
+            recent_files = []
+            for fp in self._settings.get('recent_files', []):
+                try:
+                    p = Path(fp)
+                    if p.exists() and p.is_file() and p.suffix.lower() in VIDEO_EXTS and str(p) not in recent_files:
+                        recent_files.append(str(p))
+                except Exception:
+                    pass
+            recent_dirs = []
+            for folder in self._settings.get('recent_dirs', []):
+                try:
+                    p = Path(folder)
+                    if p.exists() and p.is_dir() and str(p) not in recent_dirs:
+                        recent_dirs.append(str(p))
+                except Exception:
+                    pass
+            if (
+                recent_files != self._settings.get('recent_files', [])
+                or recent_dirs != self._settings.get('recent_dirs', [])
+            ):
+                self._settings = save_settings(recent_files=recent_files[:12], recent_dirs=recent_dirs[:8])
+                log.info(
+                    f'recent entries pruned files={len(recent_files)} dirs={len(recent_dirs)}'
+                )
+        except Exception as e:
+            log.debug(f'recent entries prune: {e}')
+
     def _remember_recent_dir(self, folder, limit=8):
         try:
             if not folder:
@@ -1475,6 +1508,23 @@ class VideoPanel(QWidget):
             self._right_panel.refresh_explorer()
 
     def _refresh_clip_list(self):
+        existing = []
+        removed = []
+        for f in self._files:
+            fp = f.get("filepath")
+            try:
+                if fp and Path(fp).exists():
+                    existing.append(f)
+                else:
+                    removed.append(f.get("name") or str(fp))
+            except Exception:
+                removed.append(f.get("name") or str(fp))
+        if removed:
+            self._files = existing
+            log.warning(f'missing loaded files removed: {", ".join(removed[:5])}')
+            if self.cur_file and not Path(self.cur_file).exists():
+                self.cur_file = None
+                self.cur_info = {}
         self.clip_list.clear()
         for f in self._files:
             item = QListWidgetItem(
@@ -1509,6 +1559,7 @@ class VideoPanel(QWidget):
             t.abort()   # abort는 finished 시그널 연결 후 호출 (순서 중요)
 
     def _retire_loudness_analysis(self):
+        self._loudness_seq += 1
         if not self._loudness_thread:
             return
         t = self._loudness_thread
@@ -1565,6 +1616,8 @@ class VideoPanel(QWidget):
             return
 
         self.meter_ctrl.set_loudness_analysis_pending('SCAN')
+        self._loudness_seq += 1
+        seq = self._loudness_seq
         t = LoudnessAnalyzeThread(
             filepath,
             stream_count,
@@ -1574,7 +1627,9 @@ class VideoPanel(QWidget):
         self._loudness_thread = t
         file_at_start = filepath
 
-        def _progress(msg, fp=file_at_start):
+        def _progress(msg, fp=file_at_start, s=seq):
+            if s != self._loudness_seq:
+                return
             if fp != self.cur_file:
                 return
             text = 'SCAN'
@@ -1583,13 +1638,19 @@ class VideoPanel(QWidget):
                 text = pct[:8]
             self.meter_ctrl.set_loudness_analysis_pending(text)
 
-        def _done(result, fp=file_at_start, cache_key=key, thread=t):
+        def _done(result, fp=file_at_start, cache_key=key, thread=t, s=seq):
+            if s != self._loudness_seq:
+                log.debug(f'stale loudness result ignored: {Path(fp).name}')
+                return
             if self._loudness_thread is thread:
                 self._loudness_thread = None
             self._loudness_cache[cache_key] = dict(result)
             self._apply_loudness_result(fp, result)
 
-        def _error(err, fp=file_at_start, thread=t):
+        def _error(err, fp=file_at_start, thread=t, s=seq):
+            if s != self._loudness_seq:
+                log.debug(f'stale loudness error ignored: {Path(fp).name}')
+                return
             if self._loudness_thread is thread:
                 self._loudness_thread = None
             if fp == self.cur_file:
@@ -1749,6 +1810,12 @@ class VideoPanel(QWidget):
         QTimer.singleShot(80, _start_preroll)
 
     def _stop_all(self):
+        rp = getattr(self, '_right_panel', None)
+        if rp and hasattr(rp, 'cancel_active_analysis'):
+            try:
+                rp.cancel_active_analysis('파일 전환')
+            except Exception as e:
+                log.debug(f'cancel analysis on stop_all: {e}')
         if hasattr(self, '_audio_recovery_timer'):
             self._audio_recovery_timer.stop()
         self._reset_audio_recovery()
@@ -2447,8 +2514,18 @@ class VideoPanel(QWidget):
         detail = '; '.join(problems)
         file_name = Path(file_at_start).name
         log.warning(f'play watchdog warning reason={reason} file={file_name}: {detail}')
-        self.status_changed.emit(f'  ⚠ 재생 시작 확인 필요 — {file_name}')
-        self.ai_lbl.setText('⚠ 재생 시작 확인 필요 — LOG 확인')
+        if not video_ok and not audio_ok:
+            user_msg = '영상/오디오 시작 확인 필요'
+        elif not video_ok:
+            user_msg = '영상 위치가 움직이지 않습니다'
+        else:
+            user_msg = '오디오 출력 시작 확인 필요'
+            try:
+                self._check_audio_mix_recovery()
+            except Exception as e:
+                log.debug(f'watchdog audio recovery trigger: {e}')
+        self.status_changed.emit(f'  ⚠ {user_msg} — {file_name}')
+        self.ai_lbl.setText(f'⚠ {user_msg} — LOG 확인')
 
     def _set_position(self, ms):
         ms = max(0, min(int(self.duration * 1000), int(ms))) if self.duration > 0 else max(0, int(ms))
@@ -2472,12 +2549,30 @@ class VideoPanel(QWidget):
         on = self._safe_area.toggle(W, H)
         self.btn_safe.setChecked(on)
 
+    def _transport_allowed(self, action, cooldown_sec=0.18):
+        if getattr(self, '_loading', False):
+            self.status_changed.emit('  ⏳ CUE 준비 중입니다 — 잠시만 기다려주세요')
+            return False
+        now = time.monotonic()
+        if now < self._transport_guard_until:
+            log.debug(f'transport ignored action={action} prev={self._transport_guard_action}')
+            return False
+        self._transport_guard_action = action
+        self._transport_guard_until = now + float(cooldown_sec)
+        return True
+
     def toggle_play(self):
+        if not self.cur_file:
+            return
+        if not self._transport_allowed('play_pause'):
+            return
         if self.player.playbackState()==QMediaPlayer.PlaybackState.PlayingState:
             self.player.pause()
         else: self.player.play()
 
     def stop(self):
+        self._transport_guard_action = 'stop'
+        self._transport_guard_until = time.monotonic() + 0.12
         self._cancel_play_start_watchdog()
         self._cancel_audio_mix()
         self.player.stop(); self.player.setPosition(0)

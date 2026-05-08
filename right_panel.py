@@ -545,6 +545,58 @@ class RightPanel(QWidget):
                 log.debug(f'audio timeout abort: {e}')
             self._on_audio_error(msg, seq=seq)
 
+    def cancel_active_analysis(self, reason='작업 취소', wait_ms=700):
+        """Abort running analysis threads and invalidate their queued UI callbacks."""
+        had_work = False
+        active_kind = getattr(self, '_analysis_active', None)
+        self._analysis_seq += 1
+        self._analysis_seq_kind = None
+        self._analysis_seq_file = None
+        self._stop_analysis_timeout()
+
+        for attr, label in (('_black_thread', '블랙 검출'), ('_audio_thread', '뮤트 검출')):
+            thread = getattr(self, attr, None)
+            if not thread:
+                continue
+            try:
+                running = thread.isRunning()
+            except Exception:
+                running = False
+            if running:
+                had_work = True
+                try:
+                    thread.abort()
+                except Exception as e:
+                    log.debug(f'{label} cancel abort: {e}')
+                try:
+                    thread.wait(int(wait_ms))
+                except Exception as e:
+                    log.debug(f'{label} cancel wait: {e}')
+            try:
+                if not thread.isRunning():
+                    setattr(self, attr, None)
+            except Exception:
+                setattr(self, attr, None)
+
+        if active_kind == 'black' or had_work:
+            try:
+                self.black_status.setText(f"  ⏹ {reason} — 블랙 검출 중단")
+            except Exception:
+                pass
+        if active_kind == 'audio' or had_work:
+            try:
+                self.audio_status.setText(f"  ⏹ {reason} — 뮤트 검출 중단")
+            except Exception:
+                pass
+        if had_work:
+            try:
+                self.vp.ai_lbl.setText(f"⏹ {reason} — 분석 작업 중단")
+            except Exception:
+                pass
+            log.info(f'analysis cancelled: {reason}')
+        self._finish_analysis_mode()
+        return had_work
+
     def set_loading_state(self, loading):
         enabled = not bool(loading)
         for name in ('btn_file', 'btn_recent'):

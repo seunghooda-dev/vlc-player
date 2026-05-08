@@ -65,6 +65,7 @@ if exist "%PACKAGE_DIR%\archive.db" del /q "%PACKAGE_DIR%\archive.db" > nul 2>&1
 if exist "%PACKAGE_DIR%\settings.json" del /q "%PACKAGE_DIR%\settings.json" > nul 2>&1
 if exist "%PACKAGE_DIR%\logs" rmdir /s /q "%PACKAGE_DIR%\logs"
 if exist "%PACKAGE_DIR%\tmp" rmdir /s /q "%PACKAGE_DIR%\tmp"
+if exist "%PACKAGE_DIR%\backups" rmdir /s /q "%PACKAGE_DIR%\backups"
 
 echo.
 echo Creating zip package...

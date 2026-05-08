@@ -3,6 +3,7 @@ __pycache__/
 
 logs/
 tmp/
+backups/
 build/
 dist/
 release/
