@@ -31,7 +31,7 @@ from constants  import (
 )
 from db_models  import probe, save_clip, frames_to_tc, tc_to_frames
 from threads    import ProbeThread, TranscodeThread, LoudnessAnalyzeThread
-from meters     import SideMeter, SafeAreaItem, LoudnessMeter, MeterController, mk_btn, mk_label, separator
+from meters     import SideMeter, LoudnessMeter, MeterController, mk_btn, mk_label, separator
 
 
 class VlcAudioAdapter:
@@ -604,9 +604,6 @@ class VideoPanel(QWidget):
         self._proxy_right.setZValue(10)
         self._proxy_loud.setZValue(10)
 
-        # Safe Area 가이드라인
-        self._safe_area = SafeAreaItem(self._scene)
-
         # 해상도 오버레이 텍스트 (좌측 하단)
         from PyQt6.QtGui import QFont as _QFont
         self._res_text = self._scene.addText("")
@@ -665,8 +662,6 @@ class VideoPanel(QWidget):
             self._proxy_left.setPos(ox, oy)
             self._proxy_right.setPos(ox + vw - self.side_right.width(), oy)
             self._proxy_loud.setPos(ox + vw - self.loud_meter.width(), oy + vh - self.loud_meter.height())
-            # Safe Area 리사이즈
-            self._safe_area.resize(W, H)
             # 해상도 텍스트 좌측 하단
             rth = self._res_text.boundingRect().height()
             self._res_text.setPos(8, H - rth - 6)
@@ -892,20 +887,6 @@ class VideoPanel(QWidget):
             "QPushButton:pressed{padding-top:2px;background:#181818;}"
         )
 
-        # Safe Area 토글 버튼
-        self.btn_safe = QPushButton("SAFE")
-        self.btn_safe.setFixedSize(66, BTN_H)
-        self.btn_safe.setCheckable(True)
-        self.btn_safe.setToolTip("세이프 에어리어  ON / OFF\n방송용 안전 영역 가이드라인을 표시합니다\n  · 액션 세이프  90%  (바깥쪽 회색선)\n  · 타이틀 세이프  80%  (안쪽 회색선)")
-        safe_style = (
-            f"QPushButton{{background:{C['panel3']};color:{C['text2']};border:1px solid {C['border']};"
-            "border-radius:6px;font-family:'Cascadia Mono','Consolas','D2Coding';font-size:11px;font-weight:700;"
-            "padding:0 8px;}"
-            f"QPushButton:checked{{background:rgba(45,212,191,34);color:{C['teal']};border-color:{C['teal']};}}"
-            f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
-        )
-        self.btn_safe.setStyleSheet(safe_style)
-
         self.btn_folder.clicked.connect(self.eject_clip)
         self.btn_m1.clicked.connect(lambda: self._step(-1))
         self.btn_p1.clicked.connect(lambda: self._step(1))
@@ -917,7 +898,6 @@ class VideoPanel(QWidget):
         self.btn_stop.clicked.connect(self.stop)
         self.btn_cue.clicked.connect(self._cue)
 
-        self.btn_safe.clicked.connect(self._toggle_safe_area)
         for w in [self.btn_folder,separator(),self.btn_m1,self.btn_gos,self.btn_rew,
                   self.btn_play,self.btn_stop,self.btn_fwd,self.btn_goe,self.btn_p1]:
             trl.addWidget(w)
@@ -958,7 +938,6 @@ class VideoPanel(QWidget):
         trl.addWidget(self.vol_slider)
         trl.addWidget(self.vol_pct)
         trl.addSpacing(12)
-        trl.addWidget(self.btn_safe)
         trl.addWidget(self.btn_cue)
         layout.addWidget(tr)
 
@@ -2965,11 +2944,6 @@ class VideoPanel(QWidget):
         else:
             frame = max(0, int(frame))
         self._set_position(self._frame_to_ms(frame))
-
-    def _toggle_safe_area(self):
-        W = self.video_view.width(); H = self.video_view.height()
-        on = self._safe_area.toggle(W, H)
-        self.btn_safe.setChecked(on)
 
     def _transport_allowed(self, action, cooldown_sec=0.18):
         if getattr(self, '_loading', False):
