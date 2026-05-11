@@ -53,9 +53,10 @@ class RightPanel(QWidget):
         self.tabs.addTab(self._build_explorer(),  "📁 파일")
         self.tabs.addTab(self._build_black(),      "⬛ 블랙")
         self.tabs.addTab(self._build_audio(),      "🔇 오디오")
+        self.tabs.addTab(self._build_plan(),       "📋 진행")
 
         # 탭 색상 커스텀
-        tab_colors = [C['blue'], C['yellow'], C['teal']]
+        tab_colors = [C['blue'], C['yellow'], C['teal'], C['orange']]
         for i,col in enumerate(tab_colors):
             self.tabs.tabBar().setTabTextColor(i, QColor(C['text2']))
 
@@ -178,6 +179,54 @@ class RightPanel(QWidget):
             self.meta_labels[key]=vl
             ml.addWidget(kl,row//2,row%2*2); ml.addWidget(vl,row//2,row%2*2+1)
         l.addWidget(self.meta_panel)
+        return w
+
+    def _build_plan(self):
+        w = QWidget()
+        l = QVBoxLayout(w)
+        l.setContentsMargins(0, 0, 0, 0)
+        l.setSpacing(0)
+
+        head = QWidget()
+        head.setFixedHeight(54)
+        head.setStyleSheet(f"background:{C['panel']};border-bottom:1px solid {C['border']};")
+        hl = QVBoxLayout(head)
+        hl.setContentsMargins(12, 7, 12, 6)
+        hl.setSpacing(2)
+        title = mk_label("다음 안정화 진행 상황", C['text0'], 'Segoe UI Variable Text', 13, bold=True)
+        subtitle = mk_label("설정/DB 저장 위치 안정화 — 6단계 계획", C['text2'], 'Segoe UI Variable Text', 10)
+        hl.addWidget(title)
+        hl.addWidget(subtitle)
+        l.addWidget(head)
+
+        self.plan_list = QListWidget()
+        self.plan_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.plan_list.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.plan_list.setStyleSheet(
+            f"QListWidget{{background:{C['panel2']};border:none;outline:none;}}"
+            f"QListWidget::item{{padding:10px 12px;border-bottom:1px solid {C['border']};"
+            f"font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';font-size:12px;color:{C['text1']};}}"
+        )
+        plan_items = [
+            ("다음", "저장 위치 정책 정리", "프로그램 파일과 사용자 데이터를 분리"),
+            ("대기", "기존 데이터 자동 이전", "기존 settings.json / archive.db는 보존 후 복사"),
+            ("대기", "constants.py 경로 구조 변경", "USER_DATA_DIR 기준으로 설정/DB/log/tmp/backups 연결"),
+            ("대기", "배포/업데이트 스크립트 정리", "EXE 업데이트와 사용자 데이터 보존을 분리"),
+            ("대기", "마이그레이션 로그 추가", "복사/스킵/실패 내역을 로그로 남김"),
+            ("대기", "검증", "설정 유지, 최근 파일, DB 저장, 로그 위치 확인"),
+        ]
+        for idx, (state, name, desc) in enumerate(plan_items, 1):
+            item = QListWidgetItem(f"{idx}. [{state}] {name}\n   {desc}")
+            item.setForeground(QColor(C['text0'] if idx == 1 else C['text2']))
+            self.plan_list.addItem(item)
+        l.addWidget(self.plan_list, 1)
+
+        foot = QLabel("  진행하면서 완료된 항목은 상태를 갱신합니다.")
+        foot.setStyleSheet(
+            f"color:{C['text3']};background:{C['panel']};border-top:1px solid {C['border']};"
+            "font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';font-size:11px;padding:7px 10px;"
+        )
+        l.addWidget(foot)
         return w
 
     def _menu_style(self):
