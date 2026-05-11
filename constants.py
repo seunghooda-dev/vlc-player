@@ -320,6 +320,7 @@ LEGACY_SETTINGS_PATH = LEGACY_DATA_DIR / "settings.json"
 LEGACY_LOG_DIR = LEGACY_DATA_DIR / "logs"
 LEGACY_TMP_DIR = LEGACY_DATA_DIR / "tmp"
 LEGACY_BACKUP_DIR = LEGACY_DATA_DIR / "backups"
+LEGACY_ROOT_DATA_NAMES = ("settings.json", "archive.db", "logs", "tmp", "backups")
 
 def runtime_storage_policy():
     items = [
@@ -443,6 +444,80 @@ def runtime_migration_log_info():
         'path': str(MIGRATION_LOG_PATH),
         'errors': list(_RUNTIME_MIGRATION_LOG_ERRORS),
     }
+
+def _path_key(path):
+    try:
+        text = str(Path(path).resolve())
+    except Exception:
+        text = str(path)
+    return text.lower() if os.name == 'nt' else text
+
+def _legacy_root_candidates():
+    candidates = []
+    seen = set()
+
+    def add(path, label):
+        try:
+            resolved = Path(path).resolve()
+        except Exception:
+            return
+        if _path_key(resolved) == _path_key(USER_DATA_DIR):
+            return
+        key = _path_key(resolved)
+        if key in seen:
+            return
+        seen.add(key)
+        candidates.append((label, resolved))
+
+    add(APP_DIR, '앱 실행 파일 폴더')
+    add(LEGACY_DATA_DIR, '기존 데이터 원본')
+    if getattr(sys, 'frozen', False):
+        try:
+            if APP_DIR.parent.name.lower() == 'release':
+                add(APP_DIR.parent.parent, '프로젝트 루트 후보')
+        except Exception:
+            pass
+    return candidates
+
+def _legacy_root_item_info(path):
+    info = {
+        'name': path.name,
+        'path': str(path),
+        'kind': '폴더' if path.is_dir() else '파일',
+        'size': None,
+        'children': None,
+        'modified': '',
+    }
+    try:
+        stat = path.stat()
+        info['modified'] = datetime.fromtimestamp(stat.st_mtime).isoformat(timespec='seconds')
+        if path.is_file():
+            info['size'] = int(stat.st_size)
+        elif path.is_dir():
+            try:
+                info['children'] = sum(1 for _ in path.iterdir())
+            except Exception:
+                info['children'] = None
+    except Exception as e:
+        info['error'] = str(e)
+    return info
+
+def runtime_legacy_root_data_status():
+    groups = []
+    for label, root in _legacy_root_candidates():
+        items = []
+        for name in LEGACY_ROOT_DATA_NAMES:
+            path = root / name
+            if path.exists():
+                items.append(_legacy_root_item_info(path))
+        if items:
+            groups.append({
+                'label': label,
+                'root': str(root),
+                'items': items,
+                'policy': '안내만 표시; 앱은 사용자 데이터 폴더만 사용하며 자동 삭제/이동하지 않음',
+            })
+    return groups
 
 migrate_legacy_user_data()
 
@@ -1151,6 +1226,7 @@ def check_runtime_environment():
         'storage_policy': runtime_storage_policy(),
         'migration': runtime_migration_events(),
         'migration_log': runtime_migration_log_info(),
+        'legacy_data': runtime_legacy_root_data_status(),
         'storage': storage,
         'missing': missing,
         'missing_required': missing_required,
@@ -1192,6 +1268,33 @@ def format_runtime_environment(runtime=None):
         lines.append(f"  역할: {item.get('role') or '-'}")
         lines.append(f"  위치: {item.get('path') or '-'}")
         lines.append(f"  상태: {item.get('status') or '-'}")
+        lines.append('')
+    legacy_groups = runtime.get('legacy_data') or []
+    lines.append('레거시 루트 데이터')
+    lines.append('-' * 42)
+    if legacy_groups:
+        lines.append('정책: 앱은 사용자 데이터 폴더만 사용합니다. 아래 항목은 자동 삭제/이동하지 않습니다.')
+        lines.append('조치: 필요하면 사용자가 확인 후 백업 위치로 수동 이동하세요.')
+        lines.append('')
+        for group in legacy_groups:
+            lines.append(f"[{group.get('label') or '레거시 위치'}]")
+            lines.append(f"  위치: {group.get('root') or '-'}")
+            lines.append(f"  정책: {group.get('policy') or '-'}")
+            for item in group.get('items', []):
+                details = [item.get('kind') or '항목']
+                if item.get('size') is not None:
+                    details.append(format_bytes(item.get('size')))
+                if item.get('children') is not None:
+                    details.append(f"항목 {item.get('children')}개")
+                if item.get('modified'):
+                    details.append(f"수정 {item.get('modified')}")
+                if item.get('error'):
+                    details.append(f"확인 오류: {item.get('error')}")
+                lines.append(f"  - {item.get('name')}: {', '.join(details)}")
+                lines.append(f"    {item.get('path')}")
+            lines.append('')
+    else:
+        lines.append('발견된 레거시 루트 데이터 없음')
         lines.append('')
     lines.append('데이터 이전')
     lines.append('-' * 42)

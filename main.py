@@ -244,6 +244,7 @@ class MainWindow(QMainWindow):
             log.info(f"migration log: {migration_log.get('path')}")
         for err in migration_log.get('errors') or []:
             log.warning(f"migration log write failed: {err}")
+        self._log_legacy_root_data(runtime)
         self._log_audio_child_status(runtime)
         if runtime.get('ok'):
             msg = "  ● READY   |   VLC / FFmpeg / FFprobe / FFplay / 저장 위치 OK   |   MXF QC Player V.1.0"
@@ -299,6 +300,19 @@ class MainWindow(QMainWindow):
                 "\n".join(lines) + "\n\n새 사용자 데이터 폴더로 복사했고, 기존 파일은 그대로 보존했습니다."
             )
         QTimer.singleShot(350, _popup)
+
+    def _log_legacy_root_data(self, runtime):
+        groups = runtime.get('legacy_data') or []
+        if not groups:
+            log.info("legacy root data: none")
+            return
+        for group in groups:
+            names = ', '.join(item.get('name', '') for item in group.get('items', []))
+            log.info(
+                "legacy root data found: "
+                f"label={group.get('label')} root={group.get('root')} "
+                f"items={names or '-'} policy=inform_only"
+            )
 
     def _attach_audio_child_status(self, runtime):
         try:
