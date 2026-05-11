@@ -3,7 +3,13 @@ threads.py — 백그라운드 스레드
 TranscodeThread, AudioAnalyzeThread, LoudnessAnalyzeThread, BlackDetectThread
 """
 
-__all__ = ['TranscodeThread', 'AudioAnalyzeThread', 'LoudnessAnalyzeThread', 'BlackDetectThread']
+__all__ = [
+    'ProbeThread',
+    'TranscodeThread',
+    'AudioAnalyzeThread',
+    'LoudnessAnalyzeThread',
+    'BlackDetectThread',
+]
 import sys, re, json, subprocess, threading as _th, hashlib, math, os, time
 from pathlib import Path
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -12,7 +18,32 @@ from constants import (
     FFMPEG, FFPROBE, TMP_DIR, log,
     register_child_process, unregister_child_process, terminate_child_process,
 )
-from db_models import sec_to_tc, frames_to_tc
+from db_models import sec_to_tc, frames_to_tc, probe as probe_media
+
+class ProbeThread(QThread):
+    probed = pyqtSignal(dict, float)  # info, elapsed seconds
+    error = pyqtSignal(str, float)
+
+    def __init__(self, fp):
+        super().__init__()
+        self.fp = fp
+        self._abort = False
+
+    def abort(self):
+        self._abort = True
+
+    def run(self):
+        started = time.monotonic()
+        try:
+            info = probe_media(self.fp)
+            elapsed = time.monotonic() - started
+            if self._abort:
+                return
+            self.probed.emit(info, elapsed)
+        except Exception as e:
+            elapsed = time.monotonic() - started
+            if not self._abort:
+                self.error.emit(str(e), elapsed)
 
 class TranscodeThread(QThread):
     ready    = pyqtSignal(str)   # 프리뷰 준비

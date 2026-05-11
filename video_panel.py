@@ -30,7 +30,7 @@ from constants  import (
     format_missing_runtime_tools,
 )
 from db_models  import probe, save_clip, frames_to_tc, tc_to_frames
-from threads    import TranscodeThread, LoudnessAnalyzeThread
+from threads    import ProbeThread, TranscodeThread, LoudnessAnalyzeThread
 from meters     import SideMeter, SafeAreaItem, LoudnessMeter, MeterController, mk_btn, mk_label, separator
 
 
@@ -481,6 +481,11 @@ class VideoPanel(QWidget):
         self._prune_recent_entries()
         self._first_audio_start_after_cue = False
         self._tc_thread=None
+        self._probe_thread = None
+        self._probe_seq = 0
+        self._metadata_ready = False
+        self._cue_ready = False
+        self._file_loaded_emitted = False
         self._loudness_thread = None
         self._loudness_cache = {}
         self._loudness_seq = 0
@@ -1614,6 +1619,176 @@ class VideoPanel(QWidget):
         except Exception as e:
             log.debug(f'loudness abort: {e}')
 
+    def _retire_probe(self):
+        self._probe_seq += 1
+        if not self._probe_thread:
+            return
+        t = self._probe_thread
+        self._probe_thread = None
+
+        def _on_finished(thread=t):
+            try:
+                self._dead_threads.remove(thread)
+            except ValueError:
+                pass
+
+        try:
+            t.finished.connect(_on_finished)
+        except Exception:
+            pass
+        self._dead_threads.append(t)
+        try:
+            t.abort()
+        except Exception as e:
+            log.debug(f'probe abort: {e}')
+
+    def _emit_file_loaded_once(self):
+        if self._file_loaded_emitted:
+            return
+        if not self.cur_file:
+            return
+        if not getattr(self, '_metadata_ready', False):
+            return
+        self._file_loaded_emitted = True
+        self.file_loaded.emit(self.cur_info, self.cur_id or "")
+
+    def _provisional_info(self, filepath):
+        p = Path(filepath)
+        try:
+            size = p.stat().st_size
+        except Exception:
+            size = 0
+        return {
+            "filename": p.name,
+            "filepath": filepath,
+            "duration": 0,
+            "size": size,
+            "bit_rate": 0,
+            "fps": 29.97,
+            "width": 0,
+            "height": 0,
+            "codec": "",
+            "channels": 0,
+            "audio_stream_count": 0,
+            "timecode": "",
+            "format_short": "XDCAM" if p.suffix.lower() == ".mxf" else p.suffix.upper().lstrip("."),
+            "df": True,
+            "tc_offset": 0.0,
+            "provisional": True,
+        }
+
+    def _apply_provisional_metadata(self, filepath):
+        info = self._provisional_info(filepath)
+        self.cur_info = info
+        self.cur_id = None
+        self._metadata_ready = False
+        self._file_loaded_emitted = False
+        self.fps = info.get("fps", 29.97)
+        self.df = True
+        self.tc_offset = 0.0
+        self._tc_offset_frames = 0
+        self._display_frame = 0
+        self._clock_anchor_frame = 0
+        self._clock_anchor_time = 0.0
+        self._frame_clock_active = False
+        self._frame_display_timer.stop()
+        self.duration = 0
+        self._source_duration = 0
+        self._using_preview = False
+        self.lbl_fmt.setText(info.get("format_short", "—"))
+        self.lbl_cod.setText("—")
+        self.lbl_res.setText("—")
+        self.lbl_fps.setText("29.97")
+        self.lbl_df.setText("DF")
+        self.lbl_df.setStyleSheet(
+            f"color:{C['teal']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:11px;"
+        )
+        self.lbl_ch.setText("SCAN")
+        for cb, ch_no in self._ch_checks:
+            cb.setChecked(ch_no in (1, 2))
+            cb.setEnabled(False)
+        self._selected_chs = [1, 2]
+        self.tc_dur.setText(self._frames_to_tc(0, include_offset=False))
+        self._res_text.setPlainText("")
+        self.btn_black.setEnabled(False)
+        self.btn_audio.setEnabled(False)
+        self.ai_lbl.setText(f"⏳ 메타데이터 분석 중: {Path(filepath).name}")
+
+    def _apply_probe_metadata(self, filepath, info, warnings, emit_loaded=False):
+        self.cur_info = info
+        self._metadata_ready = True
+        self.fps       = info.get("fps", 29.97)
+        self.df        = bool(info.get("df", False)) and self._nominal_fps() in (30, 60)
+        self.tc_offset = info.get("tc_offset", 0.0)
+        self._tc_offset_frames = self._parse_tc_offset_frames(info.get("timecode", ""))
+        self._display_frame = 0
+        self._clock_anchor_frame = 0
+        self._clock_anchor_time = 0.0
+        self._frame_clock_active = False
+        self._frame_display_timer.stop()
+        self.duration  = info.get("duration", 0)
+        self._source_duration = self.duration
+        self._using_preview = False
+
+        self.lbl_fmt.setText(info.get("format_short","—"))
+        self.lbl_cod.setText(info.get("codec","—") or "—")
+        h = info.get("height",0)
+        w = info.get("width", 0)
+        res_str = ("4K" if w >= 3840 else "HD" if w >= 1920 else f"{h}p") if h else "—"
+        self.lbl_res.setText(res_str)
+        fps_str = f"{self.fps:.2f}"
+        self.lbl_fps.setText(fps_str)
+        df_label = "DF" if self._drop_frame_enabled() else "NDF"
+        df_color = C['teal'] if self._drop_frame_enabled() else C['text2']
+        self.lbl_df.setText(df_label)
+        self.lbl_df.setStyleSheet(f"color:{df_color};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:11px;")
+        ch_count = int(info.get('channels', 0) or 0)
+        stream_count = max(int(info.get('audio_stream_count', 0) or 0), ch_count)
+        self.lbl_ch.setText(f"{stream_count}CH")
+        first_enabled = None
+        for cb, ch_no in self._ch_checks:
+            enabled = ch_no <= stream_count
+            cb.setEnabled(enabled and not getattr(self, '_loading', False))
+            if enabled and first_enabled is None:
+                first_enabled = cb
+        default_channels = [1, 2]
+        for cb, _ in self._ch_checks:
+            cb.setChecked(False)
+        default_selected = []
+        for cb, ch_no in self._ch_checks:
+            if ch_no <= stream_count and ch_no in default_channels:
+                cb.setChecked(True)
+                default_selected.append(ch_no)
+        if not default_selected and first_enabled:
+            first_enabled.setChecked(True)
+            default_selected = [1]
+        self._selected_chs = default_selected or [1, 2]
+        self.tc_dur.setText(self._frames_to_tc(self._duration_frames(), include_offset=False))
+        vw = info.get('width',0); vh_px = info.get('height',0)
+        self._res_text.setPlainText(f"{vw}\u00d7{vh_px}" if vw and vh_px else "")
+
+        self.cur_id = save_clip(info)
+        self.lbl_dbsaved.setText("✓ DB 저장됨")
+        QTimer.singleShot(2500, lambda: self.lbl_dbsaved.setText(""))
+
+        self.ai_lbl.setText(f"⚠ {warnings[0]}" if warnings else "AI 분석 준비됨")
+        ch_count = info.get('channels', 2)
+        self.meter_ctrl.start_file(
+            filepath, ch_count, self.player, (1, 2),
+            info.get('audio_stream_count', 0)
+        )
+        self.audio_mix.set_file(
+            filepath,
+            info.get('audio_stream_count', 0),
+            ch_count
+        )
+        self.audio_mix.set_channels(self._selected_chs)
+        self._start_loudness_analysis(filepath)
+        if getattr(self, '_cue_ready', False):
+            self._set_loading_state(False)
+        if emit_loaded:
+            self._emit_file_loaded_once()
+
     def _loudness_cache_key(self, filepath):
         try:
             st = Path(filepath).stat()
@@ -1729,10 +1904,11 @@ class VideoPanel(QWidget):
         for cb, ch_no in getattr(self, '_ch_checks', []):
             cb.setEnabled(enabled and stream_count > 0 and ch_no <= stream_count)
         has_file = bool(self.cur_file)
+        metadata_ready = bool(getattr(self, '_metadata_ready', False))
         for name in ('btn_black', 'btn_audio'):
             btn = getattr(self, name, None)
             if btn:
-                btn.setEnabled(enabled and has_file)
+                btn.setEnabled(enabled and has_file and metadata_ready)
         rp = getattr(self, '_right_panel', None)
         if rp and hasattr(rp, 'set_loading_state'):
             rp.set_loading_state(self._loading)
@@ -1742,10 +1918,15 @@ class VideoPanel(QWidget):
     def _complete_file_load(self, filepath, message, status_message):
         if filepath != self.cur_file:
             return
+        self._cue_ready = True
+        if not getattr(self, '_metadata_ready', False):
+            file_name = Path(filepath).name
+            message = "✓ VLC CUE 완료 — 메타데이터 분석 중..."
+            status_message = f"  ▌CUE  {file_name}  |  VLC 먼저 준비됨 — 메타데이터 분석 중"
         self._set_loading_state(False)
         self.ai_lbl.setText(message)
         self.status_changed.emit(status_message)
-        self.file_loaded.emit(self.cur_info, self.cur_id or "")
+        self._emit_file_loaded_once()
 
     def _prepare_vlc_cue(self, filepath, target_ms=0):
         self._cue_ready_seq += 1
@@ -1872,6 +2053,8 @@ class VideoPanel(QWidget):
         mark_step('audio_mix_stop')
         self._cancel_preconvert_job()
         mark_step('preconvert_cancel')
+        self._retire_probe()
+        mark_step('probe_retire')
         self._retire_tc()
         self._retire_loudness_analysis()
         mark_step('threads_retire')
@@ -1964,6 +2147,66 @@ class VideoPanel(QWidget):
             warnings.append('길이 정보 확인 실패 — 탐색/REM 표시가 제한될 수 있습니다')
         return True, '', '', warnings
 
+    def _start_metadata_probe(self, filepath, load_t0, timings):
+        self._probe_seq += 1
+        seq = self._probe_seq
+        thread = ProbeThread(filepath)
+        self._probe_thread = thread
+        file_name = Path(filepath).name
+
+        def _stale():
+            return seq != self._probe_seq or filepath != self.cur_file
+
+        def _done(info, elapsed, t=thread):
+            if _stale():
+                log.debug(f'stale metadata probe ignored: {file_name}')
+                return
+            if self._probe_thread is t:
+                self._probe_thread = None
+            ok, title, detail, warnings = self._validate_probe_info(filepath, info)
+            if not ok:
+                self._metadata_ready = False
+                self._set_loading_state(False)
+                self.ai_lbl.setText(f'⚠ {title}')
+                self.status_changed.emit(f'  ⚠ {title} — {file_name}')
+                self._show_file_load_error(title, detail, filepath, replace_stage=False)
+                log.warning(
+                    f'async metadata probe blocked: {file_name} '
+                    f'ffprobe={elapsed:.3f}s | {title} | {detail}'
+                )
+                return
+            if warnings:
+                log.warning(f'async metadata probe warning: {file_name} | {"; ".join(warnings)}')
+            apply_t0 = time.monotonic()
+            self._apply_probe_metadata(filepath, info, warnings, emit_loaded=True)
+            apply_elapsed = time.monotonic() - apply_t0
+            log.info(
+                f'async metadata ready: {file_name} '
+                f'ffprobe={elapsed:.3f}s apply={apply_elapsed:.3f}s '
+                f'total={time.monotonic() - load_t0:.3f}s '
+                f'pre_steps={" ".join(timings)}'
+            )
+            if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+                self._reset_audio_recovery()
+                self._schedule_audio_mix(delay_ms=80, restart=True, lead_sec=0.0)
+
+        def _error(err, elapsed, t=thread):
+            if _stale():
+                log.debug(f'stale metadata probe error ignored: {file_name}')
+                return
+            if self._probe_thread is t:
+                self._probe_thread = None
+            self._metadata_ready = False
+            self._set_loading_state(False)
+            self.ai_lbl.setText('⚠ 메타데이터 분석 실패')
+            self.status_changed.emit(f'  ⚠ 메타데이터 분석 실패 — {file_name}')
+            log.error(f'async metadata probe error: {file_name} ffprobe={elapsed:.3f}s | {err}')
+
+        thread.probed.connect(_done)
+        thread.error.connect(_error)
+        thread.start()
+        log.info(f'async metadata probe started: {file_name}')
+
     def load_file(self, filepath):
         load_t0 = time.monotonic()
         preflight_start = load_t0
@@ -1995,6 +2238,9 @@ class VideoPanel(QWidget):
         QApplication.processEvents()
         mark_step('loading_ui')
         self.cur_file = filepath
+        self._metadata_ready = False
+        self._cue_ready = False
+        self._file_loaded_emitted = False
         for f in self._files:
             f["cue"] = (f.get("filepath") == filepath)
             f["playing"] = False
@@ -2018,6 +2264,32 @@ class VideoPanel(QWidget):
                 self.clip_list.setCurrentItem(item)
                 break
         mark_step('list_select')
+
+        if Path(filepath).suffix.lower() == '.mxf':
+            self._apply_provisional_metadata(filepath)
+            mark_step('provisional_ui')
+            self._set_loading_state(True, f"⏳ CUE 준비 중: {Path(filepath).name}")
+            self.empty_label.setText('⏳  VLC로 MXF 원본 로딩 중...')
+            self._empty_proxy.show(); self._video_item.hide()
+            try:
+                vlc_set_t0 = time.monotonic()
+                self.player.setSource(QUrl.fromLocalFile(filepath))
+                self.player.audio_set_volume(0)
+                timings.append(f'vlc_set_source={time.monotonic() - vlc_set_t0:.3f}s')
+                log.info(
+                    f'load_file async cue start: {Path(filepath).name} '
+                    f'total_before_cue={time.monotonic() - load_t0:.3f}s '
+                    f'steps={" ".join(timings)}'
+                )
+                self._prepare_vlc_cue(filepath, 0)
+                self._start_metadata_probe(filepath, load_t0, list(timings))
+            except Exception as e:
+                msg = friendly_error_text('vlc_load', e, filepath)
+                self.empty_label.setText(f'⚠ {msg}')
+                self.ai_lbl.setText(f'⚠ {friendly_error_title("vlc_load", e, filepath)}')
+                self._set_loading_state(False)
+                log.error(f'VLC load failed: {Path(filepath).name} | {e}')
+            return
 
         # 메타데이터 probe
         probe_only_t0 = time.monotonic()
@@ -2049,6 +2321,7 @@ class VideoPanel(QWidget):
             f'steps={" ".join(timings)}'
         )
         self._set_loading_state(True, f"⏳ CUE 준비 중: {Path(filepath).name}")
+        self._metadata_ready = True
         self.cur_info = info
         self.fps       = info.get("fps", 29.97)
         self.df        = bool(info.get("df", False)) and self._nominal_fps() in (30, 60)
@@ -2344,6 +2617,9 @@ class VideoPanel(QWidget):
     def _start_audio_mix(self, pos_ms=None, lead_sec=None):
         if not self.cur_file:
             return
+        if not getattr(self, '_metadata_ready', False):
+            log.debug(f'audio mix delayed until metadata ready: {Path(self.cur_file).name}')
+            return
         if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
             return
         pos = self.player.position() if pos_ms is None else int(pos_ms)
@@ -2366,6 +2642,9 @@ class VideoPanel(QWidget):
 
     def _restart_audio_mix(self, pos_ms=None, lead_sec=None):
         if not self.cur_file:
+            return
+        if not getattr(self, '_metadata_ready', False):
+            log.debug(f'audio mix restart delayed until metadata ready: {Path(self.cur_file).name}')
             return
         if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
             return
