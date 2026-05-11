@@ -28,6 +28,7 @@ The program creates these files there:
 - archive.db
 - settings.json
 - logs\player.log
+- logs\migration.log
 - tmp\
 - backups\
 
@@ -61,6 +62,13 @@ If a file does not play or a detection job fails, open the LOG button in the
 top bar or check:
 
 %LOCALAPPDATA%\MXF QC Player V.1.0\logs\player.log
+
+Data migration and legacy release preservation events are recorded in:
+
+%LOCALAPPDATA%\MXF QC Player V.1.0\logs\migration.log
+
+This log uses one JSON record per line and is rotated automatically when it
+grows large.
 
 Runtime Check
 -------------

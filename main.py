@@ -236,6 +236,11 @@ class MainWindow(QMainWindow):
             status = item.get('status')
             level = log.warning if status == 'failed' else log.info
             level(f"migration {item.get('name')}: {status} - {item.get('message')}")
+        migration_log = runtime.get('migration_log') or {}
+        if migration_log.get('path'):
+            log.info(f"migration log: {migration_log.get('path')}")
+        for err in migration_log.get('errors') or []:
+            log.warning(f"migration log write failed: {err}")
         if runtime.get('ok'):
             msg = "  ● READY   |   VLC / FFmpeg / FFprobe / FFplay / 저장 위치 OK   |   MXF QC Player V.1.0"
             self.statusBar().showMessage(msg)

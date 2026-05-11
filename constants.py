@@ -350,8 +350,12 @@ SETTINGS_PATH = USER_SETTINGS_PATH
 LOG_DIR    = USER_LOG_DIR
 TMP_DIR    = USER_TMP_DIR
 BACKUP_DIR = USER_BACKUP_DIR
+MIGRATION_LOG_PATH = LOG_DIR / "migration.log"
+MIGRATION_LOG_MAX_BYTES = 2 * 1024 * 1024
+MIGRATION_LOG_BACKUP_COUNT = 10
 _RUNTIME_DIR_ERRORS = []
 _RUNTIME_MIGRATION_EVENTS = []
+_RUNTIME_MIGRATION_LOG_ERRORS = []
 
 def _ensure_runtime_dir(path):
     try:
@@ -366,14 +370,48 @@ _ensure_runtime_dir(LOG_DIR)
 _ensure_runtime_dir(TMP_DIR)
 _ensure_runtime_dir(BACKUP_DIR)
 
+def _rotate_migration_log():
+    try:
+        if MIGRATION_LOG_PATH.exists() and MIGRATION_LOG_PATH.stat().st_size > MIGRATION_LOG_MAX_BYTES:
+            stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            rotated = LOG_DIR / f'migration.log.{stamp}'
+            MIGRATION_LOG_PATH.replace(rotated)
+        backups = sorted(
+            LOG_DIR.glob('migration.log.*'),
+            key=lambda p: p.stat().st_mtime if p.exists() else 0,
+            reverse=True,
+        )
+        for old in backups[MIGRATION_LOG_BACKUP_COUNT:]:
+            try:
+                old.unlink()
+            except Exception:
+                pass
+    except Exception as e:
+        _RUNTIME_MIGRATION_LOG_ERRORS.append(f'rotate failed: {e}')
+
+def _append_migration_log(event):
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        _rotate_migration_log()
+        with MIGRATION_LOG_PATH.open('a', encoding='utf-8') as fh:
+            fh.write(json.dumps(event, ensure_ascii=False))
+            fh.write('\n')
+    except Exception as e:
+        _RUNTIME_MIGRATION_LOG_ERRORS.append(str(e))
+
 def _record_migration_event(name, source, target, status, message=''):
-    _RUNTIME_MIGRATION_EVENTS.append({
+    event = {
+        'timestamp': datetime.now().isoformat(timespec='seconds'),
         'name': name,
         'source': str(source),
         'target': str(target),
         'status': status,
         'message': message,
-    })
+        'app_dir': str(APP_DIR),
+        'user_data_dir': str(USER_DATA_DIR),
+    }
+    _RUNTIME_MIGRATION_EVENTS.append(event)
+    _append_migration_log(event)
 
 def _copy_legacy_file_to_user_data(name, source, target):
     if source.resolve() == target.resolve():
@@ -399,6 +437,12 @@ def migrate_legacy_user_data():
 
 def runtime_migration_events():
     return [dict(item) for item in _RUNTIME_MIGRATION_EVENTS]
+
+def runtime_migration_log_info():
+    return {
+        'path': str(MIGRATION_LOG_PATH),
+        'errors': list(_RUNTIME_MIGRATION_LOG_ERRORS),
+    }
 
 migrate_legacy_user_data()
 
@@ -1106,6 +1150,7 @@ def check_runtime_environment():
         'items': items,
         'storage_policy': runtime_storage_policy(),
         'migration': runtime_migration_events(),
+        'migration_log': runtime_migration_log_info(),
         'storage': storage,
         'missing': missing,
         'missing_required': missing_required,
@@ -1151,10 +1196,21 @@ def format_runtime_environment(runtime=None):
     lines.append('-' * 42)
     for item in runtime.get('migration', []):
         lines.append(f"[{item.get('status', '').upper()}] {item.get('name', '')}")
+        lines.append(f"  시간: {item.get('timestamp') or '-'}")
         lines.append(f"  원본: {item.get('source') or '-'}")
         lines.append(f"  대상: {item.get('target') or '-'}")
         lines.append(f"  정보: {item.get('message') or '-'}")
         lines.append('')
+    migration_log = runtime.get('migration_log') or {}
+    lines.append('마이그레이션 로그')
+    lines.append('-' * 42)
+    lines.append(f"경로: {migration_log.get('path') or '-'}")
+    errors = migration_log.get('errors') or []
+    if errors:
+        lines.append(f"상태: 기록 실패 ({'; '.join(errors)})")
+    else:
+        lines.append('상태: 기록 가능')
+    lines.append('')
     lines.append('저장 위치')
     lines.append('-' * 42)
     for item in runtime.get('storage', []):

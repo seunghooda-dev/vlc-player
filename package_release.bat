@@ -35,6 +35,7 @@ if exist "%PACKAGE_DIR%" (
       "$names=@('settings.json','archive.db'); $found=$false; foreach($name in $names){ if(Test-Path -LiteralPath (Join-Path $pkg $name)){ $found=$true } }" ^
       "if($found){ $stamp=Get-Date -Format 'yyyyMMdd_HHmmss'; $backup=Join-Path $data ('backups\legacy-release-' + $stamp); New-Item -ItemType Directory -Force -Path $backup | Out-Null; New-Item -ItemType Directory -Force -Path $data | Out-Null;" ^
       "foreach($name in $names){ $src=Join-Path $pkg $name; if(Test-Path -LiteralPath $src){ Copy-Item -LiteralPath $src -Destination (Join-Path $backup $name) -Force; $target=Join-Path $data $name; if(-not (Test-Path -LiteralPath $target)){ Copy-Item -LiteralPath $src -Destination $target -Force } } }" ^
+      "$logDir=Join-Path $data 'logs'; New-Item -ItemType Directory -Force -Path $logDir | Out-Null; $event=[ordered]@{timestamp=(Get-Date).ToString('s'); name='legacy-release-runtime'; source=$pkg; target=$backup; status='copied'; message='legacy release settings/db preserved before package refresh'} | ConvertTo-Json -Compress; Add-Content -LiteralPath (Join-Path $logDir 'migration.log') -Value $event -Encoding UTF8;" ^
       "Write-Host ('Preserved legacy runtime data to ' + $backup) } }"
     if errorlevel 1 goto fail
 )
