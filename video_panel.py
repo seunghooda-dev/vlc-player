@@ -89,11 +89,16 @@ class AudioMixPlayer(QObject):
             self.rate = 1.0
 
     def stop(self):
+        was_active = bool(self._playing or self._ffplay or self._ffmpeg)
+        if was_active:
+            self.log_diagnostic('audio child stopping')
         self._playing = False
         for proc in (self._ffplay, self._ffmpeg):
             terminate_child_process(proc, 'audio mix')
         self._ffplay = None
         self._ffmpeg = None
+        if was_active:
+            log.info('audio child stopped')
 
     def _proc_state(self, proc):
         if proc is None:
@@ -122,6 +127,20 @@ class AudioMixPlayer(QObject):
             'last_error': self.last_error,
         })
         return status
+
+    def log_diagnostic(self, prefix='audio child status'):
+        status = self.diagnostic_status()
+        file_name = Path(status.get('file') or '').name or '-'
+        log.info(
+            f"{prefix}: "
+            f"playing={status.get('playing')} "
+            f"ffmpeg={status.get('ffmpeg')} pid={status.get('ffmpeg_pid') or '-'} "
+            f"ffplay={status.get('ffplay')} pid={status.get('ffplay_pid') or '-'} "
+            f"ch={status.get('channels') or '-'} rate={status.get('rate')} "
+            f"volume={status.get('volume_percent')}% file={file_name}"
+        )
+        if status.get('last_error'):
+            log.warning(f"{prefix} last error: {status.get('last_error')}")
 
     def is_running(self):
         status = self.process_status()
@@ -201,6 +220,7 @@ class AudioMixPlayer(QObject):
                 f'ffmpeg={self._ffmpeg.pid} ffplay={self._ffplay.pid} '
                 f'ch={self.channels} start={start_sec:.3f}s rate={self.rate:.3f}'
             )
+            self.log_diagnostic()
         except Exception as e:
             self.last_error = friendly_error_text('audio_mix', e, self.filepath)
             log.error(f'audio mix start failed: {e}')
