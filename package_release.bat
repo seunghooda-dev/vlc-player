@@ -7,12 +7,18 @@ set "APP_NAME=MXF QC Player"
 set "APP_VERSION=V.1.0"
 set "PACKAGE_NAME=%APP_NAME% %APP_VERSION%"
 set "RELEASE_ROOT=release"
-set "PACKAGE_DIR=%RELEASE_ROOT%\%PACKAGE_NAME%"
-set "ZIP_PATH=%RELEASE_ROOT%\%PACKAGE_NAME%.zip"
+set "PACKAGE_DIR=%CD%\%RELEASE_ROOT%\%PACKAGE_NAME%"
+set "ZIP_PATH=%CD%\%RELEASE_ROOT%\%PACKAGE_NAME%.zip"
+set "USER_DATA_DIR=%LOCALAPPDATA%\%PACKAGE_NAME%"
 
 echo ================================================
 echo   %PACKAGE_NAME% - portable release package
 echo ================================================
+echo.
+echo Release folder:
+echo   %PACKAGE_DIR%
+echo User data folder:
+echo   %USER_DATA_DIR%
 echo.
 
 call build.bat
@@ -21,6 +27,16 @@ if errorlevel 1 goto fail
 if not exist "dist\%APP_NAME%.exe" (
     echo [error] dist\%APP_NAME%.exe was not found.
     goto fail
+)
+
+if exist "%PACKAGE_DIR%" (
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+      "$pkg=$env:PACKAGE_DIR; $data=$env:USER_DATA_DIR; if ($env:LOCALAPPDATA -and (Test-Path -LiteralPath $pkg)) {" ^
+      "$names=@('settings.json','archive.db'); $found=$false; foreach($name in $names){ if(Test-Path -LiteralPath (Join-Path $pkg $name)){ $found=$true } }" ^
+      "if($found){ $stamp=Get-Date -Format 'yyyyMMdd_HHmmss'; $backup=Join-Path $data ('backups\legacy-release-' + $stamp); New-Item -ItemType Directory -Force -Path $backup | Out-Null; New-Item -ItemType Directory -Force -Path $data | Out-Null;" ^
+      "foreach($name in $names){ $src=Join-Path $pkg $name; if(Test-Path -LiteralPath $src){ Copy-Item -LiteralPath $src -Destination (Join-Path $backup $name) -Force; $target=Join-Path $data $name; if(-not (Test-Path -LiteralPath $target)){ Copy-Item -LiteralPath $src -Destination $target -Force } } }" ^
+      "Write-Host ('Preserved legacy runtime data to ' + $backup) } }"
+    if errorlevel 1 goto fail
 )
 
 if exist "%PACKAGE_DIR%" rmdir /s /q "%PACKAGE_DIR%"
@@ -77,6 +93,8 @@ echo Release folder:
 echo   %PACKAGE_DIR%
 echo Release zip:
 echo   %ZIP_PATH%
+echo User data folder:
+echo   %USER_DATA_DIR%
 echo.
 echo Done.
 exit /b 0

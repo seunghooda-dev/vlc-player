@@ -12,15 +12,28 @@ Quick Start
 
 Runtime Files
 -------------
-The program creates these files next to the EXE:
+The release folder is for program files only:
+
+- MXF QC Player.exe
+- tools\
+- README.txt
+- LICENSES\
+
+User data is stored separately under:
+
+%LOCALAPPDATA%\MXF QC Player V.1.0
+
+The program creates these files there:
 
 - archive.db
 - settings.json
 - logs\player.log
 - tmp\
+- backups\
 
-Do not install this folder under a location that blocks writes, such as a
-locked Program Files directory, unless the user has write permission.
+The app folder only needs to be readable. The user data folder must be
+writable. This separation makes future updates safer because replacing the app
+folder does not overwrite operator settings, logs, or QC history.
 
 Dependencies
 ------------
@@ -47,15 +60,14 @@ Logs
 If a file does not play or a detection job fails, open the LOG button in the
 top bar or check:
 
-logs\player.log
+%LOCALAPPDATA%\MXF QC Player V.1.0\logs\player.log
 
 Runtime Check
 -------------
 Use the ENV button in the top bar to verify VLC, FFmpeg, FFprobe, and FFplay.
 The dialog shows each tool path, source, version/status, and the feature that
-depends on it. It also checks whether the app folder, logs\, and tmp\ are
-writable. If write access fails, move the package to a normal user-writable
-folder such as Desktop, Documents, or a dedicated media tools folder.
+depends on it. It also checks whether the app folder is readable and whether
+the user data folder, logs\, tmp\, and backups\ are writable.
 
 Deployment Smoke Test
 ---------------------
@@ -79,7 +91,10 @@ release EXE and desktop shortcut updated together:
 update_desktop_release.bat
 
 It rebuilds the portable package, refreshes the Desktop shortcut, performs a
-smoke test, and starts the packaged EXE.
+smoke test, and starts the packaged EXE. It does not copy settings.json,
+archive.db, logs\, tmp\, or backups\ back into the release folder. If old
+runtime files are found in a previous release folder, they are preserved under
+the user data backups folder before the package is refreshed.
 
 Version
 -------
