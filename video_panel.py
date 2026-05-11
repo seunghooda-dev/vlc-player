@@ -108,6 +108,21 @@ class AudioMixPlayer(QObject):
             'ffplay': self._proc_state(self._ffplay),
         }
 
+    def diagnostic_status(self):
+        status = self.process_status()
+        status.update({
+            'ffmpeg_pid': getattr(self._ffmpeg, 'pid', None),
+            'ffplay_pid': getattr(self._ffplay, 'pid', None),
+            'file': self.filepath,
+            'channels': list(self.channels or []),
+            'rate': round(float(self.rate or 1.0), 3),
+            'volume_percent': int(round(float(self.volume or 0.0) * 100)),
+            'audio_stream_count': int(self.audio_stream_count or 0),
+            'channel_count': int(self.channel_count or 0),
+            'last_error': self.last_error,
+        })
+        return status
+
     def is_running(self):
         status = self.process_status()
         return (

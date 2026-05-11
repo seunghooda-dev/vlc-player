@@ -3,6 +3,7 @@ main.py — 진입점
 MainWindow + 전역 예외 처리 + 앱 실행
 """
 import sys
+from pathlib import Path
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
     QSplitter, QDialog, QPushButton, QMessageBox, QPlainTextEdit,
@@ -226,6 +227,7 @@ class MainWindow(QMainWindow):
         log.info('runtime warmup started')
 
     def show_runtime_status(self, runtime):
+        self._attach_audio_child_status(runtime)
         self._runtime = runtime
         for item in runtime.get('items', []):
             level = log.info if item.get('ok') else log.warning
@@ -242,6 +244,7 @@ class MainWindow(QMainWindow):
             log.info(f"migration log: {migration_log.get('path')}")
         for err in migration_log.get('errors') or []:
             log.warning(f"migration log write failed: {err}")
+        self._log_audio_child_status(runtime)
         if runtime.get('ok'):
             msg = "  ● READY   |   VLC / FFmpeg / FFprobe / FFplay / 저장 위치 OK   |   MXF QC Player V.1.0"
             self.statusBar().showMessage(msg)
@@ -296,6 +299,38 @@ class MainWindow(QMainWindow):
                 "\n".join(lines) + "\n\n새 사용자 데이터 폴더로 복사했고, 기존 파일은 그대로 보존했습니다."
             )
         QTimer.singleShot(350, _popup)
+
+    def _attach_audio_child_status(self, runtime):
+        try:
+            audio = self.vp.audio_mix.diagnostic_status()
+            audio['expected'] = bool(self.vp._audio_mix_expected())
+            runtime['audio_mix'] = audio
+        except Exception as e:
+            runtime['audio_mix'] = {'error': str(e)}
+        return runtime
+
+    def _log_audio_child_status(self, runtime):
+        audio = runtime.get('audio_mix') or {}
+        if audio:
+            log.info(
+                "audio child status: "
+                f"expected={audio.get('expected')} playing={audio.get('playing')} "
+                f"ffmpeg={audio.get('ffmpeg')} pid={audio.get('ffmpeg_pid') or '-'} "
+                f"ffplay={audio.get('ffplay')} pid={audio.get('ffplay_pid') or '-'} "
+                f"ch={audio.get('channels') or '-'} file={Path(audio.get('file') or '').name or '-'}"
+            )
+            if audio.get('last_error'):
+                log.warning(f"audio child last error: {audio.get('last_error')}")
+        children = runtime.get('child_processes') or []
+        if children:
+            for child in children:
+                log.info(
+                    "registered child process: "
+                    f"pid={child.get('pid')} state={child.get('state')} "
+                    f"label={child.get('label')} cmd={child.get('command') or '-'}"
+                )
+        else:
+            log.info("registered child process: none")
 
     def _show_runtime_dialog(self):
         dlg = QDialog(self)

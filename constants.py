@@ -1159,6 +1159,7 @@ def check_runtime_environment():
         'problems': problems,
         'can_start': 'VLC' not in missing_required,
         'search_paths': _runtime_search_paths(),
+        'child_processes': runtime_child_process_status(),
     }
 
 def format_runtime_environment(runtime=None):
@@ -1222,6 +1223,37 @@ def format_runtime_environment(runtime=None):
         if item.get('hint'):
             lines.append(f"  조치: {item.get('hint')}")
         lines.append('')
+    audio = runtime.get('audio_mix') or {}
+    lines.append('오디오 자식 프로세스')
+    lines.append('-' * 42)
+    if audio:
+        lines.append(f"예상 상태: {'필요' if audio.get('expected') else '불필요'}")
+        lines.append(f"재생 플래그: {audio.get('playing')}")
+        lines.append(f"파일: {audio.get('file') or '-'}")
+        lines.append(f"채널: {audio.get('channels') or '-'}")
+        lines.append(f"재생 속도: {audio.get('rate')}")
+        lines.append(f"볼륨: {audio.get('volume_percent')}%")
+        lines.append(f"FFmpeg: {audio.get('ffmpeg')}  pid={audio.get('ffmpeg_pid') or '-'}")
+        lines.append(f"FFplay: {audio.get('ffplay')}  pid={audio.get('ffplay_pid') or '-'}")
+        if audio.get('last_error'):
+            lines.append(f"최근 오류: {audio.get('last_error')}")
+    else:
+        lines.append('오디오 믹스 상태 없음')
+    lines.append('')
+    children = runtime.get('child_processes') or []
+    lines.append('등록된 자식 프로세스')
+    lines.append('-' * 42)
+    if children:
+        for child in children:
+            lines.append(
+                f"[{child.get('state')}] pid={child.get('pid')} "
+                f"{child.get('label') or 'process'}"
+            )
+            if child.get('command'):
+                lines.append(f"  명령: {child.get('command')}")
+    else:
+        lines.append('등록된 자식 프로세스 없음')
+    lines.append('')
     lines.append('검색 위치')
     lines.append('-' * 42)
     for path in runtime.get('search_paths', []):
@@ -1379,6 +1411,56 @@ def unregister_child_process(proc):
             _CHILD_PROCS.pop(int(proc.pid), None)
     except Exception:
         pass
+
+def _short_process_command(args, limit=220):
+    try:
+        if isinstance(args, (list, tuple)):
+            parts = []
+            for i, value in enumerate(args):
+                text = str(value)
+                if i == 0:
+                    try:
+                        text = Path(text).name or text
+                    except Exception:
+                        pass
+                parts.append(text)
+            text = ' '.join(parts)
+        else:
+            text = str(args or '')
+        text = ' '.join(text.split())
+        if len(text) > limit:
+            return text[:limit - 3] + '...'
+        return text
+    except Exception:
+        return ''
+
+def runtime_child_process_status():
+    rows = []
+    try:
+        with _CHILD_PROC_LOCK:
+            items = list(_CHILD_PROCS.items())
+        for pid, (proc, label) in sorted(items, key=lambda item: item[0]):
+            try:
+                rc = proc.poll()
+                rows.append({
+                    'pid': int(pid),
+                    'label': label,
+                    'state': 'running' if rc is None else f'exited({rc})',
+                    'returncode': rc,
+                    'command': _short_process_command(getattr(proc, 'args', '')),
+                })
+            except Exception as e:
+                rows.append({
+                    'pid': int(pid),
+                    'label': label,
+                    'state': 'unknown',
+                    'returncode': None,
+                    'command': '',
+                    'error': str(e),
+                })
+    except Exception as e:
+        return [{'pid': 0, 'label': 'child registry', 'state': 'error', 'returncode': None, 'command': '', 'error': str(e)}]
+    return rows
 
 def terminate_child_process(proc, label='process', timeout=0.7):
     if not proc:
