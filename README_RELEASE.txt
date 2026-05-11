@@ -36,6 +36,11 @@ The app folder only needs to be readable. The user data folder must be
 writable. This separation makes future updates safer because replacing the app
 folder does not overwrite operator settings, logs, or QC history.
 
+On first launch after an older package, if settings.json or archive.db is found
+only in the old release folder, the app copies it to the user data folder and
+shows "기존 설정 복사됨" or "기존 DB 복사됨". If the new user data file already
+exists, it is left untouched.
+
 Dependencies
 ------------
 VLC is required for MXF video playback.

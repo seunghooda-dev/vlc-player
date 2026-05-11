@@ -89,6 +89,7 @@ class MainWindow(QMainWindow):
         self._settings = load_settings()
         self._runtime = None
         self._warmup_thread = None
+        self._migration_notice_shown = False
         self.setWindowTitle(APP_WINDOW_TITLE)
         size = self._settings.get('window_size', [1400, 980])
         try:
@@ -248,6 +249,7 @@ class MainWindow(QMainWindow):
                 self.vp.ai_lbl.setText("✓ 실행 환경 확인 완료 — VLC / FFmpeg / FFprobe / FFplay / 저장 위치 OK")
             except Exception as e:
                 log.debug(f'runtime ai label: {e}')
+            self._show_migration_notice(runtime)
             return
         problems = ', '.join(runtime.get('problems', []))
         msg = f"  ⚠ 실행 환경 확인 필요: {problems}"
@@ -256,6 +258,44 @@ class MainWindow(QMainWindow):
             self.vp.ai_lbl.setText(f"⚠ 실행 환경 확인 필요: {problems}")
         except Exception as e:
             log.debug(f'runtime warning label: {e}')
+        self._show_migration_notice(runtime)
+
+    def _migration_notice_lines(self, runtime):
+        labels = {
+            'settings.json': '기존 설정 복사됨',
+            'archive.db': '기존 DB 복사됨',
+        }
+        lines = []
+        for item in runtime.get('migration', []):
+            if item.get('status') != 'copied':
+                continue
+            label = labels.get(item.get('name'), f"기존 {item.get('name', '데이터')} 복사됨")
+            if label not in lines:
+                lines.append(label)
+        return lines
+
+    def _show_migration_notice(self, runtime):
+        if self._migration_notice_shown:
+            return
+        lines = self._migration_notice_lines(runtime)
+        if not lines:
+            return
+        self._migration_notice_shown = True
+        message = ' / '.join(lines)
+        log.info(f'migration notice: {message}')
+        self.statusBar().showMessage(f"  ✓ {message}", 8000)
+        try:
+            self.vp.ai_lbl.setText(f"✓ {message}")
+        except Exception as e:
+            log.debug(f'migration notice label: {e}')
+
+        def _popup():
+            QMessageBox.information(
+                self,
+                "기존 데이터 복사 완료",
+                "\n".join(lines) + "\n\n새 사용자 데이터 폴더로 복사했고, 기존 파일은 그대로 보존했습니다."
+            )
+        QTimer.singleShot(350, _popup)
 
     def _show_runtime_dialog(self):
         dlg = QDialog(self)

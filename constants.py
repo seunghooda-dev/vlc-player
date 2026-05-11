@@ -415,18 +415,18 @@ def _record_migration_event(name, source, target, status, message=''):
 
 def _copy_legacy_file_to_user_data(name, source, target):
     if source.resolve() == target.resolve():
-        _record_migration_event(name, source, target, 'skip', 'source and target are identical')
+        _record_migration_event(name, source, target, 'skip', '원본과 대상이 같아 건너뜀')
         return
     if not source.exists() or not source.is_file():
-        _record_migration_event(name, source, target, 'skip', 'legacy file not found')
+        _record_migration_event(name, source, target, 'skip', '기존 파일 없음')
         return
     if target.exists():
-        _record_migration_event(name, source, target, 'skip', 'target already exists')
+        _record_migration_event(name, source, target, 'skip', '새 위치에 파일이 있어 건드리지 않음')
         return
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
-        _record_migration_event(name, source, target, 'copied', 'legacy file copied; original preserved')
+        _record_migration_event(name, source, target, 'copied', '기존 파일을 새 사용자 데이터 폴더로 복사함; 원본 보존')
     except Exception as e:
         _record_migration_event(name, source, target, 'failed', str(e))
 

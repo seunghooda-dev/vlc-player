@@ -213,7 +213,7 @@ class RightPanel(QWidget):
             ("완료", "constants.py 경로 구조 변경", "USER_DATA_DIR 기준으로 설정/DB/log/tmp/backups 연결"),
             ("완료", "배포/업데이트 스크립트 정리", "EXE 업데이트와 사용자 데이터 보존을 분리"),
             ("완료", "마이그레이션 로그 추가", "복사/스킵/실패 내역을 logs/migration.log에 기록"),
-            ("다음", "검증", "설정 유지, 최근 파일, DB 저장, 로그 위치 확인"),
+            ("완료", "검증", "첫 실행 복사 알림, 기존 새 위치 미변경, 로그 기록 확인"),
         ]
         for idx, (state, name, desc) in enumerate(plan_items, 1):
             item = QListWidgetItem(f"{idx}. [{state}] {name}\n   {desc}")
