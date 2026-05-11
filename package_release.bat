@@ -62,7 +62,7 @@ for %%T in (ffmpeg.exe ffprobe.exe ffplay.exe) do (
     )
 )
 
-set "PACKAGE_EXE=%CD%\%PACKAGE_DIR%\%APP_NAME%.exe"
+set "PACKAGE_EXE=%PACKAGE_DIR%\%APP_NAME%.exe"
 echo.
 echo Verifying packaged EXE startup path...
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$p = Start-Process -FilePath $env:PACKAGE_EXE -ArgumentList '--smoke-test' -Wait -PassThru; exit $p.ExitCode"
