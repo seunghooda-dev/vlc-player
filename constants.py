@@ -286,6 +286,43 @@ def _runtime_resource_dir():
 APP_DIR      = _runtime_app_dir()
 RESOURCE_DIR = _runtime_resource_dir()
 BASE_DIR     = APP_DIR
+
+APP_DATA_NAME = "MXF QC Player V.1.0"
+
+def _default_user_data_dir():
+    if os.name == 'nt':
+        root = os.environ.get('LOCALAPPDATA')
+        if root:
+            return Path(root) / APP_DATA_NAME
+        return Path.home() / 'AppData' / 'Local' / APP_DATA_NAME
+    root = os.environ.get('XDG_DATA_HOME')
+    if root:
+        return Path(root) / APP_DATA_NAME
+    return Path.home() / '.local' / 'share' / APP_DATA_NAME
+
+USER_DATA_DIR = _default_user_data_dir()
+USER_DB_PATH = USER_DATA_DIR / "archive.db"
+USER_SETTINGS_PATH = USER_DATA_DIR / "settings.json"
+USER_LOG_DIR = USER_DATA_DIR / "logs"
+USER_TMP_DIR = USER_DATA_DIR / "tmp"
+USER_BACKUP_DIR = USER_DATA_DIR / "backups"
+
+def runtime_storage_policy():
+    return [
+        {
+            'name': '앱 실행 파일 폴더',
+            'path': str(APP_DIR),
+            'role': '프로그램 파일, tools, README, 라이선스 파일',
+            'status': '현재 실행 위치',
+        },
+        {
+            'name': '사용자 데이터 폴더',
+            'path': str(USER_DATA_DIR),
+            'role': 'settings.json, archive.db, logs, tmp, backups',
+            'status': '다음 단계 마이그레이션 목표',
+        },
+    ]
+
 DB_PATH    = BASE_DIR / "archive.db"
 SETTINGS_PATH = BASE_DIR / "settings.json"
 LOG_DIR    = BASE_DIR / "logs"
@@ -440,6 +477,7 @@ def _check_write_location(name, path, role, required=True):
 def check_runtime_storage():
     return [
         _check_write_location('앱 폴더', BASE_DIR, 'archive.db, settings.json 생성/갱신'),
+        _check_write_location('사용자 데이터 폴더(목표)', USER_DATA_DIR, 'settings.json, archive.db, logs, tmp, backups 예정 위치', required=False),
         _check_write_location('로그 폴더', LOG_DIR, 'logs/player.log 기록'),
         _check_write_location('임시 폴더', TMP_DIR, '분석 캐시와 임시 작업 파일 생성'),
         _check_write_location('백업 폴더', BACKUP_DIR, 'settings.json, archive.db 자동 백업', required=False),
@@ -982,6 +1020,7 @@ def check_runtime_environment():
     return {
         'ok': not problems,
         'items': items,
+        'storage_policy': runtime_storage_policy(),
         'storage': storage,
         'missing': missing,
         'missing_required': missing_required,
@@ -1014,6 +1053,14 @@ def format_runtime_environment(runtime=None):
         lines.append(f"  정보: {item.get('message') or '-'}")
         if item.get('hint'):
             lines.append(f"  조치: {item.get('hint')}")
+        lines.append('')
+    lines.append('저장 정책')
+    lines.append('-' * 42)
+    for item in runtime.get('storage_policy', []):
+        lines.append(f"[{item.get('name', '')}]")
+        lines.append(f"  역할: {item.get('role') or '-'}")
+        lines.append(f"  위치: {item.get('path') or '-'}")
+        lines.append(f"  상태: {item.get('status') or '-'}")
         lines.append('')
     lines.append('저장 위치')
     lines.append('-' * 42)

@@ -208,8 +208,8 @@ class RightPanel(QWidget):
             f"font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';font-size:12px;color:{C['text1']};}}"
         )
         plan_items = [
-            ("다음", "저장 위치 정책 정리", "프로그램 파일과 사용자 데이터를 분리"),
-            ("대기", "기존 데이터 자동 이전", "기존 settings.json / archive.db는 보존 후 복사"),
+            ("완료", "저장 위치 정책 정리", "앱 폴더와 사용자 데이터 폴더 기준 확정"),
+            ("다음", "기존 데이터 자동 이전", "기존 settings.json / archive.db는 보존 후 복사"),
             ("대기", "constants.py 경로 구조 변경", "USER_DATA_DIR 기준으로 설정/DB/log/tmp/backups 연결"),
             ("대기", "배포/업데이트 스크립트 정리", "EXE 업데이트와 사용자 데이터 보존을 분리"),
             ("대기", "마이그레이션 로그 추가", "복사/스킵/실패 내역을 로그로 남김"),
@@ -217,7 +217,13 @@ class RightPanel(QWidget):
         ]
         for idx, (state, name, desc) in enumerate(plan_items, 1):
             item = QListWidgetItem(f"{idx}. [{state}] {name}\n   {desc}")
-            item.setForeground(QColor(C['text0'] if idx == 1 else C['text2']))
+            if state == "완료":
+                color = C['green']
+            elif state == "다음":
+                color = C['text0']
+            else:
+                color = C['text2']
+            item.setForeground(QColor(color))
             self.plan_list.addItem(item)
         l.addWidget(self.plan_list, 1)
 
