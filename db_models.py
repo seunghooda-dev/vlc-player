@@ -4,12 +4,42 @@ db_models.py — SQLAlchemy ORM 모델, DB 초기화, 유틸 함수
 import sys, json, subprocess, hashlib, threading
 from pathlib import Path
 from datetime import datetime
-from sqlalchemy import create_engine, Column, String, Integer, Float, DateTime, Text, Boolean, text
+from sqlalchemy import create_engine, Column, String, Integer, Float, DateTime, Text, Boolean, text, event
 from sqlalchemy.orm import declarative_base, Session
 
 from constants import BASE_DIR, DB_PATH, FFMPEG, FFPROBE, log, backup_file_snapshot
 
-engine = create_engine(f"sqlite:///{DB_PATH}", echo=False)
+SQLITE_BUSY_TIMEOUT_MS = 30000
+
+engine = create_engine(
+    f"sqlite:///{DB_PATH}",
+    echo=False,
+    connect_args={
+        "timeout": SQLITE_BUSY_TIMEOUT_MS / 1000,
+        "check_same_thread": False,
+    },
+    pool_pre_ping=True,
+)
+
+@event.listens_for(engine, "connect")
+def _configure_sqlite_connection(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA journal_mode=WAL")
+        journal_mode = cursor.fetchone()
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        log.debug(
+            "[DB] sqlite pragmas applied "
+            f"busy_timeout={SQLITE_BUSY_TIMEOUT_MS}ms "
+            f"journal_mode={journal_mode[0] if journal_mode else 'unknown'}"
+        )
+    except Exception as e:
+        log.warning(f"[DB] sqlite pragma setup failed: {e}")
+    finally:
+        cursor.close()
+
 Base   = declarative_base()
 
 class Clip(Base):
