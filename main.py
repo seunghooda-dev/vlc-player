@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QSplitter, QDialog, QPushButton, QMessageBox, QPlainTextEdit,
     QComboBox,
 )
-from PyQt6.QtCore    import Qt
+from PyQt6.QtCore    import Qt, QTimer
 from PyQt6.QtGui     import QColor, QPalette, QFont
 
 from constants    import (
@@ -20,6 +20,7 @@ from constants    import (
 )
 from video_panel  import VideoPanel
 from right_panel  import RightPanel
+from threads      import RuntimeWarmupThread
 
 
 APP_WINDOW_TITLE = "MXF QC Player V.1.0"
@@ -87,6 +88,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self._settings = load_settings()
         self._runtime = None
+        self._warmup_thread = None
         self.setWindowTitle(APP_WINDOW_TITLE)
         size = self._settings.get('window_size', [1400, 980])
         try:
@@ -185,6 +187,42 @@ class MainWindow(QMainWindow):
 
         self.vp.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.vp.setFocus()
+
+    def start_runtime_warmup(self):
+        if self._warmup_thread and self._warmup_thread.isRunning():
+            return
+        recent_files = self._settings.get('recent_files', [])
+        if not recent_files:
+            log.info('runtime warmup skipped: no recent files')
+            return
+        t = RuntimeWarmupThread(recent_files[:3])
+        self._warmup_thread = t
+
+        def _done(result, thread=t):
+            tool_summary = ', '.join(
+                f"{name}={state.get('elapsed', 0):.3f}s"
+                for name, state in result.get('tools', {}).items()
+            )
+            recent = result.get('recent_probe') or {}
+            recent_summary = ''
+            if recent:
+                recent_summary = (
+                    f" recent={recent.get('file', '?')} "
+                    f"ok={recent.get('ok')} {recent.get('elapsed', 0):.3f}s"
+                )
+            log.info(
+                f"runtime warmup complete: total={result.get('elapsed', 0):.3f}s "
+                f"tools=[{tool_summary}]{recent_summary}"
+            )
+
+        def _cleanup(thread=t):
+            if self._warmup_thread is thread:
+                self._warmup_thread = None
+
+        t.completed.connect(_done)
+        t.finished.connect(_cleanup)
+        t.start()
+        log.info('runtime warmup started')
 
     def show_runtime_status(self, runtime):
         self._runtime = runtime
@@ -624,10 +662,16 @@ class MainWindow(QMainWindow):
                     rp.cancel_active_analysis('프로그램 종료', wait_ms=1200)
             except Exception as ex:
                 log.debug(f'cancel active analysis on close: {ex}')
+            try:
+                vp._retire_probe()
+            except Exception as ex:
+                log.debug(f'retire probe on close: {ex}')
             vp._retire_tc()
 
             # 작업 스레드 — abort 플래그 → quit → wait → 필요 시 terminate
             worker_threads = []
+            if getattr(self, '_warmup_thread', None):
+                worker_threads.append((self._warmup_thread, 'warmup_thread'))
             worker_threads.extend((t, 'transcode_thread') for t in list(getattr(vp, '_dead_threads', [])))
             worker_threads.extend((t, 'preconvert_thread') for t in list(getattr(vp, '_preconvert_threads', [])))
             if getattr(rp, '_audio_thread', None):
@@ -759,6 +803,7 @@ def main():
     win = MainWindow()
     win.show()
     win.show_runtime_status(runtime)
+    QTimer.singleShot(700, win.start_runtime_warmup)
     ret = app.exec()
     cleanup_child_processes()
     log.info('MXF QC Player 종료')

@@ -5,6 +5,7 @@ TranscodeThread, AudioAnalyzeThread, LoudnessAnalyzeThread, BlackDetectThread
 
 __all__ = [
     'ProbeThread',
+    'RuntimeWarmupThread',
     'TranscodeThread',
     'AudioAnalyzeThread',
     'LoudnessAnalyzeThread',
@@ -15,7 +16,7 @@ from pathlib import Path
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from constants import (
-    FFMPEG, FFPROBE, TMP_DIR, log,
+    FFMPEG, FFPROBE, FFPLAY, TMP_DIR, VIDEO_EXTS, log,
     register_child_process, unregister_child_process, terminate_child_process,
 )
 from db_models import sec_to_tc, frames_to_tc, probe as probe_media
@@ -44,6 +45,73 @@ class ProbeThread(QThread):
             elapsed = time.monotonic() - started
             if not self._abort:
                 self.error.emit(str(e), elapsed)
+
+class RuntimeWarmupThread(QThread):
+    completed = pyqtSignal(dict)
+
+    def __init__(self, recent_files=None):
+        super().__init__()
+        self.recent_files = list(recent_files or [])
+        self._abort = False
+
+    def abort(self):
+        self._abort = True
+
+    def _run_version(self, name, command):
+        if self._abort:
+            return None
+        started = time.monotonic()
+        try:
+            proc = subprocess.run(
+                [command, '-version'],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+                creationflags=0x08000000 if os.name == 'nt' else 0,
+            )
+            return {'ok': proc.returncode == 0, 'elapsed': time.monotonic() - started}
+        except Exception as e:
+            return {'ok': False, 'elapsed': time.monotonic() - started, 'error': str(e)}
+
+    def run(self):
+        started = time.monotonic()
+        result = {'tools': {}, 'recent_probe': None, 'elapsed': 0.0}
+        try:
+            for name, command in (
+                ('ffprobe', FFPROBE),
+                ('ffmpeg', FFMPEG),
+                ('ffplay', FFPLAY),
+            ):
+                state = self._run_version(name, command)
+                if state is not None:
+                    result['tools'][name] = state
+            for fp in self.recent_files[:3]:
+                if self._abort:
+                    return
+                try:
+                    p = Path(fp)
+                    if not p.exists() or p.suffix.lower() not in VIDEO_EXTS:
+                        continue
+                    probe_started = time.monotonic()
+                    info = probe_media(str(p))
+                    result['recent_probe'] = {
+                        'file': p.name,
+                        'ok': bool(info),
+                        'elapsed': time.monotonic() - probe_started,
+                    }
+                    break
+                except Exception as e:
+                    result['recent_probe'] = {
+                        'file': str(fp),
+                        'ok': False,
+                        'elapsed': 0.0,
+                        'error': str(e),
+                    }
+                    break
+        finally:
+            result['elapsed'] = time.monotonic() - started
+            if not self._abort:
+                self.completed.emit(result)
 
 class TranscodeThread(QThread):
     ready    = pyqtSignal(str)   # 프리뷰 준비

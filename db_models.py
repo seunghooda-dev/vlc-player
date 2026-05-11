@@ -1,7 +1,7 @@
 """
 db_models.py — SQLAlchemy ORM 모델, DB 초기화, 유틸 함수
 """
-import sys, json, subprocess, hashlib
+import sys, json, subprocess, hashlib, threading
 from pathlib import Path
 from datetime import datetime
 from sqlalchemy import create_engine, Column, String, Integer, Float, DateTime, Text, Boolean, text
@@ -54,6 +54,11 @@ class Scene(Base):
     start_sec   = Column(Float)
 
 Base.metadata.create_all(engine)
+
+_PROBE_CACHE = {}
+_PROBE_CACHE_ORDER = []
+_PROBE_CACHE_LOCK = threading.RLock()
+_PROBE_CACHE_LIMIT = 32
 
 # DB 무결성 검사
 def _check_db_integrity():
@@ -147,8 +152,49 @@ def sec_to_tc(sec, fps=29.97, df=None, offset_frames=0):
 def sec_fmt(s):
     return f"{int(s//60):02d}:{int(s%60):02d}"
 
+def _probe_cache_key(filepath):
+    try:
+        p = Path(filepath)
+        st = p.stat()
+        return f'{p.resolve()}|{st.st_size}|{st.st_mtime_ns}'
+    except Exception:
+        return ''
+
+def _probe_cache_get(key):
+    if not key:
+        return None
+    with _PROBE_CACHE_LOCK:
+        cached = _PROBE_CACHE.get(key)
+        if cached is None:
+            return None
+        try:
+            _PROBE_CACHE_ORDER.remove(key)
+        except ValueError:
+            pass
+        _PROBE_CACHE_ORDER.append(key)
+        return dict(cached)
+
+def _probe_cache_set(key, info):
+    if not key or not info:
+        return
+    with _PROBE_CACHE_LOCK:
+        _PROBE_CACHE[key] = dict(info)
+        try:
+            _PROBE_CACHE_ORDER.remove(key)
+        except ValueError:
+            pass
+        _PROBE_CACHE_ORDER.append(key)
+        while len(_PROBE_CACHE_ORDER) > _PROBE_CACHE_LIMIT:
+            old = _PROBE_CACHE_ORDER.pop(0)
+            _PROBE_CACHE.pop(old, None)
+
 def probe(filepath):
     try:
+        cache_key = _probe_cache_key(filepath)
+        cached = _probe_cache_get(cache_key)
+        if cached is not None:
+            log.debug(f'probe cache hit: {Path(filepath).name}')
+            return cached
         probe_entries = (
             "format=duration,size,bit_rate:format_tags=timecode:"
             "stream=index,codec_type,codec_name,width,height,r_frame_rate,channels:"
@@ -210,6 +256,7 @@ def probe(filepath):
             except Exception as e: log.debug(f'tc_offset parse: {e}')
         ext=Path(filepath).suffix.upper().lstrip(".")
         info["format_short"]="XDCAM" if ext=="MXF" else ext
+        _probe_cache_set(cache_key, info)
         return info
     except Exception as e:
         log.warning(f'probe failed: {e}')
