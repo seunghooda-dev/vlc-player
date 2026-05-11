@@ -232,6 +232,10 @@ class MainWindow(QMainWindow):
         for item in runtime.get('storage', []):
             level = log.info if item.get('ok') else log.warning
             level(f"storage {item.get('name')}: {item.get('message')}")
+        for item in runtime.get('migration', []):
+            status = item.get('status')
+            level = log.warning if status == 'failed' else log.info
+            level(f"migration {item.get('name')}: {status} - {item.get('message')}")
         if runtime.get('ok'):
             msg = "  ● READY   |   VLC / FFmpeg / FFprobe / FFplay / 저장 위치 OK   |   MXF QC Player V.1.0"
             self.statusBar().showMessage(msg)

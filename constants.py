@@ -307,28 +307,51 @@ USER_LOG_DIR = USER_DATA_DIR / "logs"
 USER_TMP_DIR = USER_DATA_DIR / "tmp"
 USER_BACKUP_DIR = USER_DATA_DIR / "backups"
 
+def _legacy_user_data_dir():
+    if not getattr(sys, 'frozen', False):
+        release_dir = APP_DIR / 'release' / APP_DATA_NAME
+        if release_dir.exists():
+            return release_dir
+    return APP_DIR
+
+LEGACY_DATA_DIR = _legacy_user_data_dir()
+LEGACY_DB_PATH = LEGACY_DATA_DIR / "archive.db"
+LEGACY_SETTINGS_PATH = LEGACY_DATA_DIR / "settings.json"
+LEGACY_LOG_DIR = LEGACY_DATA_DIR / "logs"
+LEGACY_TMP_DIR = LEGACY_DATA_DIR / "tmp"
+LEGACY_BACKUP_DIR = LEGACY_DATA_DIR / "backups"
+
 def runtime_storage_policy():
-    return [
+    items = [
         {
             'name': '앱 실행 파일 폴더',
             'path': str(APP_DIR),
             'role': '프로그램 파일, tools, README, 라이선스 파일',
-            'status': '현재 실행 위치',
+            'status': '실행 파일 전용, 기존 데이터 파일은 보존',
         },
         {
             'name': '사용자 데이터 폴더',
             'path': str(USER_DATA_DIR),
             'role': 'settings.json, archive.db, logs, tmp, backups',
-            'status': '다음 단계 마이그레이션 목표',
+            'status': '현재 설정/DB/log/tmp/backups 저장 위치',
         },
     ]
+    if LEGACY_DATA_DIR != APP_DIR:
+        items.append({
+            'name': '기존 데이터 원본',
+            'path': str(LEGACY_DATA_DIR),
+            'role': '개발 실행 시 release 폴더의 기존 settings.json, archive.db',
+            'status': '새 사용자 데이터 폴더로 최초 복사할 원본',
+        })
+    return items
 
-DB_PATH    = BASE_DIR / "archive.db"
-SETTINGS_PATH = BASE_DIR / "settings.json"
-LOG_DIR    = BASE_DIR / "logs"
-TMP_DIR    = BASE_DIR / "tmp"
-BACKUP_DIR = BASE_DIR / "backups"
+DB_PATH    = USER_DB_PATH
+SETTINGS_PATH = USER_SETTINGS_PATH
+LOG_DIR    = USER_LOG_DIR
+TMP_DIR    = USER_TMP_DIR
+BACKUP_DIR = USER_BACKUP_DIR
 _RUNTIME_DIR_ERRORS = []
+_RUNTIME_MIGRATION_EVENTS = []
 
 def _ensure_runtime_dir(path):
     try:
@@ -338,9 +361,46 @@ def _ensure_runtime_dir(path):
         _RUNTIME_DIR_ERRORS.append((str(path), str(e)))
         return False
 
+_ensure_runtime_dir(USER_DATA_DIR)
 _ensure_runtime_dir(LOG_DIR)
 _ensure_runtime_dir(TMP_DIR)
 _ensure_runtime_dir(BACKUP_DIR)
+
+def _record_migration_event(name, source, target, status, message=''):
+    _RUNTIME_MIGRATION_EVENTS.append({
+        'name': name,
+        'source': str(source),
+        'target': str(target),
+        'status': status,
+        'message': message,
+    })
+
+def _copy_legacy_file_to_user_data(name, source, target):
+    if source.resolve() == target.resolve():
+        _record_migration_event(name, source, target, 'skip', 'source and target are identical')
+        return
+    if not source.exists() or not source.is_file():
+        _record_migration_event(name, source, target, 'skip', 'legacy file not found')
+        return
+    if target.exists():
+        _record_migration_event(name, source, target, 'skip', 'target already exists')
+        return
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        _record_migration_event(name, source, target, 'copied', 'legacy file copied; original preserved')
+    except Exception as e:
+        _record_migration_event(name, source, target, 'failed', str(e))
+
+def migrate_legacy_user_data():
+    _copy_legacy_file_to_user_data('settings.json', LEGACY_SETTINGS_PATH, SETTINGS_PATH)
+    _copy_legacy_file_to_user_data('archive.db', LEGACY_DB_PATH, DB_PATH)
+    return list(_RUNTIME_MIGRATION_EVENTS)
+
+def runtime_migration_events():
+    return [dict(item) for item in _RUNTIME_MIGRATION_EVENTS]
+
+migrate_legacy_user_data()
 
 def _tool_candidates(name):
     exe_name = f'{name}.exe' if os.name == 'nt' and not name.lower().endswith('.exe') else name
@@ -474,10 +534,34 @@ def _check_write_location(name, path, role, required=True):
             'hint': '앱 폴더를 쓰기 가능한 위치에 두세요. Program Files처럼 권한이 막힌 위치는 피하는 것이 좋습니다.',
         }
 
+def _check_read_location(name, path, role, required=True):
+    path = Path(path)
+    try:
+        ok = path.exists() and path.is_dir()
+        return {
+            'name': name,
+            'ok': ok,
+            'path': str(path),
+            'message': '읽기 가능' if ok else '폴더를 찾을 수 없습니다',
+            'role': role,
+            'required': required,
+            'hint': '' if ok else '앱 실행 파일 폴더가 이동/삭제됐는지 확인하세요.',
+        }
+    except Exception as e:
+        return {
+            'name': name,
+            'ok': False,
+            'path': str(path),
+            'message': str(e),
+            'role': role,
+            'required': required,
+            'hint': '앱 실행 파일 폴더 접근 권한을 확인하세요.',
+        }
+
 def check_runtime_storage():
     return [
-        _check_write_location('앱 폴더', BASE_DIR, 'archive.db, settings.json 생성/갱신'),
-        _check_write_location('사용자 데이터 폴더(목표)', USER_DATA_DIR, 'settings.json, archive.db, logs, tmp, backups 예정 위치', required=False),
+        _check_read_location('앱 실행 파일 폴더', BASE_DIR, '프로그램 파일, tools, README 보관 위치'),
+        _check_write_location('사용자 데이터 폴더', USER_DATA_DIR, 'settings.json, archive.db, logs, tmp, backups 저장 위치'),
         _check_write_location('로그 폴더', LOG_DIR, 'logs/player.log 기록'),
         _check_write_location('임시 폴더', TMP_DIR, '분석 캐시와 임시 작업 파일 생성'),
         _check_write_location('백업 폴더', BACKUP_DIR, 'settings.json, archive.db 자동 백업', required=False),
@@ -1021,6 +1105,7 @@ def check_runtime_environment():
         'ok': not problems,
         'items': items,
         'storage_policy': runtime_storage_policy(),
+        'migration': runtime_migration_events(),
         'storage': storage,
         'missing': missing,
         'missing_required': missing_required,
@@ -1061,6 +1146,14 @@ def format_runtime_environment(runtime=None):
         lines.append(f"  역할: {item.get('role') or '-'}")
         lines.append(f"  위치: {item.get('path') or '-'}")
         lines.append(f"  상태: {item.get('status') or '-'}")
+        lines.append('')
+    lines.append('데이터 이전')
+    lines.append('-' * 42)
+    for item in runtime.get('migration', []):
+        lines.append(f"[{item.get('status', '').upper()}] {item.get('name', '')}")
+        lines.append(f"  원본: {item.get('source') or '-'}")
+        lines.append(f"  대상: {item.get('target') or '-'}")
+        lines.append(f"  정보: {item.get('message') or '-'}")
         lines.append('')
     lines.append('저장 위치')
     lines.append('-' * 42)

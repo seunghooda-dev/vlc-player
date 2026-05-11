@@ -209,9 +209,9 @@ class RightPanel(QWidget):
         )
         plan_items = [
             ("완료", "저장 위치 정책 정리", "앱 폴더와 사용자 데이터 폴더 기준 확정"),
-            ("다음", "기존 데이터 자동 이전", "기존 settings.json / archive.db는 보존 후 복사"),
-            ("대기", "constants.py 경로 구조 변경", "USER_DATA_DIR 기준으로 설정/DB/log/tmp/backups 연결"),
-            ("대기", "배포/업데이트 스크립트 정리", "EXE 업데이트와 사용자 데이터 보존을 분리"),
+            ("완료", "기존 데이터 자동 이전", "기존 settings.json / archive.db는 보존 후 복사"),
+            ("완료", "constants.py 경로 구조 변경", "USER_DATA_DIR 기준으로 설정/DB/log/tmp/backups 연결"),
+            ("다음", "배포/업데이트 스크립트 정리", "EXE 업데이트와 사용자 데이터 보존을 분리"),
             ("대기", "마이그레이션 로그 추가", "복사/스킵/실패 내역을 로그로 남김"),
             ("대기", "검증", "설정 유지, 최근 파일, DB 저장, 로그 위치 확인"),
         ]
