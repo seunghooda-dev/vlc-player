@@ -512,6 +512,17 @@ class VideoPanel(QWidget):
         self._frame_display_timer.timeout.connect(self._tick_frame_display)
         self._build_ui()
 
+    def _same_path(self, a, b):
+        if not a or not b:
+            return False
+        try:
+            return Path(a).resolve() == Path(b).resolve()
+        except Exception:
+            return str(a).lower() == str(b).lower()
+
+    def _is_busy_loading(self):
+        return bool(getattr(self, '_loading', False))
+
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0,0,0,0)
@@ -1373,6 +1384,10 @@ class VideoPanel(QWidget):
         self.cur_file = None
         self.cur_id   = None
         self.cur_info = {}
+        self._metadata_ready = False
+        self._cue_ready = False
+        self._file_loaded_emitted = False
+        self._set_loading_state(False)
         self.fps=29.97; self.df=False; self.tc_offset=0.0
         self._tc_offset_frames = 0
         self._display_frame = 0
@@ -1515,6 +1530,10 @@ class VideoPanel(QWidget):
         self.ai_lbl.setText(f"⏳ 백그라운드 변환 중: {Path(filepath).name}")
 
     def add_files(self, start_dir=None):
+        if self._is_busy_loading():
+            self.status_changed.emit('  ⏳ 파일 로드 중입니다 — 완료 후 파일을 추가하세요')
+            log.info('add_files ignored while loading')
+            return
         start = self._file_dialog_start_dir(start_dir)
         log.info(f'file dialog start dir: {start}')
         files,_ = QFileDialog.getOpenFileNames(self,"파일 선택", start,
@@ -1533,6 +1552,10 @@ class VideoPanel(QWidget):
             self._right_panel.refresh_explorer()
 
     def add_recent_file(self, filepath, cue=True):
+        if cue and self._is_busy_loading():
+            self.status_changed.emit('  ⏳ 파일 로드 중입니다 — 완료 후 다시 선택하세요')
+            log.info(f'recent file cue ignored while loading: {Path(filepath).name if filepath else "?"}')
+            return
         if not filepath or not Path(filepath).exists():
             self.status_changed.emit(f"  ⚠ 최근 파일을 찾을 수 없습니다: {filepath or '?'}")
             return
@@ -1648,6 +1671,8 @@ class VideoPanel(QWidget):
         if not self.cur_file:
             return
         if not getattr(self, '_metadata_ready', False):
+            return
+        if not getattr(self, '_cue_ready', False):
             return
         self._file_loaded_emitted = True
         self.file_loaded.emit(self.cur_info, self.cur_id or "")
@@ -1923,6 +1948,9 @@ class VideoPanel(QWidget):
             file_name = Path(filepath).name
             message = "✓ VLC CUE 완료 — 메타데이터 분석 중..."
             status_message = f"  ▌CUE  {file_name}  |  VLC 먼저 준비됨 — 메타데이터 분석 중"
+            self._set_loading_state(True, message)
+            self.status_changed.emit(status_message)
+            return
         self._set_loading_state(False)
         self.ai_lbl.setText(message)
         self.status_changed.emit(status_message)
@@ -2208,6 +2236,24 @@ class VideoPanel(QWidget):
         log.info(f'async metadata probe started: {file_name}')
 
     def load_file(self, filepath):
+        if self._same_path(filepath, self.cur_file):
+            file_name = Path(filepath).name if filepath else '?'
+            if self._is_busy_loading():
+                self.status_changed.emit(f'  ⏳ 이미 로드 중입니다 — {file_name}')
+                log.info(f'duplicate load ignored while loading: {file_name}')
+                return
+            self._cancel_audio_mix()
+            try:
+                self.player.pause()
+            except Exception:
+                pass
+            self._show_cue_first_frame(0)
+            self._cue_ready = True
+            self._set_loading_state(False)
+            self.ai_lbl.setText("✓ 이미 CUE 완료 — 첫 프레임으로 이동")
+            self.status_changed.emit(f"  ▌CUE  {file_name}  |  이미 로드된 파일")
+            log.info(f'duplicate load reused current cue: {file_name}')
+            return
         load_t0 = time.monotonic()
         preflight_start = load_t0
         ok, title, detail = self._quick_file_preflight(filepath)
@@ -2898,6 +2944,12 @@ class VideoPanel(QWidget):
         self.ai_lbl.setText(f'⚠ {user_msg} — LOG 확인')
 
     def _set_position(self, ms):
+        if self._is_busy_loading():
+            self.status_changed.emit('  ⏳ CUE 준비 중입니다 — 잠시만 기다려주세요')
+            return
+        if self.cur_file and not getattr(self, '_metadata_ready', False):
+            self.status_changed.emit('  ⏳ 메타데이터 확인 전입니다 — 잠시만 기다려주세요')
+            return
         ms = max(0, min(int(self.duration * 1000), int(ms))) if self.duration > 0 else max(0, int(ms))
         self.player.setPosition(ms)
         self._sync_frame_clock(ms)
@@ -2923,6 +2975,9 @@ class VideoPanel(QWidget):
         if getattr(self, '_loading', False):
             self.status_changed.emit('  ⏳ CUE 준비 중입니다 — 잠시만 기다려주세요')
             return False
+        if self.cur_file and not getattr(self, '_metadata_ready', False):
+            self.status_changed.emit('  ⏳ 메타데이터 확인 전입니다 — 잠시만 기다려주세요')
+            return False
         now = time.monotonic()
         if now < self._transport_guard_until:
             log.debug(f'transport ignored action={action} prev={self._transport_guard_action}')
@@ -2943,6 +2998,28 @@ class VideoPanel(QWidget):
     def stop(self):
         self._transport_guard_action = 'stop'
         self._transport_guard_until = time.monotonic() + 0.12
+        if self._is_busy_loading():
+            file_name = Path(self.cur_file).name if self.cur_file else '?'
+            self._stop_all()
+            for f in self._files:
+                if self._same_path(f.get("filepath"), self.cur_file):
+                    f["cue"] = False
+                    f["playing"] = False
+            self.cur_file = None
+            self.cur_info = {}
+            self.cur_id = None
+            self._metadata_ready = False
+            self._cue_ready = False
+            self._file_loaded_emitted = False
+            self._set_loading_state(False)
+            self.empty_label.setText("▶\n\nMXF 파일을 열어주세요\n\n파일 추가 버튼 또는 파일 드래그로 불러오세요")
+            self._empty_proxy.show()
+            self._video_item.hide()
+            self._refresh_clip_list()
+            self.ai_lbl.setText(f"⏹ 로드 취소 — {file_name}")
+            self.status_changed.emit(f"  ⏹ 로드 취소 — {file_name}")
+            log.info(f'load cancelled by stop: {file_name}')
+            return
         self._cancel_play_start_watchdog()
         self._cancel_audio_mix()
         self.player.stop(); self.player.setPosition(0)
@@ -3131,6 +3208,11 @@ class VideoPanel(QWidget):
         if e.mimeData().hasUrls(): e.accept()
 
     def dropEvent(self, e):
+        if self._is_busy_loading():
+            self.status_changed.emit('  ⏳ 파일 로드 중입니다 — 완료 후 드래그하세요')
+            log.info('drop ignored while loading')
+            e.ignore()
+            return
         for url in e.mimeData().urls():
             fp = url.toLocalFile()
             if Path(fp).suffix.lower() in VIDEO_EXTS:
@@ -3139,6 +3221,15 @@ class VideoPanel(QWidget):
 
     def keyPressEvent(self, e):
         k=e.key()
+        if self._is_busy_loading():
+            guarded = {
+                Qt.Key.Key_Space, Qt.Key.Key_Left, Qt.Key.Key_Right,
+                Qt.Key.Key_Home, Qt.Key.Key_End, Qt.Key.Key_I, Qt.Key.Key_O,
+            }
+            if k in guarded:
+                self.status_changed.emit('  ⏳ CUE 준비 중입니다 — 잠시만 기다려주세요')
+                e.accept()
+                return
         # Space: 재생/일시정지 전용
         # 텍스트 입력창, 버튼류 포커스 시 무시 → player만 동작
         focused = QApplication.focusWidget()
