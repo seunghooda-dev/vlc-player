@@ -16,14 +16,15 @@ from datetime import datetime
 # 없는 환경에서는 기존 Windows 기본 글꼴로 자연스럽게 내려간다.
 APP_FONT_QT = "Segoe UI Variable Text"
 MONO_FONT_QT = "Cascadia Mono"
-APP_FONT_CSS = "'Segoe UI Variable Text','Segoe UI','Malgun Gothic'"
-MONO_FONT_CSS = "'Cascadia Mono','Consolas','D2Coding'"
+APP_FONT_CSS = "'Pretendard','Inter','Segoe UI Variable Text','Segoe UI','Noto Sans KR','Malgun Gothic'"
+MONO_FONT_CSS = "'JetBrains Mono','Cascadia Mono','Consolas','D2Coding'"
 
 def css_font(family=None):
     name = (family or APP_FONT_QT).strip()
-    if name in ("맑은 고딕", "Malgun Gothic", "Segoe UI", "Segoe UI Variable Text"):
+    if name in ("맑은 고딕", "Malgun Gothic", "Segoe UI", "Segoe UI Variable Text",
+                "Pretendard", "Inter", "Noto Sans KR"):
         return APP_FONT_CSS
-    if name in ("Consolas", "Cascadia Mono", "D2Coding", "monospace"):
+    if name in ("Consolas", "Cascadia Mono", "JetBrains Mono", "D2Coding", "monospace"):
         return MONO_FONT_CSS
     return name
 

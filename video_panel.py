@@ -959,6 +959,13 @@ class VideoPanel(QWidget):
             "border-radius:8px;"
             "}"
         )
+        VOL_POD_STYLE = (
+            "QFrame#volumePod{"
+            "background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #171d28,stop:1 #0d1118);"
+            "border:1px solid #2b3546;"
+            "border-radius:8px;"
+            "}"
+        )
 
         def transport_pod(widgets, spacing=4, margins=(4, 4, 4, 4)):
             pod = QFrame()
@@ -1026,24 +1033,34 @@ class VideoPanel(QWidget):
 
         # 볼륨 슬라이더
         vol_lbl = QLabel('VOL')
-        vol_lbl.setStyleSheet(f"color:{C['text2']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;font-weight:700;")
+        vol_lbl.setFixedWidth(28)
+        vol_lbl.setStyleSheet(
+            f"color:{C['text2']};font-family:'JetBrains Mono','Cascadia Mono','Consolas','D2Coding';"
+            "font-size:10px;font-weight:800;background:transparent;"
+        )
+        vol_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.vol_slider = QSlider(Qt.Orientation.Horizontal)
         self.vol_slider.setRange(0, 100)
         volume = max(0, min(100, int(self._settings.get('volume', 80))))
         self.vol_slider.setValue(volume)
-        self.vol_slider.setFixedWidth(80)
-        self.vol_slider.setFixedHeight(BTN_H)
+        self.vol_slider.setFixedWidth(122)
+        self.vol_slider.setFixedHeight(26)
         self.vol_slider.setToolTip('볼륨 조절 (0~100%)')
         self.vol_slider.setStyleSheet(
-            "QSlider::groove:horizontal{height:3px;background:#202634;border-radius:2px;}"
-            f"QSlider::sub-page:horizontal{{background:{C['blue']};border-radius:2px;}}"
-            'QSlider::handle:horizontal{width:12px;height:12px;margin:-5px 0;'
-            f"background:{C['text0']};border-radius:6px;}}"
-            'QSlider::handle:horizontal:hover{background:#ffffff;}'
+            "QSlider::groove:horizontal{height:4px;background:#202838;border-radius:2px;}"
+            f"QSlider::sub-page:horizontal{{background:qlineargradient(x1:0,x2:1,stop:0 {C['blue']},stop:1 {C['teal']});border-radius:2px;}}"
+            'QSlider::handle:horizontal{width:14px;height:14px;margin:-6px 0;'
+            f"background:#f5f8ff;border:1px solid rgba(90,167,255,170);border-radius:7px;}}"
+            'QSlider::handle:horizontal:hover{background:#ffffff;border-color:#c0e1ff;}'
         )
         self.vol_pct = QLabel(f'{volume}%')
-        self.vol_pct.setStyleSheet(f"color:{C['text2']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;min-width:30px;")
-        self.vol_pct.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.vol_pct.setFixedSize(44, 28)
+        self.vol_pct.setStyleSheet(
+            f"color:{C['text0']};font-family:'JetBrains Mono','Cascadia Mono','Consolas','D2Coding';"
+            "font-size:10px;font-weight:800;"
+            "background:rgba(255,255,255,9);border:1px solid #2d3647;border-radius:7px;"
+        )
+        self.vol_pct.setAlignment(Qt.AlignmentFlag.AlignCenter)
         def _on_vol(v):
             self.player.audio_set_volume(0)
             self.audio_mix.set_volume(v / 100.0)
@@ -1053,8 +1070,19 @@ class VideoPanel(QWidget):
             self._settings = save_settings(volume=int(v))
         self.vol_slider.valueChanged.connect(_on_vol)
 
+        vol_pod = QFrame()
+        vol_pod.setObjectName("volumePod")
+        vol_pod.setFixedHeight(BTN_H + 8)
+        vol_pod.setStyleSheet(VOL_POD_STYLE)
+        vol_pod_l = QHBoxLayout(vol_pod)
+        vol_pod_l.setContentsMargins(10,4,10,4)
+        vol_pod_l.setSpacing(8)
+        vol_pod_l.addWidget(vol_lbl)
+        vol_pod_l.addWidget(self.vol_slider)
+        vol_pod_l.addWidget(self.vol_pct)
+
         left_col = QWidget()
-        left_col.setMinimumWidth(270)
+        left_col.setMinimumWidth(342)
         left_col_l = QHBoxLayout(left_col)
         left_col_l.setContentsMargins(0,0,0,0)
         left_col_l.setSpacing(0)
@@ -1071,15 +1099,13 @@ class VideoPanel(QWidget):
         center_l.addWidget(transport_pod([self.btn_fwd, self.btn_goe, self.btn_p1]))
 
         right_col = QWidget()
-        right_col.setMinimumWidth(270)
+        right_col.setMinimumWidth(342)
         right_col_l = QHBoxLayout(right_col)
         right_col_l.setContentsMargins(0,0,0,0)
-        right_col_l.setSpacing(0)
+        right_col_l.setSpacing(8)
         right_col_l.addStretch()
-        right_col_l.addWidget(
-            transport_pod([vol_lbl, self.vol_slider, self.vol_pct, self.btn_cue],
-                          spacing=7, margins=(8, 4, 4, 4))
-        )
+        right_col_l.addWidget(vol_pod)
+        right_col_l.addWidget(transport_pod([self.btn_cue], margins=(4, 4, 4, 4)))
 
         trl.addWidget(left_col, 1)
         trl.addWidget(center_col, 0, Qt.AlignmentFlag.AlignCenter)

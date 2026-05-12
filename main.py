@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QComboBox, QLineEdit, QFileDialog,
 )
 from PyQt6.QtCore    import Qt, QTimer
-from PyQt6.QtGui     import QColor, QPalette, QFont
+from PyQt6.QtGui     import QColor, QPalette, QFont, QFontDatabase
 
 from constants    import (
     C, STYLE, LOG_DIR, TMP_DIR, BASE_DIR, REPORT_DIR, log, APP_FONT_QT,
@@ -1068,16 +1068,24 @@ def _cleanup_old_generated_files():
 
 def _configure_app_style(app):
     app.setStyle("Fusion")
-    app.setFont(QFont(APP_FONT_QT, 10))
+    installed = set(QFontDatabase.families())
+    app_font = APP_FONT_QT
+    for candidate in ("Pretendard", "Inter", "Segoe UI Variable Text", "Segoe UI", "Noto Sans KR", "Malgun Gothic"):
+        if candidate in installed:
+            app_font = candidate
+            break
+    font = QFont(app_font, 10)
+    font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+    app.setFont(font)
     palette = QPalette()
-    palette.setColor(QPalette.ColorRole.Window,          QColor(C['bg']))
+    palette.setColor(QPalette.ColorRole.Window,          QColor('#0b0d12'))
     palette.setColor(QPalette.ColorRole.WindowText,      QColor(C['text0']))
-    palette.setColor(QPalette.ColorRole.Base,            QColor(C['input']))
-    palette.setColor(QPalette.ColorRole.AlternateBase,   QColor(C['panel']))
+    palette.setColor(QPalette.ColorRole.Base,            QColor('#090b10'))
+    palette.setColor(QPalette.ColorRole.AlternateBase,   QColor('#141821'))
     palette.setColor(QPalette.ColorRole.Text,            QColor(C['text0']))
-    palette.setColor(QPalette.ColorRole.Button,          QColor('#3a3a3a'))
+    palette.setColor(QPalette.ColorRole.Button,          QColor('#171b24'))
     palette.setColor(QPalette.ColorRole.ButtonText,      QColor(C['text0']))
-    palette.setColor(QPalette.ColorRole.Highlight,       QColor('#1a4a8a'))
+    palette.setColor(QPalette.ColorRole.Highlight,       QColor(C['blue']))
     palette.setColor(QPalette.ColorRole.HighlightedText, QColor(C['text0']))
     app.setPalette(palette)
 
