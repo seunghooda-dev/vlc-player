@@ -17,7 +17,7 @@ from constants    import (
     C, STYLE, LOG_DIR, TMP_DIR, BASE_DIR, REPORT_DIR, log, APP_FONT_QT,
     check_runtime_environment, format_runtime_environment, format_runtime_startup_alert,
     cleanup_child_processes, cleanup_orphan_audio_processes, runtime_child_process_status,
-    cache_summary, cleanup_runtime_cache, format_bytes, format_cache_summary,
+    cache_summary, cleanup_runtime_cache, cleanup_old_generated_files, format_bytes, format_cache_summary,
     create_diagnostic_report, load_settings, save_settings,
 )
 from video_panel  import VideoPanel
@@ -1044,6 +1044,28 @@ def _cleanup_tmp_files():
             except Exception as e: log.debug(f'cleanup unlink: {e}')
     except Exception as e: log.warning(f'cleanup_tmp 외곽: {e}')
 
+def _cleanup_old_generated_files():
+    try:
+        result = cleanup_old_generated_files(7)
+        deleted_count = int(result.get('deleted_count', 0) or 0)
+        freed = int(result.get('freed_bytes', 0) or 0)
+        if deleted_count:
+            log.info(
+                f"7일 경과 생성 파일 정리: {deleted_count}개 / {format_bytes(freed)} "
+                f"(cutoff={result.get('cutoff')})"
+            )
+            for item in result.get('deleted', [])[:20]:
+                log.info(
+                    f"  cleaned[{item.get('section')}] {item.get('path')} "
+                    f"age={item.get('age_days')}d size={format_bytes(item.get('bytes', 0))}"
+                )
+        else:
+            log.info(f"7일 경과 생성 파일 정리: 대상 없음 (cutoff={result.get('cutoff')})")
+        for err in result.get('failed', [])[:10]:
+            log.warning(f'7일 경과 생성 파일 정리 실패: {err}')
+    except Exception as e:
+        log.warning(f'7일 경과 생성 파일 정리 오류: {e}')
+
 def _configure_app_style(app):
     app.setStyle("Fusion")
     app.setFont(QFont(APP_FONT_QT, 10))
@@ -1173,6 +1195,7 @@ def main():
     if cleaned:
         log.info(f'고아 오디오 프로세스 정리: {cleaned}개')
     _cleanup_tmp_files()
+    _cleanup_old_generated_files()
     runtime = check_runtime_environment()
     if not runtime.get('ok'):
         log.warning(f"runtime check failed: {runtime.get('missing')}")

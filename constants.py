@@ -356,6 +356,7 @@ REPORT_DIR = USER_REPORT_DIR
 MIGRATION_LOG_PATH = LOG_DIR / "migration.log"
 MIGRATION_LOG_MAX_BYTES = 2 * 1024 * 1024
 MIGRATION_LOG_BACKUP_COUNT = 10
+AUTO_CLEANUP_DAYS = 7
 _RUNTIME_DIR_ERRORS = []
 _RUNTIME_MIGRATION_EVENTS = []
 _RUNTIME_MIGRATION_LOG_ERRORS = []
@@ -955,6 +956,7 @@ def format_cache_summary(summary=None, max_entries=30):
     lines.append('안전 기준')
     lines.append('-' * 42)
     lines.append('캐시 정리는 위 tmp 폴더 안의 항목만 대상으로 합니다.')
+    lines.append(f'앱 시작 시 tmp/logs/backups/reports의 {AUTO_CLEANUP_DAYS}일 지난 생성 항목을 자동 정리합니다.')
     lines.append('원본 MXF, 바탕화면 파일, 파일 목록은 삭제하지 않습니다.')
     return '\n'.join(lines)
 
@@ -990,6 +992,124 @@ def cleanup_runtime_cache():
         'deleted_files': deleted_files,
         'deleted_dirs': deleted_dirs,
         'failed': failed,
+    }
+
+def _safe_generated_root(path):
+    root = USER_DATA_DIR.resolve()
+    resolved = Path(path).resolve()
+    try:
+        resolved.relative_to(root)
+    except Exception:
+        raise ValueError(f'사용자 데이터 폴더 밖 경로는 자동 정리하지 않습니다: {resolved}')
+    return resolved
+
+def _entry_newest_timestamp(path):
+    path = Path(path)
+    newest = 0.0
+    try:
+        stat = path.stat()
+        newest = max(float(getattr(stat, 'st_ctime', 0.0) or 0.0), float(stat.st_mtime or 0.0))
+    except Exception:
+        return newest
+    if path.is_dir():
+        try:
+            for child in path.rglob('*'):
+                try:
+                    st = child.stat()
+                    newest = max(newest, float(getattr(st, 'st_ctime', 0.0) or 0.0), float(st.st_mtime or 0.0))
+                except Exception:
+                    continue
+        except Exception:
+            pass
+    return newest
+
+def _entry_size(path):
+    path = Path(path)
+    total = 0
+    try:
+        if path.is_file():
+            return int(path.stat().st_size)
+        if path.is_dir():
+            for child in path.rglob('*'):
+                try:
+                    if child.is_file():
+                        total += int(child.stat().st_size)
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return total
+
+def cleanup_old_generated_files(days=AUTO_CLEANUP_DAYS):
+    """사용자 데이터 폴더 안의 생성 파일만 보존기간 기준으로 자동 정리한다."""
+    keep_days = max(1.0, min(3650.0, float(days or AUTO_CLEANUP_DAYS)))
+    cutoff = time.time() - keep_days * 86400.0
+    try:
+        cutoff_text = datetime.fromtimestamp(cutoff).isoformat(timespec='seconds')
+    except Exception:
+        cutoff_text = str(cutoff)
+    deleted = []
+    failed = []
+    skipped = []
+    roots = [
+        ('tmp', TMP_DIR, False),
+        ('logs', LOG_DIR, True),
+        ('backups', BACKUP_DIR, True),
+        ('reports', REPORT_DIR, True),
+    ]
+    active_log_names = {'player.log', 'migration.log'}
+
+    for label, root_path, include_root_files in roots:
+        try:
+            root = _safe_generated_root(root_path)
+            if not root.exists():
+                continue
+        except Exception as e:
+            failed.append(f'{label}: {e}')
+            continue
+
+        try:
+            candidates = list(root.iterdir()) if root.exists() else []
+        except Exception as e:
+            failed.append(f'{label}: {e}')
+            candidates = []
+
+        for candidate in candidates:
+            try:
+                target = _safe_generated_root(candidate)
+                target.relative_to(root)
+                if target == root:
+                    continue
+                if label == 'logs' and target.name in active_log_names:
+                    skipped.append(str(target))
+                    continue
+                if not include_root_files and not (target.is_file() or target.is_dir()):
+                    continue
+                newest = _entry_newest_timestamp(target)
+                if newest <= 0 or newest >= cutoff:
+                    continue
+                bytes_before = _entry_size(target)
+                if target.is_dir():
+                    shutil.rmtree(target)
+                else:
+                    target.unlink()
+                deleted.append({
+                    'section': label,
+                    'path': str(target),
+                    'bytes': bytes_before,
+                    'age_days': round((time.time() - newest) / 86400.0, 1),
+                })
+            except Exception as e:
+                failed.append(f'{candidate}: {e}')
+
+    return {
+        'days': int(keep_days),
+        'cutoff': cutoff_text,
+        'deleted': deleted,
+        'failed': failed,
+        'skipped': skipped,
+        'deleted_count': len(deleted),
+        'freed_bytes': sum(int(item.get('bytes', 0) or 0) for item in deleted),
     }
 
 DEFAULT_SETTINGS = {

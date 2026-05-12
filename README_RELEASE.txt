@@ -107,6 +107,20 @@ Reports are stored by default under:
 
 %LOCALAPPDATA%\MXF QC Player V.1.0\reports
 
+Automatic Retention
+-------------------
+On startup, the app automatically removes generated files older than seven
+days from these user data folders:
+
+- tmp\
+- logs\ rotated log files
+- backups\
+- reports\
+
+The cleanup is limited to %LOCALAPPDATA%\MXF QC Player V.1.0. Original MXF
+files, Desktop files, and files outside the app user data folder are never
+removed by this retention policy.
+
 Deployment Smoke Test
 ---------------------
 For deployment checks, the EXE also supports a no-GUI startup test:
