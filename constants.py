@@ -7,7 +7,7 @@ MXF QC Player - PyQt6 완전판
 파일 탐색 + 비디오 플레이어 + DB + STT + 씬감지 + 검색
 """
 
-import sys, os, json, subprocess, hashlib, csv, shutil, threading, atexit, time
+import sys, os, json, subprocess, hashlib, csv, shutil, threading, atexit, time, zipfile
 from pathlib import Path
 from datetime import datetime
 
@@ -306,6 +306,7 @@ USER_SETTINGS_PATH = USER_DATA_DIR / "settings.json"
 USER_LOG_DIR = USER_DATA_DIR / "logs"
 USER_TMP_DIR = USER_DATA_DIR / "tmp"
 USER_BACKUP_DIR = USER_DATA_DIR / "backups"
+USER_REPORT_DIR = USER_DATA_DIR / "reports"
 
 def _legacy_user_data_dir():
     if not getattr(sys, 'frozen', False):
@@ -333,8 +334,8 @@ def runtime_storage_policy():
         {
             'name': '사용자 데이터 폴더',
             'path': str(USER_DATA_DIR),
-            'role': 'settings.json, archive.db, logs, tmp, backups',
-            'status': '현재 설정/DB/log/tmp/backups 저장 위치',
+            'role': 'settings.json, archive.db, logs, tmp, backups, reports',
+            'status': '현재 설정/DB/log/tmp/backups/reports 저장 위치',
         },
     ]
     if LEGACY_DATA_DIR != APP_DIR:
@@ -351,6 +352,7 @@ SETTINGS_PATH = USER_SETTINGS_PATH
 LOG_DIR    = USER_LOG_DIR
 TMP_DIR    = USER_TMP_DIR
 BACKUP_DIR = USER_BACKUP_DIR
+REPORT_DIR = USER_REPORT_DIR
 MIGRATION_LOG_PATH = LOG_DIR / "migration.log"
 MIGRATION_LOG_MAX_BYTES = 2 * 1024 * 1024
 MIGRATION_LOG_BACKUP_COUNT = 10
@@ -370,6 +372,7 @@ _ensure_runtime_dir(USER_DATA_DIR)
 _ensure_runtime_dir(LOG_DIR)
 _ensure_runtime_dir(TMP_DIR)
 _ensure_runtime_dir(BACKUP_DIR)
+_ensure_runtime_dir(REPORT_DIR)
 
 def _rotate_migration_log():
     try:
@@ -730,10 +733,11 @@ def _check_read_location(name, path, role, required=True):
 def check_runtime_storage():
     return [
         _check_read_location('앱 실행 파일 폴더', BASE_DIR, '프로그램 파일, tools, README 보관 위치'),
-        _check_write_location('사용자 데이터 폴더', USER_DATA_DIR, 'settings.json, archive.db, logs, tmp, backups 저장 위치'),
+        _check_write_location('사용자 데이터 폴더', USER_DATA_DIR, 'settings.json, archive.db, logs, tmp, backups, reports 저장 위치'),
         _check_write_location('로그 폴더', LOG_DIR, 'logs/player.log 기록'),
         _check_write_location('임시 폴더', TMP_DIR, '분석 캐시와 임시 작업 파일 생성'),
         _check_write_location('백업 폴더', BACKUP_DIR, 'settings.json, archive.db 자동 백업', required=False),
+        _check_write_location('리포트 폴더', REPORT_DIR, '진단 리포트 zip 저장', required=False),
     ]
 
 def friendly_error_text(area, detail='', filename=None, max_detail=160):
@@ -1431,6 +1435,80 @@ def format_runtime_environment(runtime=None):
     lines.append('- FFplay 누락: 체크박스 기반 오디오 출력 제한')
     lines.append('- 저장 위치 쓰기 실패: 설정 저장, 로그 기록, 분석 캐시 생성 제한')
     return '\n'.join(lines)
+
+def _recent_log_text(path, max_lines=1000):
+    try:
+        p = Path(path)
+        if not p.exists():
+            return f'로그 파일 없음: {p}'
+        lines = p.read_text(encoding='utf-8', errors='replace').splitlines()
+        picked = lines[-int(max_lines):]
+        return '\n'.join(picked)
+    except Exception as e:
+        return f'로그 읽기 실패: {e}'
+
+def _diagnostic_db_status_text():
+    lines = []
+    lines.append(f'DB_PATH: {DB_PATH}')
+    try:
+        if DB_PATH.exists():
+            lines.append(f'EXISTS: yes')
+            lines.append(f'SIZE  : {format_bytes(DB_PATH.stat().st_size)}')
+        else:
+            lines.append('EXISTS: no')
+            return '\n'.join(lines)
+    except Exception as e:
+        lines.append(f'STAT ERROR: {e}')
+    try:
+        import sqlite3
+        conn = sqlite3.connect(str(DB_PATH), timeout=10)
+        try:
+            quick = conn.execute('PRAGMA quick_check').fetchone()
+            journal = conn.execute('PRAGMA journal_mode').fetchone()
+            rows = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall()
+            lines.append(f'QUICK_CHECK : {quick[0] if quick else "-"}')
+            lines.append(f'JOURNAL_MODE: {journal[0] if journal else "-"}')
+            lines.append('TABLES      : ' + ', '.join(row[0] for row in rows))
+        finally:
+            conn.close()
+    except Exception as e:
+        lines.append(f'DB CHECK ERROR: {e}')
+    return '\n'.join(lines)
+
+def create_diagnostic_report(destination=None, runtime=None, max_log_lines=1500):
+    """Create a compact zip report for field troubleshooting."""
+    runtime = runtime or check_runtime_environment()
+    stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    if destination:
+        out = Path(destination)
+        if out.suffix.lower() != '.zip':
+            out = out / f'mxf-qc-diagnostic-{stamp}.zip'
+    else:
+        out = REPORT_DIR / f'mxf-qc-diagnostic-{stamp}.zip'
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    manifest = {
+        'created_at': datetime.now().isoformat(timespec='seconds'),
+        'app_name': APP_DATA_NAME,
+        'app_dir': str(APP_DIR),
+        'resource_dir': str(RESOURCE_DIR),
+        'user_data_dir': str(USER_DATA_DIR),
+        'report_path': str(out),
+    }
+    with zipfile.ZipFile(out, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr('manifest.json', json.dumps(manifest, ensure_ascii=False, indent=2))
+        zf.writestr('environment.txt', format_runtime_environment(runtime))
+        zf.writestr('runtime.json', json.dumps(runtime, ensure_ascii=False, indent=2, default=str))
+        zf.writestr('db_status.txt', _diagnostic_db_status_text())
+        zf.writestr('child_processes.json', json.dumps(runtime_child_process_status(), ensure_ascii=False, indent=2))
+        zf.writestr('logs/player_tail.log', _recent_log_text(LOG_DIR / 'player.log', max_log_lines))
+        zf.writestr('logs/migration_tail.log', _recent_log_text(LOG_DIR / 'migration.log', 500))
+        try:
+            if SETTINGS_PATH.exists():
+                zf.writestr('settings.json', SETTINGS_PATH.read_text(encoding='utf-8', errors='replace'))
+        except Exception as e:
+            zf.writestr('settings_error.txt', str(e))
+    return out
 
 def format_runtime_startup_alert(runtime=None):
     runtime = runtime or check_runtime_environment()

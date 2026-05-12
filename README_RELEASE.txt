@@ -31,6 +31,7 @@ The program creates these files there:
 - logs\migration.log
 - tmp\
 - backups\
+- reports\
 
 The app folder only needs to be readable. The user data folder must be
 writable. This separation makes future updates safer because replacing the app
@@ -80,7 +81,31 @@ Runtime Check
 Use the ENV button in the top bar to verify VLC, FFmpeg, FFprobe, and FFplay.
 The dialog shows each tool path, source, version/status, and the feature that
 depends on it. It also checks whether the app folder is readable and whether
-the user data folder, logs\, tmp\, and backups\ are writable.
+the user data folder, logs\, tmp\, backups\, and reports\ are writable.
+
+Use the CHECK button in the top bar before copying the program to another PC.
+It summarizes:
+
+- VLC availability
+- ffmpeg.exe / ffprobe.exe / ffplay.exe availability
+- whether FFmpeg tools are included in tools\
+- LOCALAPPDATA write access
+- DB/log/tmp/backups/report folder status
+
+Diagnostic Report
+-----------------
+In the ENV or CHECK dialog, press "리포트 저장" to create a diagnostic ZIP.
+The report includes:
+
+- runtime environment text
+- package/tool path status
+- recent player.log and migration.log tail
+- database quick_check result
+- current registered child process status
+
+Reports are stored by default under:
+
+%LOCALAPPDATA%\MXF QC Player V.1.0\reports
 
 Deployment Smoke Test
 ---------------------
@@ -95,6 +120,26 @@ MXF QC Player.exe --runtime-check
 
 The strict check returns a non-zero exit code when VLC, FFmpeg, FFprobe,
 FFplay, or required writable folders are missing.
+
+For a real MXF playback test, close MXF QC Player first and run:
+
+smoke_mxf_test.bat "C:\path\sample.mxf"
+
+If no path is provided, the script tries to use a MXF file on the Desktop. It
+opens the packaged player, loads the sample MXF, waits for CUE, plays for five
+seconds, verifies the audio child process, then closes the player. This test is
+manual/deployment-only and does not run during normal app startup.
+
+The same test can be called directly:
+
+MXF QC Player.exe --mxf-smoke-test "C:\path\sample.mxf" --play-seconds 5
+
+Access Notes
+------------
+When using external drives, NAS, or network shares, make sure the target PC has
+read permission and the file is not locked by another program. The player will
+show a clearer warning when a drive is disconnected, a network path is
+unavailable, or the file cannot be opened.
 
 Desktop Update
 --------------

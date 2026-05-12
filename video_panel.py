@@ -573,6 +573,23 @@ class VideoPanel(QWidget):
             return False
         return True
 
+    def _path_access_hint(self, filepath):
+        try:
+            text = str(filepath or '')
+            p = Path(text)
+            if text.startswith('\\\\'):
+                return '네트워크/NAS 경로입니다. 연결 상태, 공유 권한, 파일 잠금 여부를 확인하세요.'
+            drive = p.drive
+            if drive and os.name == 'nt':
+                root = Path(drive + '\\')
+                if not root.exists():
+                    return f'{drive} 드라이브가 연결되어 있지 않습니다. 외장하드/네트워크 드라이브 연결을 확인하세요.'
+            if drive and drive.upper() not in ('C:', 'D:'):
+                return '외장하드 또는 네트워크 드라이브일 수 있습니다. 케이블/마운트/권한 상태를 확인하세요.'
+        except Exception:
+            pass
+        return '파일이 이동/삭제됐거나 다른 프로그램이 잠그고 있지 않은지 확인하세요.'
+
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0,0,0,0)
@@ -2152,7 +2169,7 @@ class VideoPanel(QWidget):
             return False, '파일을 찾을 수 없습니다', '파일 경로가 비어 있습니다.'
         path = Path(filepath)
         if not path.exists():
-            return False, '파일을 찾을 수 없습니다', '파일이 이동/삭제됐거나 외장 드라이브 연결이 끊겼는지 확인하세요.'
+            return False, '파일을 찾을 수 없습니다', self._path_access_hint(filepath)
         if not path.is_file():
             return False, '파일이 아닙니다', '폴더나 특수 경로는 열 수 없습니다.'
         if path.suffix.lower() not in VIDEO_EXTS:
@@ -2160,18 +2177,18 @@ class VideoPanel(QWidget):
         try:
             size = path.stat().st_size
         except PermissionError:
-            return False, '파일 접근 권한이 없습니다', '읽기 권한이 있는 위치인지, 다른 프로그램이 잠그고 있지 않은지 확인하세요.'
+            return False, '파일 접근 권한이 없습니다', '읽기 권한, NAS/외장하드 권한, 다른 프로그램의 파일 잠금 여부를 확인하세요.'
         except OSError as e:
-            return False, '파일 정보를 읽을 수 없습니다', str(e)
+            return False, '파일 정보를 읽을 수 없습니다', f'{e}\n{self._path_access_hint(filepath)}'
         if size <= 0:
             return False, '빈 파일입니다', '파일 크기가 0바이트입니다. 정상 MXF 파일인지 확인하세요.'
         try:
             with path.open('rb') as fh:
                 fh.read(4096)
         except PermissionError:
-            return False, '파일 접근 권한이 없습니다', '읽기 권한이 있는 위치인지, 다른 프로그램이 잠그고 있지 않은지 확인하세요.'
+            return False, '파일 접근 권한이 없습니다', '읽기 권한, NAS/외장하드 권한, 다른 프로그램의 파일 잠금 여부를 확인하세요.'
         except OSError as e:
-            return False, '파일을 읽을 수 없습니다', str(e)
+            return False, '파일을 읽을 수 없습니다', f'{e}\n{self._path_access_hint(filepath)}'
         return True, '', ''
 
     def _validate_probe_info(self, filepath, info):

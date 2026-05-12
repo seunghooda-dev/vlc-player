@@ -3,21 +3,22 @@ main.py — 진입점
 MainWindow + 전역 예외 처리 + 앱 실행
 """
 import sys
+import time
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
     QSplitter, QDialog, QPushButton, QMessageBox, QPlainTextEdit,
-    QComboBox, QLineEdit,
+    QComboBox, QLineEdit, QFileDialog,
 )
 from PyQt6.QtCore    import Qt, QTimer
 from PyQt6.QtGui     import QColor, QPalette, QFont
 
 from constants    import (
-    C, STYLE, LOG_DIR, TMP_DIR, BASE_DIR, log, APP_FONT_QT,
+    C, STYLE, LOG_DIR, TMP_DIR, BASE_DIR, REPORT_DIR, log, APP_FONT_QT,
     check_runtime_environment, format_runtime_environment, format_runtime_startup_alert,
     cleanup_child_processes, cleanup_orphan_audio_processes, runtime_child_process_status,
     cache_summary, cleanup_runtime_cache, format_bytes, format_cache_summary,
-    load_settings, save_settings,
+    create_diagnostic_report, load_settings, save_settings,
 )
 from video_panel  import VideoPanel
 from right_panel  import RightPanel
@@ -132,6 +133,18 @@ class MainWindow(QMainWindow):
         )
         env_btn.clicked.connect(self._show_runtime_dialog)
         tbl.addWidget(env_btn)
+        check_btn = QPushButton("CHECK")
+        check_btn.setFixedHeight(24)
+        check_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        check_btn.setToolTip("배포 전 체크리스트")
+        check_btn.setStyleSheet(
+            f"QPushButton{{background:{C['panel3']};color:{C['text2']};border:1px solid {C['border']};"
+            "border-radius:5px;font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;font-weight:700;"
+            "padding:0 8px;}"
+            f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
+        )
+        check_btn.clicked.connect(self._show_deployment_check_dialog)
+        tbl.addWidget(check_btn)
         cache_btn = QPushButton("CACHE")
         cache_btn.setFixedHeight(24)
         cache_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -356,6 +369,119 @@ class MainWindow(QMainWindow):
         else:
             log.info("registered child process: none")
 
+    def _deployment_check_text(self, runtime):
+        lines = []
+        package_items = runtime.get('package_check') or []
+        storage_items = runtime.get('storage') or []
+        required_ok = bool(runtime.get('ok'))
+        package_ok = all(item.get('ok') for item in package_items)
+        storage_ok = all(item.get('ok') or not item.get('required', True) for item in storage_items)
+        ready = required_ok and package_ok and storage_ok
+        lines.append(f"판정: {'배포 가능' if ready else '확인 필요'}")
+        lines.append('')
+        lines.append('배포 실행본')
+        lines.append('-' * 42)
+        for item in package_items:
+            mark = 'OK' if item.get('ok') else 'CHECK'
+            lines.append(f"[{mark}] {item.get('name')} — {item.get('message') or '-'}")
+            lines.append(f"  {item.get('path') or '-'}")
+            if item.get('hint'):
+                lines.append(f"  참고: {item.get('hint')}")
+        lines.append('')
+        lines.append('저장/로그/DB')
+        lines.append('-' * 42)
+        for item in storage_items:
+            mark = 'OK' if item.get('ok') else 'CHECK'
+            lines.append(f"[{mark}] {item.get('name')} — {item.get('message') or '-'}")
+            lines.append(f"  {item.get('path') or '-'}")
+            if item.get('hint'):
+                lines.append(f"  조치: {item.get('hint')}")
+        lines.append('')
+        lines.append('운영 메모')
+        lines.append('-' * 42)
+        lines.append('- 다른 PC에서는 VLC 설치 또는 libvlc.dll 포함 경로가 필요합니다.')
+        lines.append('- ffmpeg.exe / ffprobe.exe / ffplay.exe는 tools 폴더 포함을 권장합니다.')
+        lines.append('- settings.json, archive.db, logs, tmp, backups, reports는 LOCALAPPDATA에 저장됩니다.')
+        lines.append('- 문제 발생 시 ENV > 리포트 저장으로 진단 ZIP을 전달하세요.')
+        return '\n'.join(lines)
+
+    def _save_diagnostic_report(self, runtime=None):
+        runtime = runtime or check_runtime_environment()
+        try:
+            REPORT_DIR.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        default = REPORT_DIR / 'mxf-qc-diagnostic.zip'
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            '진단 리포트 저장',
+            str(default),
+            'ZIP 파일 (*.zip)'
+        )
+        if not path:
+            return
+        try:
+            report = create_diagnostic_report(path, runtime=runtime)
+            log.info(f'diagnostic report exported: {report}')
+            QMessageBox.information(self, '진단 리포트 저장 완료', f'진단 리포트를 저장했습니다.\n\n{report}')
+        except Exception as e:
+            log.error(f'diagnostic report export failed: {e}')
+            QMessageBox.warning(self, '진단 리포트 저장 실패', str(e))
+
+    def _show_deployment_check_dialog(self):
+        runtime = check_runtime_environment()
+        self._attach_audio_child_status(runtime)
+        dlg = QDialog(self)
+        dlg.setWindowTitle('배포 전 체크리스트')
+        dlg.resize(860, 600)
+        dlg.setStyleSheet(
+            f"background:{C['panel']};color:{C['text0']};"
+            f"font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';font-size:12px;"
+        )
+        lay = QVBoxLayout(dlg)
+        lay.setContentsMargins(16,14,16,14)
+        lay.setSpacing(10)
+        title = QLabel('배포 전 체크리스트')
+        title.setStyleSheet(f"color:{C['text0']};font-size:14px;font-weight:700;background:transparent;")
+        lay.addWidget(title)
+        text = QPlainTextEdit()
+        text.setReadOnly(True)
+        text.setPlainText(self._deployment_check_text(runtime))
+        text.setStyleSheet(
+            f"QPlainTextEdit{{background:{C['panel2']};color:{C['text1']};border:1px solid {C['border']};"
+            f"border-radius:6px;font-family:'Cascadia Mono','Consolas','D2Coding';font-size:11px;"
+            "padding:10px;selection-background-color:#264f78;}}"
+        )
+        lay.addWidget(text, 1)
+        row = QWidget()
+        rl = QHBoxLayout(row)
+        rl.setContentsMargins(0,0,0,0)
+        rl.addStretch()
+        report_btn = QPushButton('리포트 저장')
+        refresh_btn = QPushButton('새로고침')
+        close_btn = QPushButton('닫기')
+        for btn in (report_btn, refresh_btn, close_btn):
+            btn.setFixedHeight(30)
+            btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            btn.setStyleSheet(
+                f"QPushButton{{background:{C['panel3']};color:{C['text1']};border:1px solid {C['border']};"
+                "border-radius:6px;font-size:12px;padding:0 14px;}"
+                f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
+            )
+        def _refresh():
+            rt = check_runtime_environment()
+            self._attach_audio_child_status(rt)
+            text.setPlainText(self._deployment_check_text(rt))
+            title.setText('배포 전 체크리스트 — 갱신됨')
+        report_btn.clicked.connect(lambda: self._save_diagnostic_report(runtime))
+        refresh_btn.clicked.connect(_refresh)
+        close_btn.clicked.connect(dlg.accept)
+        rl.addWidget(report_btn)
+        rl.addWidget(refresh_btn)
+        rl.addWidget(close_btn)
+        lay.addWidget(row)
+        dlg.exec()
+
     def _show_runtime_dialog(self):
         dlg = QDialog(self)
         dlg.setWindowTitle('실행 환경 진단')
@@ -407,10 +533,11 @@ class MainWindow(QMainWindow):
         rl.setContentsMargins(0,0,0,0)
         rl.addStretch()
         copy_btn = QPushButton('복사')
+        report_btn = QPushButton('리포트 저장')
         refresh_btn = QPushButton('새로고침')
         log_btn = QPushButton('로그 보기')
         close_btn = QPushButton('닫기')
-        for btn in (copy_btn, refresh_btn, log_btn, close_btn):
+        for btn in (copy_btn, report_btn, refresh_btn, log_btn, close_btn):
             btn.setFixedHeight(30)
             btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             btn.setStyleSheet(
@@ -422,10 +549,12 @@ class MainWindow(QMainWindow):
             QApplication.clipboard().setText(text.toPlainText()),
             title.setText('실행 환경 진단 — 복사됨')
         ))
+        report_btn.clicked.connect(lambda: self._save_diagnostic_report(self._runtime))
         refresh_btn.clicked.connect(_refresh_runtime)
         log_btn.clicked.connect(self._show_error_log)
         close_btn.clicked.connect(dlg.accept)
         rl.addWidget(copy_btn)
+        rl.addWidget(report_btn)
         rl.addWidget(refresh_btn)
         rl.addWidget(log_btn)
         rl.addWidget(close_btn)
@@ -915,10 +1044,7 @@ def _cleanup_tmp_files():
             except Exception as e: log.debug(f'cleanup unlink: {e}')
     except Exception as e: log.warning(f'cleanup_tmp 외곽: {e}')
 
-def main():
-    import threading
-    _setup_global_exception_handler()
-    app = QApplication(sys.argv)
+def _configure_app_style(app):
     app.setStyle("Fusion")
     app.setFont(QFont(APP_FONT_QT, 10))
     palette = QPalette()
@@ -932,6 +1058,112 @@ def main():
     palette.setColor(QPalette.ColorRole.Highlight,       QColor('#1a4a8a'))
     palette.setColor(QPalette.ColorRole.HighlightedText, QColor(C['text0']))
     app.setPalette(palette)
+
+def _arg_value(name, default=None):
+    try:
+        idx = sys.argv.index(name)
+        return sys.argv[idx + 1]
+    except Exception:
+        return default
+
+def _run_mxf_smoke_test(filepath, play_seconds=5.0):
+    _setup_global_exception_handler()
+    path = Path(filepath or '')
+    if not path.exists() or not path.is_file():
+        log.error(f'mxf smoke test failed: sample not found {filepath}')
+        return 2
+    if path.suffix.lower() != '.mxf':
+        log.error(f'mxf smoke test failed: sample is not MXF {filepath}')
+        return 2
+
+    app = QApplication(sys.argv)
+    _configure_app_style(app)
+    if not _acquire_single_instance():
+        log.error('mxf smoke test failed: MXF QC Player is already running')
+        return 3
+
+    runtime = check_runtime_environment()
+    if not runtime.get('ok'):
+        log.error(f"mxf smoke test failed: runtime check {runtime.get('problems')}")
+        return 4
+
+    win = MainWindow()
+    win.show()
+    win.show_runtime_status(runtime)
+
+    result = {'code': 1, 'started_ms': 0}
+    deadline = time.monotonic() + 55.0
+    play_seconds = max(1.0, min(30.0, float(play_seconds or 5.0)))
+    sample = str(path)
+    log.info(f'mxf smoke test start: file={path.name} play_seconds={play_seconds:.1f}')
+
+    def _finish(code, message):
+        result['code'] = int(code)
+        if code == 0:
+            log.info(f'mxf smoke test PASS: {message}')
+        else:
+            log.error(f'mxf smoke test FAIL: {message}')
+        try:
+            win.close()
+        except Exception as e:
+            log.debug(f'mxf smoke test close: {e}')
+        QTimer.singleShot(800, app.quit)
+
+    def _check_playback():
+        now_ms = int(win.vp.player.position() or 0)
+        moved_ms = max(0, now_ms - int(result.get('started_ms') or 0))
+        audio_expected = bool(win.vp._audio_mix_expected())
+        audio_status = win.vp.audio_mix.process_status()
+        audio_ok = True if not audio_expected else bool(win.vp.audio_mix.is_running())
+        children = runtime_child_process_status()
+        log.info(
+            f'mxf smoke playback check: moved={moved_ms}ms '
+            f'audio_expected={audio_expected} audio_ok={audio_ok} '
+            f'audio={audio_status} children={children}'
+        )
+        if moved_ms < max(800, int(play_seconds * 350)):
+            return _finish(7, f'playback did not advance enough ({moved_ms}ms)')
+        if not audio_ok:
+            return _finish(8, f'audio process not running: {audio_status}')
+        return _finish(0, f'cue/play/audio ok moved={moved_ms}ms')
+
+    def _poll_cue():
+        if not win.vp.cur_file:
+            return _finish(5, 'file was not loaded')
+        if win.vp.cur_file != sample:
+            return _finish(5, 'loaded file changed unexpectedly')
+        if not getattr(win.vp, '_loading', False) and getattr(win.vp, '_cue_ready', False) and getattr(win.vp, '_metadata_ready', False):
+            result['started_ms'] = int(win.vp.player.position() or 0)
+            log.info(f'mxf smoke cue ready: file={path.name} pos={result["started_ms"]}ms')
+            win.vp.player.play()
+            QTimer.singleShot(int(play_seconds * 1000), _check_playback)
+            return
+        if time.monotonic() > deadline:
+            return _finish(6, 'CUE/metadata timeout')
+        QTimer.singleShot(150, _poll_cue)
+
+    def _start():
+        try:
+            win.vp._add_file_to_list(sample)
+            win.vp._refresh_clip_list()
+            win.vp.load_file(sample)
+            QTimer.singleShot(150, _poll_cue)
+        except Exception as e:
+            _finish(9, str(e))
+
+    QTimer.singleShot(250, _start)
+    app.exec()
+    try:
+        cleanup_child_processes()
+    except Exception:
+        pass
+    return result['code']
+
+def main():
+    import threading
+    _setup_global_exception_handler()
+    app = QApplication(sys.argv)
+    _configure_app_style(app)
     if not _acquire_single_instance():
         sys.exit(0)
     log.info('=' * 50)
@@ -962,6 +1194,16 @@ def main():
     sys.exit(ret)
 
 if __name__ == "__main__":
+    if '--mxf-smoke-test' in sys.argv:
+        sample = _arg_value('--mxf-smoke-test')
+        seconds = _arg_value('--play-seconds', '5')
+        sys.exit(_run_mxf_smoke_test(sample, seconds))
+    if '--export-diagnostics' in sys.argv:
+        destination = _arg_value('--export-diagnostics') or None
+        report = create_diagnostic_report(destination)
+        log.info(f'diagnostic report exported: {report}')
+        print(report)
+        sys.exit(0)
     if '--runtime-check' in sys.argv or '--smoke-test' in sys.argv:
         strict = '--runtime-check' in sys.argv
         runtime = check_runtime_environment()
