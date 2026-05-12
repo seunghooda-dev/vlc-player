@@ -48,6 +48,7 @@ mkdir "%PACKAGE_DIR%\LICENSES" > nul 2>&1
 copy /y "dist\%APP_NAME%.exe" "%PACKAGE_DIR%\%APP_NAME%.exe" > nul
 copy /y "README_RELEASE.txt" "%PACKAGE_DIR%\README.txt" > nul
 copy /y "smoke_mxf_test.bat" "%PACKAGE_DIR%\smoke_mxf_test.bat" > nul
+copy /y "stability_mxf_test.bat" "%PACKAGE_DIR%\stability_mxf_test.bat" > nul
 copy /y "THIRD_PARTY_NOTICES.txt" "%PACKAGE_DIR%\LICENSES\THIRD_PARTY_NOTICES.txt" > nul
 
 echo.

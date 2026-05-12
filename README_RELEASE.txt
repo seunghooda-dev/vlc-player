@@ -148,6 +148,25 @@ The same test can be called directly:
 
 MXF QC Player.exe --mxf-smoke-test "C:\path\sample.mxf" --play-seconds 5
 
+Long Playback Stability Test
+----------------------------
+For long-run playback checks, close MXF QC Player first and run:
+
+stability_mxf_test.bat "C:\path\long_sample.mxf" 1800 30
+
+The second value is playback duration in seconds. The third value is the
+progress check interval in seconds. The script opens the packaged player,
+loads the MXF, plays it for the requested time, logs periodic playback/audio
+child-process status, closes the player, and checks that packaged FFmpeg/FFplay
+helper processes were not left behind.
+
+The same test can be called directly:
+
+MXF QC Player.exe --mxf-stability-test "C:\path\long_sample.mxf" --play-seconds 1800 --check-interval 30
+
+Use a sample longer than the requested duration. The stability mode intentionally
+fails when the sample is shorter than the requested playback time.
+
 Access Notes
 ------------
 When using external drives, NAS, or network shares, make sure the target PC has
