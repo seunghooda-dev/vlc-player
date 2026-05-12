@@ -573,7 +573,7 @@ class LoudnessAnalyzeThread(QThread):
     def abort(self):
         self._abort = True
         if self._proc and self._proc.poll() is None:
-            terminate_child_process(self._proc, 'loudness analyze ffmpeg')
+            terminate_child_process(self._proc, 'loudness analyze ffmpeg', timeout=0.2)
 
     def _channel_filter(self):
         if self.audio_stream_count > 1:

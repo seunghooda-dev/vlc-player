@@ -51,7 +51,7 @@ if not errorlevel 1 (
 echo Running automated CUE / 5-second playback / audio-process check...
 echo.
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$exe=$env:PLAYER_EXE; $sample=$env:SAMPLE_MXF; $p=Start-Process -FilePath $exe -ArgumentList @('--mxf-smoke-test',$sample,'--play-seconds','5') -Wait -PassThru; exit $p.ExitCode"
+  "$exe=$env:PLAYER_EXE; & $exe --mxf-smoke-test $env:SAMPLE_MXF --play-seconds 5; exit $LASTEXITCODE"
 set "RC=%ERRORLEVEL%"
 
 if "%RC%"=="0" (

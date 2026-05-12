@@ -39,7 +39,7 @@ if not exist "%ProgramFiles%\VideoLAN\VLC\libvlc.dll" (
 "%PY%" -m PyInstaller ^
     --noconfirm ^
     --clean ^
-    --onefile ^
+    --onedir ^
     --windowed ^
     --name "MXF QC Player" ^
     --icon "assets\mxf_qc_player.ico" ^
@@ -49,7 +49,7 @@ if not exist "%ProgramFiles%\VideoLAN\VLC\libvlc.dll" (
     main.py
 if errorlevel 1 goto fail
 
-set "DIST_EXE=%CD%\dist\MXF QC Player.exe"
+set "DIST_EXE=%CD%\dist\MXF QC Player\MXF QC Player.exe"
 if not exist "%DIST_EXE%" (
     echo [error] Built EXE was not found: %DIST_EXE%
     goto fail
@@ -61,7 +61,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "$p = Start-Process -File
 if errorlevel 1 goto fail
 
 echo.
-echo Build complete: dist\MXF QC Player.exe
+echo Build complete: dist\MXF QC Player\MXF QC Player.exe
+echo Build mode: onedir
 echo Runtime files will be created in the user data folder:
 echo   %LOCALAPPDATA%\MXF QC Player V.1.0
 echo Release folders should contain only program files, tools, README, and licenses.

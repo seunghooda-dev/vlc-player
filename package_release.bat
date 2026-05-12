@@ -24,8 +24,8 @@ echo.
 call build.bat
 if errorlevel 1 goto fail
 
-if not exist "dist\%APP_NAME%.exe" (
-    echo [error] dist\%APP_NAME%.exe was not found.
+if not exist "dist\%APP_NAME%\%APP_NAME%.exe" (
+    echo [error] dist\%APP_NAME%\%APP_NAME%.exe was not found.
     goto fail
 )
 
@@ -45,7 +45,9 @@ mkdir "%PACKAGE_DIR%" > nul 2>&1
 mkdir "%PACKAGE_DIR%\tools" > nul 2>&1
 mkdir "%PACKAGE_DIR%\LICENSES" > nul 2>&1
 
-copy /y "dist\%APP_NAME%.exe" "%PACKAGE_DIR%\%APP_NAME%.exe" > nul
+echo Copying application files...
+xcopy /E /I /Y "dist\%APP_NAME%\*" "%PACKAGE_DIR%\" > nul
+if errorlevel 1 goto fail
 copy /y "README_RELEASE.txt" "%PACKAGE_DIR%\README.txt" > nul
 copy /y "UPDATE_POLICY.txt" "%PACKAGE_DIR%\UPDATE_POLICY.txt" > nul
 copy /y "BROADCAST_SAMPLE_CHECKLIST.txt" "%PACKAGE_DIR%\BROADCAST_SAMPLE_CHECKLIST.txt" > nul

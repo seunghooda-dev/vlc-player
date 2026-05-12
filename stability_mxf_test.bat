@@ -60,7 +60,7 @@ if not errorlevel 1 (
 echo Running automated CUE / long playback / audio-process / cleanup check...
 echo.
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$exe=$env:PLAYER_EXE; $sample=$env:SAMPLE_MXF; $seconds=$env:PLAY_SECONDS; $interval=$env:CHECK_INTERVAL; $args=@('--mxf-stability-test',$sample,'--play-seconds',$seconds,'--check-interval',$interval); $p=Start-Process -FilePath $exe -ArgumentList $args -Wait -PassThru; exit $p.ExitCode"
+  "$exe=$env:PLAYER_EXE; & $exe --mxf-stability-test $env:SAMPLE_MXF --play-seconds $env:PLAY_SECONDS --check-interval $env:CHECK_INTERVAL; exit $LASTEXITCODE"
 set "RC=%ERRORLEVEL%"
 
 if not "%RC%"=="0" (

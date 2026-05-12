@@ -10,6 +10,7 @@ Program Folder
 The release folder contains only files needed to run the program:
 
 - MXF QC Player.exe
+- _internal\
 - tools\
 - README.txt
 - UPDATE_POLICY.txt
@@ -22,6 +23,9 @@ The release folder contains only files needed to run the program:
 - LICENSES\
 
 This folder can be replaced during an update.
+
+Keep MXF QC Player.exe and _internal\ together. The app is packaged this way
+to avoid one-file temporary extraction issues with native Qt/VLC runtime DLLs.
 
 User Data Folder
 ----------------

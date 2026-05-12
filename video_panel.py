@@ -92,13 +92,18 @@ class AudioMixPlayer(QObject):
         was_active = bool(self._playing or self._ffplay or self._ffmpeg)
         if was_active:
             self.log_diagnostic('audio child stopping')
+        started = time.monotonic()
         self._playing = False
-        for proc in (self._ffplay, self._ffmpeg):
-            terminate_child_process(proc, 'audio mix')
+        for proc, label in ((self._ffplay, 'audio mix ffplay'), (self._ffmpeg, 'audio mix ffmpeg')):
+            terminate_child_process(proc, label, timeout=0.18)
         self._ffplay = None
         self._ffmpeg = None
         if was_active:
-            log.info('audio child stopped')
+            elapsed = time.monotonic() - started
+            if elapsed > 0.45:
+                log.warning(f'audio child stop took {elapsed:.3f}s')
+            else:
+                log.info(f'audio child stopped in {elapsed:.3f}s')
 
     def _proc_state(self, proc):
         if proc is None:
@@ -2012,6 +2017,18 @@ class VideoPanel(QWidget):
             log.warning(f'loudness analysis blocked: {missing}')
             return
 
+        try:
+            duration = float(self.cur_info.get('duration', self.duration) or 0.0)
+        except Exception:
+            duration = 0.0
+        if duration > 300.0:
+            self.meter_ctrl.set_loudness_analysis_pending('LIVE')
+            log.info(
+                f'loudness full-file auto scan skipped for long file: '
+                f'{Path(filepath).name} duration={duration:.1f}s'
+            )
+            return
+
         key = self._loudness_cache_key(filepath)
         cached = self._loudness_cache.get(key)
         if cached:
@@ -3422,7 +3439,6 @@ class VideoPanel(QWidget):
             guarded = {
                 Qt.Key.Key_Space, Qt.Key.Key_Left, Qt.Key.Key_Right,
                 Qt.Key.Key_Home, Qt.Key.Key_End, Qt.Key.Key_I, Qt.Key.Key_O,
-                Qt.Key.Key_S,
             }
             if k in guarded:
                 self.status_changed.emit('  ⏳ CUE 준비 중입니다 — 잠시만 기다려주세요')
@@ -3446,9 +3462,6 @@ class VideoPanel(QWidget):
             if isinstance(focused, (QAbstractButton, QScrollBar, QListWidget)):
                 e.ignore(); return
             self.toggle_play()
-            e.accept(); return
-        elif k==Qt.Key.Key_S:
-            self.stop()
             e.accept(); return
         elif k==Qt.Key.Key_Left:
             if shift:

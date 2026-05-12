@@ -15,6 +15,7 @@ Runtime Files
 The release folder is for program files only:
 
 - MXF QC Player.exe
+- _internal\
 - tools\
 - README.txt
 - LICENSES\
@@ -36,6 +37,9 @@ The program creates these files there:
 The app folder only needs to be readable. The user data folder must be
 writable. This separation makes future updates safer because replacing the app
 folder does not overwrite operator settings, logs, or QC history.
+
+The package uses a folder-style executable build. Keep MXF QC Player.exe and
+the _internal\ folder together when moving the app to another PC.
 
 On first launch after an older package, if settings.json or archive.db is found
 only in the old release folder, the app copies it to the user data folder and
