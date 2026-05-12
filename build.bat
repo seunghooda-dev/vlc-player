@@ -42,6 +42,8 @@ if not exist "%ProgramFiles%\VideoLAN\VLC\libvlc.dll" (
     --onefile ^
     --windowed ^
     --name "MXF QC Player" ^
+    --icon "assets\mxf_qc_player.ico" ^
+    --version-file "version_info.txt" ^
     --hidden-import vlc ^
     --hidden-import numpy ^
     main.py

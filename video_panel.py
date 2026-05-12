@@ -3422,30 +3422,58 @@ class VideoPanel(QWidget):
             guarded = {
                 Qt.Key.Key_Space, Qt.Key.Key_Left, Qt.Key.Key_Right,
                 Qt.Key.Key_Home, Qt.Key.Key_End, Qt.Key.Key_I, Qt.Key.Key_O,
+                Qt.Key.Key_S,
             }
             if k in guarded:
                 self.status_changed.emit('  ⏳ CUE 준비 중입니다 — 잠시만 기다려주세요')
                 e.accept()
                 return
-        # Space: 재생/일시정지 전용
-        # 텍스트 입력창, 버튼류 포커스 시 무시 → player만 동작
         focused = QApplication.focusWidget()
-        from PyQt6.QtWidgets import QLineEdit, QTextEdit, QAbstractButton, QAbstractSpinBox
+        from PyQt6.QtWidgets import (
+            QLineEdit, QTextEdit, QPlainTextEdit, QAbstractButton,
+            QAbstractSpinBox, QTabBar, QTabWidget, QScrollBar,
+        )
+        if isinstance(focused, (QLineEdit, QTextEdit, QPlainTextEdit,
+                                QAbstractSpinBox, QTabBar, QTabWidget)):
+            e.ignore()
+            return
+
+        shift = bool(e.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+
+        # Space: 재생/일시정지 전용
+        # 버튼류/파일목록/스크롤 위젯 포커스 시 무시 → player만 동작
         if k==Qt.Key.Key_Space:
-            from PyQt6.QtWidgets import QTabBar, QTabWidget, QScrollBar
-            # 입력/버튼/탭/스크롤 위젯 포커스 시 Space 무시
-            if isinstance(focused, (QLineEdit, QTextEdit, QAbstractButton,
-                                    QAbstractSpinBox, QTabBar, QTabWidget,
-                                    QScrollBar, QListWidget)):
+            if isinstance(focused, (QAbstractButton, QScrollBar, QListWidget)):
                 e.ignore(); return
             self.toggle_play()
             e.accept(); return
-        elif k==Qt.Key.Key_Left:     self._step(-1)
-        elif k==Qt.Key.Key_Right:    self._step(1)
-        elif k==Qt.Key.Key_Home:     self._set_position(0)
-        elif k==Qt.Key.Key_End:      self._set_position(max(0,int(self.duration*1000)-100))
-        elif k==Qt.Key.Key_I:        self._set_in()
-        elif k==Qt.Key.Key_O:        self._set_out()
+        elif k==Qt.Key.Key_S:
+            self.stop()
+            e.accept(); return
+        elif k==Qt.Key.Key_Left:
+            if shift:
+                self._set_position(max(0,self.player.position()-10000))
+            else:
+                self._step(-1)
+            e.accept(); return
+        elif k==Qt.Key.Key_Right:
+            if shift:
+                self._set_position(min(int(self.duration*1000),self.player.position()+10000))
+            else:
+                self._step(1)
+            e.accept(); return
+        elif k==Qt.Key.Key_Home:
+            self._set_position(0)
+            e.accept(); return
+        elif k==Qt.Key.Key_End:
+            self._set_position(max(0,int(self.duration*1000)-100))
+            e.accept(); return
+        elif k==Qt.Key.Key_I:
+            self._set_in()
+            e.accept(); return
+        elif k==Qt.Key.Key_O:
+            self._set_out()
+            e.accept(); return
         e.ignore()
 
     # ── AI ───────────────────────────────────────────────

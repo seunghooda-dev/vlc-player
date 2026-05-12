@@ -1,0 +1,56 @@
+MXF QC Player V.1.0 - Broadcast Sample Checklist
+================================================
+
+Use this checklist before copying a release to another PC or after changing
+VLC/FFmpeg/player logic.
+
+Required Smoke Samples
+----------------------
+[ ] OP1a MXF, 1920x1080, 29.97 DF
+[ ] XDCAM HD MXF
+[ ] MXF with 2 audio channels
+[ ] MXF with 4 or 8 audio channels
+[ ] MXF with known black section
+[ ] MXF with known mute section
+[ ] 20-minute or longer MXF for stability playback
+
+Minimum Checks
+--------------
+[ ] CUE shows the first frame without black video
+[ ] Play starts video and audio together
+[ ] Default audio output is channel 1/2
+[ ] Channel checkbox changes audio without blanking video
+[ ] Audio meters show up to 8 channels
+[ ] Loudness S/I display updates during playback
+[ ] Black detection finds a known black section
+[ ] Mute detection finds a known mute section
+[ ] Stop closes child ffmpeg/ffplay processes
+[ ] App exit leaves no packaged ffmpeg/ffplay process behind
+
+Scripts
+-------
+Startup and dependency check:
+
+preflight_check.bat
+
+Single MXF smoke test:
+
+smoke_mxf_test.bat "C:\path\sample.mxf"
+
+Layout check:
+
+ui_layout_check.bat
+
+Desktop or folder sample validation:
+
+broadcast_sample_validation.bat "C:\path\sample-folder"
+
+Long playback check:
+
+stability_mxf_test.bat "C:\path\long_sample.mxf" 1800 30
+
+Notes
+-----
+The scripts do not delete source MXF files. Reports are written under:
+
+%LOCALAPPDATA%\MXF QC Player V.1.0\reports

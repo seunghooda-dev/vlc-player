@@ -788,9 +788,10 @@ class MainWindow(QMainWindow):
         rl.setContentsMargins(0,0,0,0)
         rl.addStretch()
         copy_btn = QPushButton('복사')
+        report_btn = QPushButton('리포트 저장')
         refresh_btn = QPushButton('새로고침')
         close_btn = QPushButton('닫기')
-        for btn in (copy_btn, refresh_btn, close_btn):
+        for btn in (copy_btn, report_btn, refresh_btn, close_btn):
             btn.setFixedHeight(30)
             btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             btn.setStyleSheet(
@@ -802,9 +803,11 @@ class MainWindow(QMainWindow):
             QApplication.clipboard().setText(text.toPlainText()),
             title.setText('오류 로그 — 복사됨')
         ))
+        report_btn.clicked.connect(lambda: self._save_diagnostic_report(self._runtime))
         refresh_btn.clicked.connect(_refresh_log)
         close_btn.clicked.connect(dlg.accept)
         rl.addWidget(copy_btn)
+        rl.addWidget(report_btn)
         rl.addWidget(refresh_btn)
         rl.addWidget(close_btn)
         lay.addWidget(row)
@@ -1261,6 +1264,85 @@ def _run_mxf_stability_test(filepath, play_seconds=1800.0, check_interval=30.0):
         mode='stability',
     )
 
+def _run_ui_layout_check():
+    _setup_global_exception_handler()
+    app = QApplication(sys.argv)
+    _configure_app_style(app)
+    if not _acquire_single_instance():
+        log.error('ui layout check failed: MXF QC Player is already running')
+        return 3
+
+    win = MainWindow()
+    win.show()
+    result = {'code': 1}
+
+    def _fail(message):
+        log.error(f'ui layout check FAIL: {message}')
+        result['code'] = 7
+        win.hide()
+        QTimer.singleShot(100, app.quit)
+
+    def _check_case(label, width, height):
+        win.resize(width, height)
+        app.processEvents()
+        vp = win.vp
+        rp = win.rp
+        checks = [
+            ('window width', win.width(), 1100),
+            ('window height', win.height(), 760),
+            ('video stage width', vp.video_stage.width(), 640),
+            ('video view width', vp.video_view.width(), 560),
+            ('video view height', vp.video_view.height(), 315),
+            ('timecode width', vp.tc_main.width(), 340),
+            ('transport play width', vp.btn_play.width(), 70),
+            ('volume slider width', vp.vol_slider.width(), 110),
+            ('right panel width', rp.width(), 260),
+            ('file list height', rp.exp_list.height(), 120),
+        ]
+        for name, actual, minimum in checks:
+            if int(actual) < int(minimum):
+                return f'{label}: {name} too small actual={actual} min={minimum}'
+        log.info(
+            f'ui layout check ok: {label} window={win.width()}x{win.height()} '
+            f'video={vp.video_view.width()}x{vp.video_view.height()} '
+            f'tc={vp.tc_main.width()} right={rp.width()}'
+        )
+        return ''
+
+    def _run():
+        try:
+            screen = app.primaryScreen()
+            if screen:
+                geo = screen.availableGeometry()
+                log.info(
+                    f'ui layout check screen: available={geo.width()}x{geo.height()} '
+                    f'dpi={screen.logicalDotsPerInch():.1f} scale={screen.devicePixelRatio():.2f}'
+                )
+            cases = [
+                ('minimum-safe', 1280, 800),
+                ('hd-workspace', 1600, 900),
+                ('full-hd', 1920, 1080),
+            ]
+            for label, width, height in cases:
+                issue = _check_case(label, width, height)
+                if issue:
+                    return _fail(issue)
+            result['code'] = 0
+            log.info('ui layout check PASS')
+            win.hide()
+            cleanup_child_processes()
+            QTimer.singleShot(100, app.quit)
+        except Exception as e:
+            _fail(str(e))
+
+    QTimer.singleShot(300, _run)
+    app.exec()
+    try:
+        cleanup_child_processes()
+    except Exception:
+        pass
+    return result['code']
+
 def main():
     import threading
     _setup_global_exception_handler()
@@ -1306,6 +1388,8 @@ if __name__ == "__main__":
         seconds = _arg_value('--play-seconds', '1800')
         interval = _arg_value('--check-interval', '30')
         sys.exit(_run_mxf_stability_test(sample, seconds, interval))
+    if '--ui-layout-check' in sys.argv:
+        sys.exit(_run_ui_layout_check())
     if '--export-diagnostics' in sys.argv:
         destination = _arg_value('--export-diagnostics') or None
         report = create_diagnostic_report(destination)

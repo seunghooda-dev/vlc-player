@@ -92,6 +92,24 @@ It summarizes:
 - LOCALAPPDATA write access
 - DB/log/tmp/backups/report folder status
 
+For a command-line deployment check, close MXF QC Player first and run:
+
+preflight_check.bat
+
+This verifies bundled tools or PATH tools, runs a strict runtime check, runs a
+startup smoke test, and confirms the deployment helper scripts are present.
+
+UI Layout Check
+---------------
+To verify the main window at common operating sizes, close MXF QC Player and
+run:
+
+ui_layout_check.bat
+
+The check opens the packaged player briefly and validates the video stage,
+timecode, transport controls, volume area, right panel, and file list at
+1280x800, 1600x900, and 1920x1080.
+
 Diagnostic Report
 -----------------
 In the ENV or CHECK dialog, press "리포트 저장" to create a diagnostic ZIP.
@@ -167,6 +185,24 @@ MXF QC Player.exe --mxf-stability-test "C:\path\long_sample.mxf" --play-seconds 
 Use a sample longer than the requested duration. The stability mode intentionally
 fails when the sample is shorter than the requested playback time.
 
+Broadcast Sample Validation
+---------------------------
+For a practical sample-by-sample release check, close MXF QC Player and run:
+
+broadcast_sample_validation.bat "C:\path\sample-folder"
+
+If a single MXF file is provided, that file is checked. If a folder is provided,
+all MXF files directly inside that folder are checked. If no path is provided,
+the script checks MXF files on the Desktop. Each sample runs the same automated
+CUE / five-second playback / audio-process check used by smoke_mxf_test.bat.
+
+The script writes a report to:
+
+%LOCALAPPDATA%\MXF QC Player V.1.0\reports
+
+Use BROADCAST_SAMPLE_CHECKLIST.txt to decide which real-world sample types
+should be covered before deployment.
+
 Access Notes
 ------------
 When using external drives, NAS, or network shares, make sure the target PC has
@@ -190,3 +226,6 @@ the user data backups folder before the package is refreshed.
 Version
 -------
 MXF QC Player V.1.0
+
+The EXE includes Windows file-version metadata. The release update policy is
+documented in UPDATE_POLICY.txt.

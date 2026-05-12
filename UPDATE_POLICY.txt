@@ -1,0 +1,70 @@
+MXF QC Player V.1.0 - Update Policy
+====================================
+
+Goal
+----
+Updates should replace program files without touching operator data.
+
+Program Folder
+--------------
+The release folder contains only files needed to run the program:
+
+- MXF QC Player.exe
+- tools\
+- README.txt
+- UPDATE_POLICY.txt
+- BROADCAST_SAMPLE_CHECKLIST.txt
+- smoke_mxf_test.bat
+- stability_mxf_test.bat
+- ui_layout_check.bat
+- preflight_check.bat
+- broadcast_sample_validation.bat
+- LICENSES\
+
+This folder can be replaced during an update.
+
+User Data Folder
+----------------
+Runtime data is stored under:
+
+%LOCALAPPDATA%\MXF QC Player V.1.0
+
+This folder contains:
+
+- settings.json
+- archive.db
+- logs\
+- tmp\
+- backups\
+- reports\
+
+Do not delete or overwrite this folder during normal updates.
+
+Development PC Update
+---------------------
+On the development PC, use:
+
+update_desktop_release.bat
+
+This rebuilds the package, refreshes the Desktop shortcut, performs a startup
+smoke test, and opens the packaged EXE. It does not copy settings.json,
+archive.db, logs\, tmp\, or backups\ back into the release folder.
+
+Target PC Update
+----------------
+1. Close MXF QC Player.
+2. Replace the release folder with the new package folder.
+3. Run preflight_check.bat.
+4. Start MXF QC Player.exe.
+
+Legacy Data
+-----------
+Older release folders may contain settings.json, archive.db, logs\, tmp\, or
+backups\. The current app reads and writes only %LOCALAPPDATA%. Existing files
+in old release folders are preserved and not deleted automatically.
+
+Rollback
+--------
+If a new EXE has a problem, close the app and replace only the release folder
+with the previous package. The user data folder stays in place, so recent file
+lists, settings, logs, and QC history remain available.

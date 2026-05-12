@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QGridLayout, QLabel, QPushButton,
-    QListWidget, QListWidgetItem, QTabWidget, QLineEdit,
+    QListWidget, QListWidgetItem, QTabWidget, QLineEdit, QComboBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
     QFileDialog, QMenu,
 )
@@ -43,6 +43,29 @@ class RightPanel(QWidget):
         self._analysis_timeout_timer.setSingleShot(True)
         self._analysis_timeout_timer.timeout.connect(self._on_analysis_timeout)
         self._settings = load_settings()
+        self._analysis_presets = {
+            'broadcast': {
+                'label': '방송 QC',
+                'black_amount': '98',
+                'black_threshold': '32',
+                'mute_threshold': '-50',
+                'mute_duration': '1.0',
+            },
+            'strict': {
+                'label': '엄격',
+                'black_amount': '99',
+                'black_threshold': '24',
+                'mute_threshold': '-55',
+                'mute_duration': '1.0',
+            },
+            'fast': {
+                'label': '빠른 검수',
+                'black_amount': '95',
+                'black_threshold': '40',
+                'mute_threshold': '-45',
+                'mute_duration': '0.7',
+            },
+        }
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0,0,0,0)
         layout.setSpacing(0)
@@ -300,6 +323,30 @@ class RightPanel(QWidget):
             return "CUE", C['blue']
         return "미분석", C['text2']
 
+    def _status_summary_text(self, files):
+        counts = {
+            "미분석": 0,
+            "정상": 0,
+            "블랙 있음": 0,
+            "무음 있음": 0,
+            "블랙/무음": 0,
+            "검사 오류": 0,
+            "검사중": 0,
+        }
+        for f in files:
+            badge, _ = self._file_status_badge(f, f.get("filepath") == self.vp.cur_file)
+            if "검사중" in badge:
+                counts["검사중"] += 1
+            elif badge in counts:
+                counts[badge] += 1
+            elif badge in ("CUE", "재생중"):
+                counts["미분석"] += 1
+        parts = [f"파일 {len(files)}"]
+        for key in ("정상", "블랙 있음", "무음 있음", "블랙/무음", "검사 오류", "검사중", "미분석"):
+            if counts.get(key):
+                parts.append(f"{key} {counts[key]}")
+        return " | ".join(parts)
+
     def _exp_context_menu(self, pos):
         from PyQt6.QtWidgets import QMenu
         item = self.exp_list.itemAt(pos)
@@ -331,7 +378,11 @@ class RightPanel(QWidget):
 
         # 경로 표시: CUE 파일 기준, 없으면 첫 번째 파일 기준
         base_fp = cue_fp or (files[0]["filepath"] if files else "")
-        self.exp_path.setText(f"📁 {Path(base_fp).parent}" if base_fp else "파일을 추가하세요")
+        summary = self._status_summary_text(files)
+        if base_fp:
+            self.exp_path.setText(f"📁 {Path(base_fp).parent}    QC {summary}")
+        else:
+            self.exp_path.setText("파일을 추가하세요")
 
         # 정렬 적용
         sort_key = getattr(self, '_sort_key', 'name')
@@ -348,9 +399,9 @@ class RightPanel(QWidget):
             is_cue = (f["filepath"] == cue_fp)
             prefix = "▶  " if is_cue else "    "
             badge, badge_color = self._file_status_badge(f, is_cue)
-            item = QListWidgetItem(f"{prefix}{f['name']}    [{badge}]")
+            item = QListWidgetItem(f"{prefix}{f['name']}    [QC: {badge}]")
             item.setData(Qt.ItemDataRole.UserRole, f["filepath"])
-            item.setToolTip(f"{Path(f['filepath']).name}\n상태: {badge}")
+            item.setToolTip(f"{Path(f['filepath']).name}\nQC 상태: {badge}")
             if is_cue and badge not in ("블랙 있음", "무음 있음", "블랙/무음", "검사 오류"):
                 item.setForeground(QColor(badge_color))
                 font = item.font()
@@ -409,6 +460,16 @@ class RightPanel(QWidget):
         self.black_threshold.setStyleSheet(_inp)
         self.black_threshold.setToolTip("검정 픽셀 밝기 기준. 낮을수록 엄격합니다. 기본 32")
 
+        self.black_preset = QComboBox()
+        self.black_preset.setFixedHeight(26)
+        self.black_preset.setToolTip("블랙/뮤트 분석 기준 프리셋")
+        for key, data in self._analysis_presets.items():
+            self.black_preset.addItem(data['label'], key)
+        self.black_preset.setStyleSheet(self._preset_combo_style())
+        self.black_preset.currentIndexChanged.connect(
+            lambda _: self._apply_analysis_preset(self.black_preset.currentData())
+        )
+
         self.btn_run_black = QPushButton("⬛  블랙 검출")
         self.btn_run_black.setFixedHeight(30); self.btn_run_black.setEnabled(False)
         self.btn_run_black.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -423,6 +484,10 @@ class RightPanel(QWidget):
         self.black_amount.editingFinished.connect(self._save_detection_settings)
         self.black_threshold.editingFinished.connect(self._save_detection_settings)
 
+        lbl_pre = QLabel("프리셋")
+        lbl_pre.setStyleSheet(f"color:{C['text2']};font-size:11px;")
+        tbl.addWidget(lbl_pre); tbl.addWidget(self.black_preset)
+        tbl.addSpacing(6)
         tbl.addWidget(lbl_amt); tbl.addWidget(self.black_amount)
         tbl.addSpacing(6)
         tbl.addWidget(lbl_thr); tbl.addWidget(self.black_threshold)
@@ -471,6 +536,45 @@ class RightPanel(QWidget):
             )
         except Exception as e:
             log.debug(f'detection settings save: {e}')
+
+    def _preset_combo_style(self):
+        return (
+            f"QComboBox{{background:{C['input']};color:{C['text1']};border:1px solid {C['border']};"
+            "border-radius:5px;font-size:11px;padding:0 8px;min-width:82px;}}"
+            f"QComboBox:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
+            f"QComboBox QAbstractItemView{{background:{C['panel']};color:{C['text1']};"
+            f"selection-background-color:rgba(90,167,255,35);border:1px solid {C['border2']};}}"
+        )
+
+    def _apply_analysis_preset(self, key):
+        preset = self._analysis_presets.get(key)
+        if not preset:
+            return
+        try:
+            if hasattr(self, 'black_amount'):
+                self.black_amount.setText(preset['black_amount'])
+            if hasattr(self, 'black_threshold'):
+                self.black_threshold.setText(preset['black_threshold'])
+            if hasattr(self, 'spin_threshold'):
+                self.spin_threshold.setText(preset['mute_threshold'])
+            if hasattr(self, 'spin_duration'):
+                self.spin_duration.setText(preset['mute_duration'])
+            if hasattr(self, 'black_preset') and self.black_preset.currentData() != key:
+                idx = self.black_preset.findData(key)
+                if idx >= 0:
+                    self.black_preset.setCurrentIndex(idx)
+            if hasattr(self, 'audio_preset') and self.audio_preset.currentData() != key:
+                idx = self.audio_preset.findData(key)
+                if idx >= 0:
+                    self.audio_preset.setCurrentIndex(idx)
+            self._save_detection_settings()
+            label = preset.get('label', key)
+            if hasattr(self, 'black_status'):
+                self.black_status.setText(f"  ✓ 프리셋 적용 — {label}")
+            if hasattr(self, 'audio_status'):
+                self.audio_status.setText(f"  ✓ 프리셋 적용 — {label}")
+        except Exception as e:
+            log.debug(f'analysis preset apply: {e}')
 
     def _analysis_thread_running(self):
         for name in ('_black_thread', '_audio_thread'):
@@ -854,6 +958,16 @@ class RightPanel(QWidget):
         self.spin_duration.setStyleSheet(_inp)
         self.spin_duration.setToolTip("뮤트 최소 지속 시간 (초). 기본 1초")
 
+        self.audio_preset = QComboBox()
+        self.audio_preset.setFixedHeight(26)
+        self.audio_preset.setToolTip("블랙/뮤트 분석 기준 프리셋")
+        for key, data in self._analysis_presets.items():
+            self.audio_preset.addItem(data['label'], key)
+        self.audio_preset.setStyleSheet(self._preset_combo_style())
+        self.audio_preset.currentIndexChanged.connect(
+            lambda _: self._apply_analysis_preset(self.audio_preset.currentData())
+        )
+
         self.btn_run_audio = QPushButton("🔇  뮤트 검출")
         self.btn_run_audio.setFixedHeight(30); self.btn_run_audio.setEnabled(False)
         self.btn_run_audio.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -868,6 +982,10 @@ class RightPanel(QWidget):
         self.spin_threshold.editingFinished.connect(self._save_detection_settings)
         self.spin_duration.editingFinished.connect(self._save_detection_settings)
 
+        lbl_pre = QLabel("프리셋")
+        lbl_pre.setStyleSheet(f"color:{C['text2']};font-size:11px;")
+        tbl.addWidget(lbl_pre); tbl.addWidget(self.audio_preset)
+        tbl.addSpacing(6)
         tbl.addWidget(lbl_thr); tbl.addWidget(self.spin_threshold)
         tbl.addSpacing(6)
         tbl.addWidget(lbl_dur); tbl.addWidget(self.spin_duration)
