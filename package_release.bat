@@ -51,11 +51,15 @@ if errorlevel 1 goto fail
 copy /y "README_RELEASE.txt" "%PACKAGE_DIR%\README.txt" > nul
 copy /y "UPDATE_POLICY.txt" "%PACKAGE_DIR%\UPDATE_POLICY.txt" > nul
 copy /y "BROADCAST_SAMPLE_CHECKLIST.txt" "%PACKAGE_DIR%\BROADCAST_SAMPLE_CHECKLIST.txt" > nul
+copy /y "BROADCAST_SAMPLE_SET.txt" "%PACKAGE_DIR%\BROADCAST_SAMPLE_SET.txt" > nul
 copy /y "smoke_mxf_test.bat" "%PACKAGE_DIR%\smoke_mxf_test.bat" > nul
 copy /y "stability_mxf_test.bat" "%PACKAGE_DIR%\stability_mxf_test.bat" > nul
 copy /y "ui_layout_check.bat" "%PACKAGE_DIR%\ui_layout_check.bat" > nul
 copy /y "preflight_check.bat" "%PACKAGE_DIR%\preflight_check.bat" > nul
 copy /y "broadcast_sample_validation.bat" "%PACKAGE_DIR%\broadcast_sample_validation.bat" > nul
+copy /y "broadcast_sample_set_validation.bat" "%PACKAGE_DIR%\broadcast_sample_set_validation.bat" > nul
+copy /y "backup_release.bat" "%PACKAGE_DIR%\backup_release.bat" > nul
+copy /y "rollback_release.bat" "%PACKAGE_DIR%\rollback_release.bat" > nul
 copy /y "THIRD_PARTY_NOTICES.txt" "%PACKAGE_DIR%\LICENSES\THIRD_PARTY_NOTICES.txt" > nul
 
 echo.

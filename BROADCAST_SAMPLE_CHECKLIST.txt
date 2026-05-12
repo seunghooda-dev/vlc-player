@@ -45,6 +45,10 @@ Desktop or folder sample validation:
 
 broadcast_sample_validation.bat "C:\path\sample-folder"
 
+Fixed sample-set validation:
+
+broadcast_sample_set_validation.bat BROADCAST_SAMPLE_SET.txt
+
 Long playback check:
 
 stability_mxf_test.bat "C:\path\long_sample.mxf" 1800 30

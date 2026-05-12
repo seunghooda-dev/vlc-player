@@ -28,6 +28,7 @@ from constants  import (
     register_child_process, terminate_child_process, load_settings, save_settings,
     friendly_error_text, friendly_error_title,
     format_missing_runtime_tools,
+    record_state_event,
 )
 from db_models  import probe, save_clip, frames_to_tc, tc_to_frames
 from threads    import ProbeThread, TranscodeThread, LoudnessAnalyzeThread
@@ -92,6 +93,7 @@ class AudioMixPlayer(QObject):
         was_active = bool(self._playing or self._ffplay or self._ffmpeg)
         if was_active:
             self.log_diagnostic('audio child stopping')
+            record_state_event('audio-mix', 'stopping', file=Path(self.filepath or '').name, channels=self.channels)
         started = time.monotonic()
         self._playing = False
         for proc, label in ((self._ffplay, 'audio mix ffplay'), (self._ffmpeg, 'audio mix ffmpeg')):
@@ -104,6 +106,7 @@ class AudioMixPlayer(QObject):
                 log.warning(f'audio child stop took {elapsed:.3f}s')
             else:
                 log.info(f'audio child stopped in {elapsed:.3f}s')
+            record_state_event('audio-mix', 'stopped', elapsed=f'{elapsed:.3f}s')
 
     def _proc_state(self, proc):
         if proc is None:
@@ -224,6 +227,15 @@ class AudioMixPlayer(QObject):
                 'audio mix started '
                 f'ffmpeg={self._ffmpeg.pid} ffplay={self._ffplay.pid} '
                 f'ch={self.channels} start={start_sec:.3f}s rate={self.rate:.3f}'
+            )
+            record_state_event(
+                'audio-mix',
+                'started',
+                file=Path(self.filepath or '').name,
+                ffmpeg=self._ffmpeg.pid,
+                ffplay=self._ffplay.pid,
+                channels=self.channels,
+                start=f'{start_sec:.3f}s',
             )
             self.log_diagnostic()
         except Exception as e:
@@ -2027,6 +2039,7 @@ class VideoPanel(QWidget):
                 f'loudness full-file auto scan skipped for long file: '
                 f'{Path(filepath).name} duration={duration:.1f}s'
             )
+            record_state_event('loudness', 'full scan skipped', file=Path(filepath).name, duration=f'{duration:.1f}s')
             return
 
         key = self._loudness_cache_key(filepath)
@@ -2462,6 +2475,7 @@ class VideoPanel(QWidget):
         mark_step('recent')
         load_seq = self._next_load_seq('load_file', filepath)
         log.info(f'load_file: {Path(filepath).name}')
+        record_state_event('file', 'load requested', file=Path(filepath).name)
         self._stop_all()
         mark_step('stop_all')
         self._cancel_preconvert_job(filepath)
@@ -3189,6 +3203,7 @@ class VideoPanel(QWidget):
             return
         if self.player.playbackState()==QMediaPlayer.PlaybackState.PlayingState:
             log.info(f'play request: pause file={Path(self.cur_file).name} pos={self.player.position()}ms')
+            record_state_event('transport', 'pause requested', file=Path(self.cur_file).name, pos=f'{self.player.position()}ms')
             self.player.pause()
         else:
             log.info(
@@ -3196,11 +3211,20 @@ class VideoPanel(QWidget):
                 f'pos={self.player.position()}ms metadata={self._metadata_ready} cue={self._cue_ready} '
                 f'ch={self._get_selected_audio_channels()}'
             )
+            record_state_event(
+                'transport',
+                'play requested',
+                file=Path(self.cur_file).name,
+                pos=f'{self.player.position()}ms',
+                channels=self._get_selected_audio_channels(),
+            )
             self.player.play()
 
     def stop(self):
         self._transport_guard_action = 'stop'
         self._transport_guard_until = time.monotonic() + 0.12
+        if self.cur_file:
+            record_state_event('transport', 'stop requested', file=Path(self.cur_file).name, pos=f'{self.player.position()}ms')
         if self._is_busy_loading():
             file_name = Path(self.cur_file).name if self.cur_file else '?'
             self._next_load_seq('stop_cancel', self.cur_file)
@@ -3333,6 +3357,14 @@ class VideoPanel(QWidget):
                 f'pos={self.player.position()}ms metadata={self._metadata_ready} cue={self._cue_ready} '
                 f'audio_first={getattr(self, "_first_audio_start_after_cue", False)}'
             )
+            record_state_event(
+                'transport',
+                'playing state',
+                file=Path(self.cur_file).name if self.cur_file else '-',
+                pos=f'{self.player.position()}ms',
+                metadata=self._metadata_ready,
+                cue=self._cue_ready,
+            )
             self._reset_audio_recovery()
             self._frame_clock_active = True
             self._sync_frame_clock(self.player.position())
@@ -3351,6 +3383,13 @@ class VideoPanel(QWidget):
                 log.debug(
                     f'play state left file={Path(self.cur_file).name} '
                     f'pos={self.player.position()}ms state={state.name if hasattr(state, "name") else state}'
+                )
+                record_state_event(
+                    'transport',
+                    'left playing',
+                    file=Path(self.cur_file).name,
+                    pos=f'{self.player.position()}ms',
+                    state=state.name if hasattr(state, "name") else state,
                 )
             self._cancel_play_start_watchdog()
             self._frame_clock_active = False

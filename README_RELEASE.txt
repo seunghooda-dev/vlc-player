@@ -207,6 +207,21 @@ The script writes a report to:
 Use BROADCAST_SAMPLE_CHECKLIST.txt to decide which real-world sample types
 should be covered before deployment.
 
+For a fixed real-world broadcast sample set, edit:
+
+BROADCAST_SAMPLE_SET.txt
+
+Each non-comment row uses:
+
+label|absolute_mxf_path|notes
+
+Then run:
+
+broadcast_sample_set_validation.bat BROADCAST_SAMPLE_SET.txt
+
+This is useful when you want every release to pass the same representative
+MXF set instead of whatever files happen to be on the Desktop.
+
 Access Notes
 ------------
 When using external drives, NAS, or network shares, make sure the target PC has
@@ -226,6 +241,14 @@ smoke test, and starts the packaged EXE. It does not copy settings.json,
 archive.db, logs\, tmp\, or backups\ back into the release folder. If old
 runtime files are found in a previous release folder, they are preserved under
 the user data backups folder before the package is refreshed.
+
+Before replacing the development release folder, update_desktop_release.bat
+backs up the current program folder under:
+
+%LOCALAPPDATA%\MXF QC Player V.1.0\backups\release
+
+If a new build has a problem, close the app and run rollback_release.bat to
+copy the latest release backup back into the release folder.
 
 Version
 -------

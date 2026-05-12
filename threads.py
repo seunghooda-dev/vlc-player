@@ -18,6 +18,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from constants import (
     FFMPEG, FFPROBE, FFPLAY, TMP_DIR, VIDEO_EXTS, log,
     register_child_process, unregister_child_process, terminate_child_process,
+    acquire_heavy_analysis_slot, release_heavy_analysis_slot,
 )
 from db_models import sec_to_tc, frames_to_tc, probe as probe_media
 
@@ -393,11 +394,14 @@ class AudioAnalyzeThread(QThread):
             '-ac', str(ch_count),
             'pipe:1'
         ]
-        self._proc = register_child_process(subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            creationflags=0x08000000), 'audio index ffmpeg')
-
+        slot_label = 'audio index'
+        if not acquire_heavy_analysis_slot(slot_label):
+            raise RuntimeError('다른 분석 작업이 진행 중입니다. 잠시 후 다시 시도하세요.')
         try:
+            self._proc = register_child_process(subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                creationflags=0x08000000), 'audio index ffmpeg')
+
             levels = []
             buf = bytearray()
             processed_windows = 0
@@ -453,6 +457,7 @@ class AudioAnalyzeThread(QThread):
             return levels
         finally:
             unregister_child_process(self._proc)
+            release_heavy_analysis_slot(slot_label)
 
     def _mutes_from_levels(self, levels, window_sec):
         mutes = []
@@ -661,68 +666,76 @@ class LoudnessAnalyzeThread(QThread):
                 '-map', '[loud]',
                 '-f', 'null', '-',
             ]
-            self._proc = register_child_process(subprocess.Popen(
-                cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                encoding='utf-8',
-                errors='replace',
-                creationflags=0x08000000
-            ), 'loudness analyze ffmpeg')
+            slot_label = 'loudness analyze'
+            if not acquire_heavy_analysis_slot(slot_label):
+                raise RuntimeError('다른 분석 작업이 진행 중입니다. 잠시 후 다시 시도하세요.')
+            try:
+                self._proc = register_child_process(subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    encoding='utf-8',
+                    errors='replace',
+                    creationflags=0x08000000
+                ), 'loudness analyze ffmpeg')
 
-            assert self._proc.stderr is not None
-            last_emit = 0.0
-            start = time.monotonic()
-            while True:
+                assert self._proc.stderr is not None
+                last_emit = 0.0
+                start = time.monotonic()
+                while True:
+                    if self._abort:
+                        self.abort()
+                        return
+                    line = self._proc.stderr.readline()
+                    if line:
+                        tail.append(line)
+                        if len(tail) > 420:
+                            tail.pop(0)
+                        m = re.search(r't:\s*([\d.]+)', line)
+                        if m:
+                            pos = float(m.group(1))
+                            now = time.monotonic()
+                            if now - last_emit >= 1.0:
+                                last_emit = now
+                                if self.duration > 0:
+                                    pct = max(0, min(99, int(pos / self.duration * 100)))
+                                    self.progress.emit(f'라우드니스 전체 분석 중... {pct}%')
+                                else:
+                                    self.progress.emit(f'라우드니스 전체 분석 중... {pos:.1f}s')
+                        continue
+                    if self._proc.poll() is not None:
+                        break
+                    if time.monotonic() - start > max(180.0, min(7200.0, self.duration * 6.0 + 120.0)):
+                        self.abort()
+                        raise TimeoutError('라우드니스 분석 시간 초과')
+                    self.msleep(50)
+
+                rc = self._proc.wait()
                 if self._abort:
-                    self.abort()
                     return
-                line = self._proc.stderr.readline()
-                if line:
-                    tail.append(line)
-                    if len(tail) > 420:
-                        tail.pop(0)
-                    m = re.search(r't:\s*([\d.]+)', line)
-                    if m:
-                        pos = float(m.group(1))
-                        now = time.monotonic()
-                        if now - last_emit >= 1.0:
-                            last_emit = now
-                            if self.duration > 0:
-                                pct = max(0, min(99, int(pos / self.duration * 100)))
-                                self.progress.emit(f'라우드니스 전체 분석 중... {pct}%')
-                            else:
-                                self.progress.emit(f'라우드니스 전체 분석 중... {pos:.1f}s')
-                    continue
-                if self._proc.poll() is not None:
-                    break
-                if time.monotonic() - start > max(180.0, min(7200.0, self.duration * 6.0 + 120.0)):
-                    self.abort()
-                    raise TimeoutError('라우드니스 분석 시간 초과')
-                self.msleep(50)
-
-            rc = self._proc.wait()
-            if self._abort:
-                return
-            text = ''.join(tail)
-            if rc != 0:
-                raise RuntimeError(f'FFmpeg loudness 실패 (rc={rc}): {text[-500:]}')
-            result = self._parse_summary(text)
-            self.progress.emit(
-                f"라우드니스 완료 — I {result['integrated']:.1f} LKFS"
-            )
-            log.info(
-                f"LoudnessAnalyze 완료: I={result['integrated']:.2f}, "
-                f"LRA={result.get('lra')}, TP={result.get('true_peak')}, "
-                f"basis={result.get('basis')}"
-            )
-            self.finished.emit(result)
+                text = ''.join(tail)
+                if rc != 0:
+                    raise RuntimeError(f'FFmpeg loudness 실패 (rc={rc}): {text[-500:]}')
+                result = self._parse_summary(text)
+                self.progress.emit(
+                    f"라우드니스 완료 — I {result['integrated']:.1f} LKFS"
+                )
+                log.info(
+                    f"LoudnessAnalyze 완료: I={result['integrated']:.2f}, "
+                    f"LRA={result.get('lra')}, TP={result.get('true_peak')}, "
+                    f"basis={result.get('basis')}"
+                )
+                self.finished.emit(result)
+            finally:
+                unregister_child_process(self._proc)
+                try:
+                    release_heavy_analysis_slot('loudness analyze')
+                except Exception:
+                    pass
         except Exception as e:
             log.error(f'LoudnessAnalyzeThread 오류: {e}')
             if not self._abort:
                 self.error.emit(str(e))
-        finally:
-            unregister_child_process(self._proc)
 
 
 class BlackDetectThread(QThread):
@@ -784,71 +797,79 @@ class BlackDetectThread(QThread):
                 '-vf', f'blackframe=amount={self.amount}:threshold={self.threshold}',
                 '-f', 'null', '-'
             ]
-            self._proc = register_child_process(subprocess.Popen(
-                cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-                encoding='utf-8', errors='replace',
-                creationflags=0x08000000
-            ), 'black detect ffmpeg')
+            slot_label = 'black detect'
+            if not acquire_heavy_analysis_slot(slot_label):
+                raise RuntimeError('다른 분석 작업이 진행 중입니다. 잠시 후 다시 시도하세요.')
+            try:
+                self._proc = register_child_process(subprocess.Popen(
+                    cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                    encoding='utf-8', errors='replace',
+                    creationflags=0x08000000
+                ), 'black detect ffmpeg')
 
-            ranges = []
-            seg = None
-            hit_count = 0
-            assert self._proc.stderr is not None
-            for line in self._proc.stderr:
-                if self._abort:
-                    self.abort()
-                    return
-                m = black_re.search(line)
-                if not m:
-                    continue
-                frame = int(m.group(1))
-                pblack = int(m.group(2))
-                t = float(m.group(3))
-                hit_count += 1
+                ranges = []
+                seg = None
+                hit_count = 0
+                assert self._proc.stderr is not None
+                for line in self._proc.stderr:
+                    if self._abort:
+                        self.abort()
+                        return
+                    m = black_re.search(line)
+                    if not m:
+                        continue
+                    frame = int(m.group(1))
+                    pblack = int(m.group(2))
+                    t = float(m.group(3))
+                    hit_count += 1
 
-                if seg is None:
-                    seg = {
-                        'start': t, 'end': t,
-                        'start_frame': frame, 'end_frame': frame,
-                        'frames': 1,
-                    }
-                else:
-                    prev_frame = int(seg['end_frame'])
-                    prev_t = float(seg['end'])
-                    is_next_frame = frame <= prev_frame + 1
-                    is_next_time = t <= prev_t + frame_gap * 1.6
-                    if is_next_frame or is_next_time:
-                        seg['end'] = t
-                        seg['end_frame'] = frame
-                        seg['frames'] += 1
-                    else:
-                        self._flush_segment(ranges, seg)
+                    if seg is None:
                         seg = {
                             'start': t, 'end': t,
                             'start_frame': frame, 'end_frame': frame,
                             'frames': 1,
                         }
+                    else:
+                        prev_frame = int(seg['end_frame'])
+                        prev_t = float(seg['end'])
+                        is_next_frame = frame <= prev_frame + 1
+                        is_next_time = t <= prev_t + frame_gap * 1.6
+                        if is_next_frame or is_next_time:
+                            seg['end'] = t
+                            seg['end_frame'] = frame
+                            seg['frames'] += 1
+                        else:
+                            self._flush_segment(ranges, seg)
+                            seg = {
+                                'start': t, 'end': t,
+                                'start_frame': frame, 'end_frame': frame,
+                                'frames': 1,
+                            }
 
-                if hit_count % 200 == 0:
-                    self.progress.emit(f'블랙 프레임 {hit_count}개 검출 중... 최근 {self._tc_from_sec(t)} ({pblack}%)')
+                    if hit_count % 200 == 0:
+                        self.progress.emit(f'블랙 프레임 {hit_count}개 검출 중... 최근 {self._tc_from_sec(t)} ({pblack}%)')
 
-            if seg is not None:
-                self._flush_segment(ranges, seg)
+                if seg is not None:
+                    self._flush_segment(ranges, seg)
 
-            rc = self._proc.wait()
-            if self._abort:
-                return
-            if rc != 0:
-                self.error.emit(f'FFmpeg blackframe 실패 (rc={rc})')
-                return
+                rc = self._proc.wait()
+                if self._abort:
+                    return
+                if rc != 0:
+                    self.error.emit(f'FFmpeg blackframe 실패 (rc={rc})')
+                    return
 
-            self.progress.emit(f'완료: 블랙 구간 {len(ranges)}개')
-            log.info(f'BlackDetect 완료: {len(ranges)}구간, amount={self.amount}, threshold={self.threshold}')
-            self.finished.emit(ranges)
+                self.progress.emit(f'완료: 블랙 구간 {len(ranges)}개')
+                log.info(f'BlackDetect 완료: {len(ranges)}구간, amount={self.amount}, threshold={self.threshold}')
+                self.finished.emit(ranges)
+            finally:
+                unregister_child_process(self._proc)
+                try:
+                    release_heavy_analysis_slot('black detect')
+                except Exception:
+                    pass
 
         except Exception as e:
             log.error(f'BlackDetectThread 오류: {e}')
             if not self._abort:
                 self.error.emit(str(e))
-        finally:
-            unregister_child_process(self._proc)

@@ -17,6 +17,13 @@ echo User data is stored outside the release folder:
 echo   %LOCALAPPDATA%\%APP_NAME% %APP_VERSION%
 echo The release folder will contain only program files, tools, README, and licenses.
 
+if exist "%TARGET_EXE%" (
+    echo.
+    echo Backing up current release before update...
+    call backup_release.bat
+    if errorlevel 1 goto fail
+)
+
 call package_release.bat
 if errorlevel 1 goto fail
 

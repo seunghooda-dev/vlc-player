@@ -42,7 +42,7 @@ for %%T in (ffmpeg.exe ffprobe.exe ffplay.exe) do (
     )
 )
 
-for %%B in (smoke_mxf_test.bat stability_mxf_test.bat ui_layout_check.bat broadcast_sample_validation.bat) do (
+for %%B in (smoke_mxf_test.bat stability_mxf_test.bat ui_layout_check.bat broadcast_sample_validation.bat broadcast_sample_set_validation.bat backup_release.bat rollback_release.bat) do (
     if exist "%ROOT%%%B" (
         echo [OK] %%B
     ) else (

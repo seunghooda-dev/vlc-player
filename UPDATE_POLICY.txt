@@ -15,11 +15,15 @@ The release folder contains only files needed to run the program:
 - README.txt
 - UPDATE_POLICY.txt
 - BROADCAST_SAMPLE_CHECKLIST.txt
+- BROADCAST_SAMPLE_SET.txt
 - smoke_mxf_test.bat
 - stability_mxf_test.bat
 - ui_layout_check.bat
 - preflight_check.bat
 - broadcast_sample_validation.bat
+- broadcast_sample_set_validation.bat
+- backup_release.bat
+- rollback_release.bat
 - LICENSES\
 
 This folder can be replaced during an update.
@@ -54,6 +58,11 @@ This rebuilds the package, refreshes the Desktop shortcut, performs a startup
 smoke test, and opens the packaged EXE. It does not copy settings.json,
 archive.db, logs\, tmp\, or backups\ back into the release folder.
 
+Before the release folder is replaced, backup_release.bat copies the current
+program folder to:
+
+%LOCALAPPDATA%\MXF QC Player V.1.0\backups\release
+
 Target PC Update
 ----------------
 1. Close MXF QC Player.
@@ -69,6 +78,10 @@ in old release folders are preserved and not deleted automatically.
 
 Rollback
 --------
-If a new EXE has a problem, close the app and replace only the release folder
-with the previous package. The user data folder stays in place, so recent file
-lists, settings, logs, and QC history remain available.
+If a new EXE has a problem, close the app and run:
+
+rollback_release.bat
+
+The script restores the latest release backup into the release folder. You can
+also pass a specific backup folder path. The user data folder stays in place,
+so recent file lists, settings, logs, and QC history remain available.

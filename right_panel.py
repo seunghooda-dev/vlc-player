@@ -17,7 +17,7 @@ from PyQt6.QtMultimedia import QMediaPlayer
 
 from constants   import (
     C, VIDEO_EXTS, BASE_DIR, log, load_settings, save_settings,
-    friendly_error_title, format_missing_runtime_tools,
+    friendly_error_title, format_missing_runtime_tools, heavy_analysis_status,
 )
 from db_models   import sec_to_tc
 from threads     import AudioAnalyzeThread, BlackDetectThread
@@ -751,6 +751,18 @@ class RightPanel(QWidget):
 
     def _begin_analysis_mode(self, kind, label):
         if self._analysis_thread_running():
+            return False
+        try:
+            if hasattr(self.vp, '_retire_loudness_analysis'):
+                self.vp._retire_loudness_analysis()
+        except Exception as e:
+            log.debug(f'analysis mode retire loudness: {e}')
+        heavy = heavy_analysis_status()
+        if heavy.get('running'):
+            owner = heavy.get('owner') or '분석'
+            elapsed = float(heavy.get('elapsed') or 0.0)
+            if hasattr(self.vp, 'status_changed'):
+                self.vp.status_changed.emit(f"  ⏳ {owner} 정리 중 — {elapsed:.1f}s")
             return False
         self._analysis_active = kind
         self._analysis_paused_playback = False

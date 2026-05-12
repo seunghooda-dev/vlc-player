@@ -8,6 +8,7 @@ MXF QC Player - PyQt6 완전판
 """
 
 import sys, os, json, subprocess, hashlib, csv, shutil, threading, atexit, time, zipfile
+from collections import deque
 from pathlib import Path
 from datetime import datetime
 
@@ -1409,6 +1410,8 @@ def check_runtime_environment():
         'can_start': 'VLC' not in missing_required,
         'search_paths': _runtime_search_paths(),
         'child_processes': runtime_child_process_status(),
+        'heavy_analysis': heavy_analysis_status(),
+        'state_timeline': runtime_state_timeline(40),
     }
 
 def format_runtime_environment(runtime=None):
@@ -1540,6 +1543,30 @@ def format_runtime_environment(runtime=None):
     else:
         lines.append('등록된 자식 프로세스 없음')
     lines.append('')
+    heavy = runtime.get('heavy_analysis') or {}
+    lines.append('무거운 분석 슬롯')
+    lines.append('-' * 42)
+    if heavy.get('running'):
+        lines.append(f"진행 중: {heavy.get('owner') or '-'} ({float(heavy.get('elapsed') or 0.0):.1f}s)")
+    else:
+        lines.append('진행 중인 무거운 분석 없음')
+    lines.append('')
+    timeline = runtime.get('state_timeline') or runtime_state_timeline(20)
+    lines.append('최근 상태 타임라인')
+    lines.append('-' * 42)
+    if timeline:
+        for row in timeline[-20:]:
+            extra = [
+                f"{k}={v}" for k, v in row.items()
+                if k not in ('ts', 'category', 'message') and v not in ('', None)
+            ]
+            lines.append(
+                f"{row.get('ts')} | {row.get('category')} | {row.get('message')}"
+                + (f" | {' '.join(extra)}" if extra else '')
+            )
+    else:
+        lines.append('상태 기록 없음')
+    lines.append('')
     lines.append('검색 위치')
     lines.append('-' * 42)
     for path in runtime.get('search_paths', []):
@@ -1564,6 +1591,49 @@ def _recent_log_text(path, max_lines=1000):
         return '\n'.join(picked)
     except Exception as e:
         return f'로그 읽기 실패: {e}'
+
+_STATE_TIMELINE = deque(maxlen=240)
+_STATE_TIMELINE_LOCK = threading.RLock()
+
+def record_state_event(category, message='', **fields):
+    """Keep a tiny in-memory timeline for diagnosing the last moments before a hang."""
+    try:
+        row = {
+            'ts': datetime.now().isoformat(timespec='seconds'),
+            'category': str(category or 'state'),
+            'message': str(message or ''),
+        }
+        for key, value in fields.items():
+            try:
+                row[str(key)] = str(value)
+            except Exception:
+                row[str(key)] = '<unprintable>'
+        with _STATE_TIMELINE_LOCK:
+            _STATE_TIMELINE.append(row)
+    except Exception:
+        pass
+
+def runtime_state_timeline(limit=120):
+    try:
+        with _STATE_TIMELINE_LOCK:
+            rows = list(_STATE_TIMELINE)[-int(limit):]
+        return rows
+    except Exception:
+        return []
+
+def format_state_timeline(limit=120):
+    rows = runtime_state_timeline(limit)
+    if not rows:
+        return '상태 기록 없음'
+    lines = []
+    for row in rows:
+        base = f"{row.get('ts')} | {row.get('category')} | {row.get('message')}"
+        extras = [
+            f"{k}={v}" for k, v in row.items()
+            if k not in ('ts', 'category', 'message') and v not in ('', None)
+        ]
+        lines.append(base + (f" | {' '.join(extras)}" if extras else ''))
+    return '\n'.join(lines)
 
 def _diagnostic_db_status_text():
     lines = []
@@ -1619,6 +1689,8 @@ def create_diagnostic_report(destination=None, runtime=None, max_log_lines=1500)
         zf.writestr('runtime.json', json.dumps(runtime, ensure_ascii=False, indent=2, default=str))
         zf.writestr('db_status.txt', _diagnostic_db_status_text())
         zf.writestr('child_processes.json', json.dumps(runtime_child_process_status(), ensure_ascii=False, indent=2))
+        zf.writestr('state_timeline.json', json.dumps(runtime_state_timeline(), ensure_ascii=False, indent=2))
+        zf.writestr('state_timeline.txt', format_state_timeline())
         zf.writestr('logs/player_tail.log', _recent_log_text(LOG_DIR / 'player.log', max_log_lines))
         zf.writestr('logs/migration_tail.log', _recent_log_text(LOG_DIR / 'migration.log', 500))
         try:
@@ -1652,6 +1724,50 @@ _CHILD_PROCS = {}
 _CHILD_PROC_LOCK = threading.RLock()
 _CHILD_JOB_HANDLE = None
 _CHILD_JOB_LOCK = threading.RLock()
+_HEAVY_ANALYSIS_LOCK = threading.RLock()
+_HEAVY_ANALYSIS_OWNER = None
+_HEAVY_ANALYSIS_STARTED = 0.0
+
+def heavy_analysis_status():
+    with _HEAVY_ANALYSIS_LOCK:
+        if not _HEAVY_ANALYSIS_OWNER:
+            return {'running': False, 'owner': None, 'elapsed': 0.0}
+        return {
+            'running': True,
+            'owner': _HEAVY_ANALYSIS_OWNER,
+            'elapsed': max(0.0, time.monotonic() - _HEAVY_ANALYSIS_STARTED),
+        }
+
+def acquire_heavy_analysis_slot(label):
+    """Allow only one heavy FFmpeg analysis at a time."""
+    global _HEAVY_ANALYSIS_OWNER, _HEAVY_ANALYSIS_STARTED
+    with _HEAVY_ANALYSIS_LOCK:
+        if _HEAVY_ANALYSIS_OWNER:
+            record_state_event(
+                'analysis-limit',
+                'blocked',
+                requested=label,
+                owner=_HEAVY_ANALYSIS_OWNER,
+                elapsed=f'{time.monotonic() - _HEAVY_ANALYSIS_STARTED:.1f}s',
+            )
+            return False
+        _HEAVY_ANALYSIS_OWNER = str(label or 'analysis')
+        _HEAVY_ANALYSIS_STARTED = time.monotonic()
+        record_state_event('analysis-limit', 'acquired', owner=_HEAVY_ANALYSIS_OWNER)
+        return True
+
+def release_heavy_analysis_slot(label=None):
+    global _HEAVY_ANALYSIS_OWNER, _HEAVY_ANALYSIS_STARTED
+    with _HEAVY_ANALYSIS_LOCK:
+        owner = _HEAVY_ANALYSIS_OWNER
+        if not owner:
+            return
+        if label and owner != label:
+            return
+        elapsed = max(0.0, time.monotonic() - _HEAVY_ANALYSIS_STARTED)
+        record_state_event('analysis-limit', 'released', owner=owner, elapsed=f'{elapsed:.1f}s')
+        _HEAVY_ANALYSIS_OWNER = None
+        _HEAVY_ANALYSIS_STARTED = 0.0
 
 def _safe_proc_log(level, message):
     try:
@@ -1758,6 +1874,7 @@ def register_child_process(proc, label='process'):
     try:
         with _CHILD_PROC_LOCK:
             _CHILD_PROCS[int(proc.pid)] = (proc, label)
+        record_state_event('child-process', 'start', pid=getattr(proc, 'pid', '-'), label=label)
         _assign_child_to_job(proc, label)
     except Exception:
         pass
@@ -1768,7 +1885,9 @@ def unregister_child_process(proc):
         return
     try:
         with _CHILD_PROC_LOCK:
-            _CHILD_PROCS.pop(int(proc.pid), None)
+            row = _CHILD_PROCS.pop(int(proc.pid), None)
+        label = row[1] if row else 'process'
+        record_state_event('child-process', 'end', pid=getattr(proc, 'pid', '-'), label=label)
     except Exception:
         pass
 

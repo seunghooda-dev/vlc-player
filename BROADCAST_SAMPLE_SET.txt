@@ -1,0 +1,12 @@
+# MXF QC Player V.1.0 - Broadcast Sample Set
+# Format:
+# label|absolute_mxf_path|notes
+#
+# The validation script skips missing files and reports them as failures.
+# Do not put source MXF files inside the release folder.
+#
+# Example:
+# XDCAM HD 2ch|D:\QC Samples\xdcam_hd_2ch.mxf|29.97 DF, stereo
+# XDCAM HD 8ch|D:\QC Samples\xdcam_hd_8ch.mxf|8-channel audio routing
+# Known black|D:\QC Samples\black_section.mxf|contains at least 1 black frame
+# Known mute|D:\QC Samples\mute_section.mxf|contains at least 1 second mute
