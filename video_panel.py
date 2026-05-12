@@ -895,64 +895,94 @@ class VideoPanel(QWidget):
         layout.addWidget(pw)
 
         # TRANSPORT
-        tr = QWidget(); tr.setFixedHeight(72)
+        tr = QWidget(); tr.setFixedHeight(74)
         tr.setStyleSheet(f"background:{C['panel']};border-bottom:1px solid {C['border']};")
-        trl = QHBoxLayout(tr); trl.setContentsMargins(10,8,10,8); trl.setSpacing(4)
+        trl = QHBoxLayout(tr); trl.setContentsMargins(10,8,10,8); trl.setSpacing(5)
 
-        BTN_W  = 50
-        BTN_H  = 52
-        PLAY_W = 62
+        BTN_W  = 54
+        BTN_H  = 54
+        PLAY_W = 74
 
-        TR_STYLE = (
-            f"QPushButton{{background:{C['panel3']};color:{C['text1']};border:1px solid {C['border']};"
-            f"border-radius:6px;font-size:18px;font-weight:400;min-width:{BTN_W}px;}}"
-            f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
-            f"QPushButton:pressed{{background:{C['panel2']};padding-top:2px;}}"
+        TR_BASE = (
+            "QPushButton{"
+            "background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #202431,stop:1 #151923);"
+            f"color:{C['text1']};"
+            "border:1px solid #303747;"
+            "border-radius:8px;"
+            "font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';"
+            "font-size:13px;"
+            "font-weight:700;"
+            "padding:0;"
+            f"min-width:{BTN_W}px;"
+            "}"
+            f"QPushButton:hover{{background:#242b3a;color:{C['text0']};border-color:{C['border2']};}}"
+            "QPushButton:pressed{background:#10141c;padding-top:1px;border-color:#596174;}"
+            "QPushButton:disabled{background:#11141a;color:#3f4555;border-color:#1d222d;}"
+        )
+        TR_COMPACT = TR_BASE + "QPushButton{font-family:'Cascadia Mono','Consolas','D2Coding';font-size:13px;}"
+        TR_JUMP = TR_BASE + f"QPushButton{{color:{C['text0']};font-size:14px;}}"
+        TR_STOP = (
+            TR_BASE
+            + f"QPushButton{{color:{C['text0']};font-size:25px;border-color:#3a4050;}}"
+            + "QPushButton:hover{background:#252a36;border-color:#697184;}"
+        )
+        TR_PLAY = (
+            "QPushButton{"
+            "background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #2d5f9f,stop:1 #1f3f70);"
+            f"color:{C['text0']};"
+            f"border:1px solid {C['blue']};"
+            "border-radius:8px;"
+            "font-family:'Segoe UI Symbol','Segoe UI Variable Text','Segoe UI';"
+            "font-size:24px;"
+            "font-weight:700;"
+            "padding:0 1px 1px 0;"
+            f"min-width:{PLAY_W}px;"
+            "}"
+            "QPushButton:hover{background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #3670ba,stop:1 #254a82);border-color:#8ec4ff;}"
+            "QPushButton:pressed{background:#173153;padding-top:1px;border-color:#b5d9ff;}"
+            "QPushButton:disabled{background:#141821;color:#4b5365;border-color:#252b37;}"
         )
 
-        # ⏏ EJECT
+        # EJECT
         self.btn_folder = QPushButton("EJECT")
-        self.btn_folder.setFixedSize(BTN_W+10, BTN_H)
-        self.btn_folder.setToolTip("EJECT — 현재 파일을 화면에서 내립니다")
-        self.btn_folder.setStyleSheet(TR_STYLE + "QPushButton{font-size:11px;font-family:'Cascadia Mono','Consolas','D2Coding';font-weight:700;letter-spacing:1px;}")
+        self.btn_folder.setFixedSize(66, BTN_H)
+        self.btn_folder.setToolTip("EJECT - 현재 파일을 화면에서 내립니다")
+        self.btn_folder.setStyleSheet(TR_BASE + "QPushButton{font-family:'Cascadia Mono','Consolas','D2Coding';font-size:11px;}")
 
         # 순수 ASCII 심볼 — 이모지 컬러 렌더링 없음
-        self.btn_m1  = QPushButton("-1");    self.btn_m1.setFixedSize(BTN_W, BTN_H); self.btn_m1.setToolTip("-1 프레임  (← 방향키)")
-        self.btn_gos = QPushButton("|<<");   self.btn_gos.setFixedSize(BTN_W, BTN_H); self.btn_gos.setToolTip("처음으로  (Home)")
+        self.btn_m1  = QPushButton("-1F");   self.btn_m1.setFixedSize(BTN_W, BTN_H); self.btn_m1.setToolTip("-1 프레임  (← 방향키)")
+        self.btn_gos = QPushButton("|<");    self.btn_gos.setFixedSize(BTN_W, BTN_H); self.btn_gos.setToolTip("처음으로  (Home)")
         self.btn_rew = QPushButton("<<");    self.btn_rew.setFixedSize(BTN_W, BTN_H); self.btn_rew.setToolTip("10초 뒤로")
         self.btn_play= QPushButton("▶");     self.btn_play.setFixedSize(PLAY_W, BTN_H); self.btn_play.setToolTip("재생 / 일시정지  (Space)")
         self.btn_stop= QPushButton("■");     self.btn_stop.setFixedSize(BTN_W, BTN_H); self.btn_stop.setToolTip("정지")
         self.btn_fwd = QPushButton(">>");    self.btn_fwd.setFixedSize(BTN_W, BTN_H); self.btn_fwd.setToolTip("10초 앞으로")
-        self.btn_goe = QPushButton(">>|");   self.btn_goe.setFixedSize(BTN_W, BTN_H); self.btn_goe.setToolTip("끝으로  (End)")
-        self.btn_p1  = QPushButton("+1");    self.btn_p1.setFixedSize(BTN_W, BTN_H); self.btn_p1.setToolTip("+1 프레임  (→ 방향키)")
+        self.btn_goe = QPushButton(">|");    self.btn_goe.setFixedSize(BTN_W, BTN_H); self.btn_goe.setToolTip("끝으로  (End)")
+        self.btn_p1  = QPushButton("+1F");   self.btn_p1.setFixedSize(BTN_W, BTN_H); self.btn_p1.setToolTip("+1 프레임  (→ 방향키)")
 
-        _mono = "font-family:'Cascadia Mono','Consolas','D2Coding';font-size:14px;font-weight:700;"
-        for b in [self.btn_m1,self.btn_gos,self.btn_rew,self.btn_stop,
-                  self.btn_fwd,self.btn_goe,self.btn_p1]:
-            b.setStyleSheet(TR_STYLE + f"QPushButton{{{_mono}}}")
+        for b in [self.btn_folder, self.btn_m1, self.btn_gos, self.btn_rew,
+                  self.btn_play, self.btn_stop, self.btn_fwd, self.btn_goe,
+                  self.btn_p1]:
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        self.btn_stop.setStyleSheet(
-            TR_STYLE
-            + f"QPushButton{{color:{C['text0']};font-family:'Cascadia Mono','Consolas','D2Coding';"
-            "font-size:24px;font-weight:700;}}"
-        )
+        for b in [self.btn_m1,self.btn_gos,self.btn_rew,self.btn_fwd,self.btn_goe,self.btn_p1]:
+            b.setStyleSheet(TR_COMPACT)
 
-        self.btn_play.setStyleSheet(
-            TR_STYLE
-            + f"QPushButton{{color:{C['text0']};font-size:24px;background:#202632;border-color:{C['blue']};}}"
-            + f"QPushButton:hover{{background:#273044;border-color:{C['blue']};}}"
-        )
+        self.btn_gos.setStyleSheet(TR_JUMP)
+        self.btn_goe.setStyleSheet(TR_JUMP)
+        self.btn_stop.setStyleSheet(TR_STOP)
+        self.btn_play.setStyleSheet(TR_PLAY)
 
         self.btn_cue = QPushButton('CUE')
         self.btn_cue.setFixedHeight(BTN_H)
         self.btn_cue.setToolTip('CUE\n선택한 파일을 플레이어에 올립니다\n이미 로드된 파일이면 IN 포인트로 이동합니다')
         self.btn_cue.setStyleSheet(
             f"QPushButton{{background:rgba(255,209,102,28);color:{C['yellow']};border:1px solid rgba(255,209,102,95);"
-            "border-radius:6px;font-family:'Cascadia Mono','Consolas','D2Coding';font-weight:700;font-size:14px;"
+            "border-radius:8px;font-family:'Cascadia Mono','Consolas','D2Coding';font-weight:700;font-size:14px;"
             "padding:0 22px;}"
             f"QPushButton:hover{{background:rgba(255,209,102,45);border-color:{C['yellow']};color:#ffffff;}}"
-            "QPushButton:pressed{padding-top:2px;background:#181818;}"
+            "QPushButton:pressed{padding-top:1px;background:#181818;}"
         )
+        self.btn_cue.setCursor(Qt.CursorShape.PointingHandCursor)
 
         self.btn_folder.clicked.connect(self.eject_clip)
         self.btn_m1.clicked.connect(lambda: self._step(-1))
