@@ -847,15 +847,26 @@ class VideoPanel(QWidget):
             f"border-top:1px solid {C['border']};border-bottom:1px solid {C['border']};"
         )
         tcl = QHBoxLayout(tc_w); tcl.setContentsMargins(16,6,16,6); tcl.setSpacing(0)
+        TC_META_W = 220
+        tc_balance = QWidget()
+        tc_balance.setFixedWidth(TC_META_W)
+        tc_balance.setStyleSheet("background:transparent;")
+        tcl.addWidget(tc_balance)
+
         self.tc_main = QLabel('00:00:00;00')
         self.tc_main.setStyleSheet(f"color:{C['yellow']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:39px;font-weight:600;background:transparent;")
         self.tc_main.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        tcl.addWidget(self.tc_main, 3)
-        div = QFrame(); div.setFrameShape(QFrame.Shape.VLine)
-        div.setStyleSheet(f"color:{C['border']};"); tcl.addWidget(div)
-        tcl.addSpacing(14)
+        self.tc_main.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        tcl.addWidget(self.tc_main, 1)
+
+        tc_meta = QFrame()
+        tc_meta.setFixedWidth(TC_META_W)
+        tc_meta.setStyleSheet("QFrame{background:transparent;border-left:1px solid #202633;}")
+        meta_l = QHBoxLayout(tc_meta)
+        meta_l.setContentsMargins(14,0,0,0)
+        meta_l.setSpacing(0)
         sg = QGridLayout(); sg.setSpacing(1); sg.setContentsMargins(0,0,0,0)
-        sg.setColumnMinimumWidth(0, 36); sg.setColumnMinimumWidth(1, 128)
+        sg.setColumnMinimumWidth(0, 32); sg.setColumnMinimumWidth(1, 112)
         self.tc_dur  = QLabel('——:——:——;——')
         self.tc_rem  = QLabel('——:——:——;——')
         self.tc_in_l = QLabel('——:——:——;——')
@@ -866,11 +877,13 @@ class VideoPanel(QWidget):
             ('IN',   self.tc_in_l,  C['teal']),
             ('OUT',  self.tc_out_l, C['orange']),
         ]):
-            kl = mk_label(k, C['text3'], 'Consolas', 10, bold=True); kl.setFixedWidth(36)
-            v.setStyleSheet(f"color:{c};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:14px;background:transparent;")
+            kl = mk_label(k, C['text3'], 'Consolas', 10, bold=True); kl.setFixedWidth(32)
+            v.setFixedWidth(112)
+            v.setStyleSheet(f"color:{c};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:13px;background:transparent;")
             v.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             sg.addWidget(kl, row, 0); sg.addWidget(v, row, 1)
-        tcl.addLayout(sg, 2)
+        meta_l.addLayout(sg)
+        tcl.addWidget(tc_meta)
         layout.addWidget(tc_w)
 
         # PROGRESS SLIDER
@@ -1566,8 +1579,8 @@ class VideoPanel(QWidget):
         self.tc_rem.setText("00:00:00;00")
         self.tc_in_l.setText("—")
         self.tc_out_l.setText("—")
-        self.tc_in_l.setStyleSheet(f"color:{C['text0']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:16px;background:transparent;")
-        self.tc_out_l.setStyleSheet(f"color:{C['text0']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:16px;background:transparent;")
+        self.tc_in_l.setStyleSheet(f"color:{C['text0']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:13px;background:transparent;")
+        self.tc_out_l.setStyleSheet(f"color:{C['text0']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:13px;background:transparent;")
 
         # 슬라이더 초기화
         self.slider.setValue(0)
@@ -2457,8 +2470,8 @@ class VideoPanel(QWidget):
         self.empty_label.setStyleSheet(
             f"color:{C['text3']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:14px;background:#000;")
         self.tc_in_l.setText("—"); self.tc_out_l.setText("—")
-        self.tc_in_l.setStyleSheet(f"color:{C['text0']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:16px;background:transparent;")
-        self.tc_out_l.setStyleSheet(f"color:{C['text0']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:16px;background:transparent;")
+        self.tc_in_l.setStyleSheet(f"color:{C['text0']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:13px;background:transparent;")
+        self.tc_out_l.setStyleSheet(f"color:{C['text0']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:13px;background:transparent;")
         mark_step('state_reset')
 
         # 클립 리스트 선택 표시
@@ -3239,22 +3252,22 @@ class VideoPanel(QWidget):
         self.tc_in_l.setText(
             self._frames_to_tc(self._display_frame, include_offset=self._tc_include_offset())
         )
-        self.tc_in_l.setStyleSheet(f"color:{C['yellow']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:16px;background:transparent;")
+        self.tc_in_l.setStyleSheet(f"color:{C['yellow']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:13px;background:transparent;")
 
     def _clr_in(self):
         self.in_pt=None; self.tc_in_l.setText("—")
-        self.tc_in_l.setStyleSheet(f"color:{C['text0']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:16px;background:transparent;")
+        self.tc_in_l.setStyleSheet(f"color:{C['text0']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:13px;background:transparent;")
 
     def _set_out(self):
         self.out_pt = self._display_frame / self._media_fps()
         self.tc_out_l.setText(
             self._frames_to_tc(self._display_frame, include_offset=self._tc_include_offset())
         )
-        self.tc_out_l.setStyleSheet(f"color:{C['orange']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:16px;background:transparent;")
+        self.tc_out_l.setStyleSheet(f"color:{C['orange']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:13px;background:transparent;")
 
     def _clr_out(self):
         self.out_pt=None; self.tc_out_l.setText("—")
-        self.tc_out_l.setStyleSheet(f"color:{C['text0']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:16px;background:transparent;")
+        self.tc_out_l.setStyleSheet(f"color:{C['text0']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:13px;background:transparent;")
 
 
     # ── 이벤트 ───────────────────────────────────────────
