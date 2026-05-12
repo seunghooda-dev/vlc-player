@@ -299,12 +299,13 @@ class LoudnessMeter(QWidget):
         p.setFont(QFont('Segoe UI Variable',7,QFont.Weight.Bold)); p.setPen(QColor('#555a68'))
         p.drawText(0,0,W,LBL_H,Qt.AlignmentFlag.AlignHCenter|Qt.AlignmentFlag.AlignVCenter,'LKFS')
         s_str=f'{self._lkfs_s:.1f}' if self._lkfs_s>LMIN else '---'
+        show_i = bool(self._qc_i is not None or (self._qc_status and self._qc_status != 'LIVE'))
         if self._qc_i is not None:
             i_str=f'{self._qc_i:.1f}' if self._qc_i>LMIN else '---'
-        elif self._qc_status:
+        elif show_i:
             i_str=self._qc_status[:6]
         else:
-            i_str=f'{self._lkfs_i:.1f}' if self._lkfs_i>LMIN else '---'
+            i_str=''
         s_col=meter_color(self._lkfs_s)
         i_col=QColor('#8fb4ff') if self._qc_i is not None else QColor('#ff9f43') if self._qc_status else QColor('#7d879e')
 
@@ -313,9 +314,12 @@ class LoudnessMeter(QWidget):
         p.drawLine(6,H-BOT_H,W-6,H-BOT_H)
         p.setFont(QFont('Cascadia Mono',8,QFont.Weight.Bold))
         p.setPen(s_col)
-        p.drawText(0,H-BOT_H+5,W,15,Qt.AlignmentFlag.AlignHCenter|Qt.AlignmentFlag.AlignVCenter,f'S {s_str}')
-        p.setPen(i_col)
-        p.drawText(0,H-BOT_H+22,W,15,Qt.AlignmentFlag.AlignHCenter|Qt.AlignmentFlag.AlignVCenter,f'I {i_str}')
+        if show_i:
+            p.drawText(0,H-BOT_H+5,W,15,Qt.AlignmentFlag.AlignHCenter|Qt.AlignmentFlag.AlignVCenter,f'S {s_str}')
+            p.setPen(i_col)
+            p.drawText(0,H-BOT_H+22,W,15,Qt.AlignmentFlag.AlignHCenter|Qt.AlignmentFlag.AlignVCenter,f'I {i_str}')
+        else:
+            p.drawText(0,H-BOT_H+13,W,17,Qt.AlignmentFlag.AlignHCenter|Qt.AlignmentFlag.AlignVCenter,f'S {s_str}')
         p.end()
 
 # ══════════════════════════════════════════════════════════
