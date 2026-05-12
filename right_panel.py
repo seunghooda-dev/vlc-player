@@ -568,13 +568,23 @@ class RightPanel(QWidget):
                     thread.abort()
                 except Exception as e:
                     log.debug(f'{label} cancel abort: {e}')
+                finished = False
                 try:
-                    thread.wait(int(wait_ms))
+                    finished = bool(thread.wait(int(wait_ms)))
                 except Exception as e:
                     log.debug(f'{label} cancel wait: {e}')
+                if not finished:
+                    log.warning(f'{label} cancel wait timeout — force terminating thread')
+                    try:
+                        thread.terminate()
+                        thread.wait(800)
+                    except Exception as e:
+                        log.debug(f'{label} force terminate: {e}')
             try:
                 if not thread.isRunning():
                     setattr(self, attr, None)
+                else:
+                    log.warning(f'{label} thread still running after cancel')
             except Exception:
                 setattr(self, attr, None)
 

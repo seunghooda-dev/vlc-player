@@ -7,7 +7,7 @@ from pathlib import Path
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
     QSplitter, QDialog, QPushButton, QMessageBox, QPlainTextEdit,
-    QComboBox,
+    QComboBox, QLineEdit,
 )
 from PyQt6.QtCore    import Qt, QTimer
 from PyQt6.QtGui     import QColor, QPalette, QFont
@@ -15,7 +15,7 @@ from PyQt6.QtGui     import QColor, QPalette, QFont
 from constants    import (
     C, STYLE, LOG_DIR, TMP_DIR, BASE_DIR, log, APP_FONT_QT,
     check_runtime_environment, format_runtime_environment, format_runtime_startup_alert,
-    cleanup_child_processes, cleanup_orphan_audio_processes,
+    cleanup_child_processes, cleanup_orphan_audio_processes, runtime_child_process_status,
     cache_summary, cleanup_runtime_cache, format_bytes, format_cache_summary,
     load_settings, save_settings,
 )
@@ -244,6 +244,7 @@ class MainWindow(QMainWindow):
             log.info(f"migration log: {migration_log.get('path')}")
         for err in migration_log.get('errors') or []:
             log.warning(f"migration log write failed: {err}")
+        self._log_package_check(runtime)
         self._log_legacy_root_data(runtime)
         self._log_audio_child_status(runtime)
         if runtime.get('ok'):
@@ -312,6 +313,15 @@ class MainWindow(QMainWindow):
                 "legacy root data found: "
                 f"label={group.get('label')} root={group.get('root')} "
                 f"items={names or '-'} policy=inform_only"
+            )
+
+    def _log_package_check(self, runtime):
+        for item in runtime.get('package_check') or []:
+            level = log.info if item.get('ok') else log.warning
+            level(
+                "package check: "
+                f"{item.get('name')} ok={item.get('ok')} "
+                f"info={item.get('message')} path={item.get('path') or '-'}"
             )
 
     def _attach_audio_child_status(self, runtime):
@@ -540,7 +550,7 @@ class MainWindow(QMainWindow):
         lay.addWidget(row)
         dlg.exec()
 
-    def _recent_error_log_text(self, max_lines=300, mode='warn'):
+    def _recent_error_log_text(self, max_lines=300, mode='warn', keyword=''):
         log_path = LOG_DIR / 'player.log'
         try:
             if not log_path.exists():
@@ -550,13 +560,20 @@ class MainWindow(QMainWindow):
                 'all':   ('ALL', None),
                 'warn':  ('WARNING / ERROR / CRITICAL', ('] WARNING', '] ERROR', '] CRITICAL')),
                 'error': ('ERROR / CRITICAL', ('] ERROR', '] CRITICAL')),
+                'child': ('자식/오디오 프로세스', ('child ', 'audio child', 'audio mix', 'ffplay', 'ffmpeg')),
+                'playback': ('VLC / 재생', ('VLC', 'PLAYER ERROR', 'play watchdog', 'cue', 'load_file')),
+                'analysis': ('FFmpeg / 분석', ('BlackDetect', 'AudioAnalyze', 'LoudnessAnalyze', 'analysis', 'black detect', 'audio analyze', 'loudness')),
+                'db': ('DB / SQLite', ('[DB]', 'sqlite', 'database', 'archive.db')),
             }
             label, levels = modes.get(mode, modes['warn'])
             if levels is None:
                 picked = lines[-max_lines:]
             else:
                 picked = [line for line in lines if any(level in line for level in levels)][-max_lines:]
-            header = f"LOG FILE: {log_path}\nFILTER : {label}\nLINES  : {len(picked)} / {len(lines)}\n"
+            key = str(keyword or '').strip()
+            if key:
+                picked = [line for line in picked if key.lower() in line.lower()][-max_lines:]
+            header = f"LOG FILE: {log_path}\nFILTER : {label}\nKEYWORD: {key or '-'}\nLINES  : {len(picked)} / {len(lines)}\n"
             if not picked:
                 return header + "\n표시할 로그가 없습니다."
             return header + "\n" + "\n".join(picked[-max_lines:])
@@ -591,6 +608,10 @@ class MainWindow(QMainWindow):
         filter_combo = QComboBox()
         filter_combo.addItem('경고+', 'warn')
         filter_combo.addItem('오류만', 'error')
+        filter_combo.addItem('자식/오디오', 'child')
+        filter_combo.addItem('VLC/재생', 'playback')
+        filter_combo.addItem('FFmpeg/분석', 'analysis')
+        filter_combo.addItem('DB', 'db')
         filter_combo.addItem('전체', 'all')
         filter_combo.setFixedHeight(30)
         filter_combo.setStyleSheet(
@@ -602,6 +623,16 @@ class MainWindow(QMainWindow):
         )
         fl.addWidget(filter_lbl)
         fl.addWidget(filter_combo)
+        keyword_edit = QLineEdit()
+        keyword_edit.setPlaceholderText('검색어')
+        keyword_edit.setClearButtonEnabled(True)
+        keyword_edit.setFixedHeight(30)
+        keyword_edit.setStyleSheet(
+            f"QLineEdit{{background:{C['panel3']};color:{C['text1']};border:1px solid {C['border']};"
+            "border-radius:6px;font-size:12px;padding:0 10px;min-width:150px;}}"
+            f"QLineEdit:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
+        )
+        fl.addWidget(keyword_edit)
         fl.addStretch()
         lay.addWidget(filter_row)
 
@@ -615,10 +646,11 @@ class MainWindow(QMainWindow):
 
         def _refresh_log():
             mode = filter_combo.currentData() or 'warn'
-            text.setPlainText(self._recent_error_log_text(mode=mode))
+            text.setPlainText(self._recent_error_log_text(mode=mode, keyword=keyword_edit.text()))
             title.setText('오류 로그')
 
         filter_combo.currentIndexChanged.connect(_refresh_log)
+        keyword_edit.textChanged.connect(_refresh_log)
         _refresh_log()
 
         row = QWidget()
@@ -746,6 +778,7 @@ class MainWindow(QMainWindow):
         try:
             vp = self.vp
             rp = self.rp
+            self._log_child_process_snapshot('close begin')
             try:
                 self._settings = save_settings(
                     window_size=[self.width(), self.height()],
@@ -802,9 +835,15 @@ class MainWindow(QMainWindow):
             try: vp.player.stop()
             except Exception as e: log.debug(f'player stop: {e}')
             try:
-                cleanup_child_processes()
+                summary = cleanup_child_processes()
+                log.info(
+                    "close child cleanup summary: "
+                    f"running_before={summary.get('running_before')} "
+                    f"running_after={summary.get('running_after')}"
+                )
             except Exception as e:
                 log.debug(f'cleanup child processes: {e}')
+            self._log_child_process_snapshot('close after cleanup')
 
             # tmp 파일 정리
             _cleanup_tmp_files()
@@ -812,6 +851,21 @@ class MainWindow(QMainWindow):
         except Exception as e:
             log.error(f'closeEvent 오류: {e}')
         e.accept()
+
+    def _log_child_process_snapshot(self, label):
+        try:
+            rows = runtime_child_process_status()
+            if not rows:
+                log.info(f'child snapshot {label}: none')
+                return
+            for row in rows:
+                log.info(
+                    f"child snapshot {label}: pid={row.get('pid')} "
+                    f"state={row.get('state')} label={row.get('label')} "
+                    f"cmd={row.get('command') or '-'}"
+                )
+        except Exception as ex:
+            log.debug(f'child snapshot {label}: {ex}')
 
 def _setup_global_exception_handler():
     import traceback, threading

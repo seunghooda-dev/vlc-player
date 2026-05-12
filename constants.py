@@ -572,6 +572,56 @@ def _runtime_search_paths():
     paths.append('Windows PATH')
     return paths
 
+def runtime_package_check():
+    """배포본에서 tools/저장 위치가 분리된 상태인지 안내용으로 점검한다."""
+    checks = []
+    frozen = bool(getattr(sys, 'frozen', False))
+    checks.append({
+        'name': '실행 형태',
+        'ok': True,
+        'message': '패키지 EXE' if frozen else '개발 실행',
+        'path': str(APP_DIR),
+        'hint': '',
+    })
+    tools_dir = APP_DIR / 'tools'
+    checks.append({
+        'name': 'tools 폴더',
+        'ok': tools_dir.exists() and tools_dir.is_dir(),
+        'message': '있음' if tools_dir.exists() else '없음',
+        'path': str(tools_dir),
+        'hint': r'다른 PC 배포 시 ffmpeg.exe / ffprobe.exe / ffplay.exe를 tools 폴더에 포함하는 것을 권장합니다.',
+    })
+    for exe_name, resolved in (
+        ('ffmpeg.exe', FFMPEG),
+        ('ffprobe.exe', FFPROBE),
+        ('ffplay.exe', FFPLAY),
+    ):
+        source = _classify_runtime_source(resolved) if resolved else '찾을 수 없음'
+        bundled = source in ('앱 tools 폴더', '내장 tools 폴더')
+        checks.append({
+            'name': exe_name,
+            'ok': bool(resolved and Path(str(resolved)).exists()),
+            'message': '패키지 포함' if bundled else source,
+            'path': str(resolved or ''),
+            'hint': '' if bundled else r'배포 안정성을 높이려면 tools 폴더에 포함하세요. PATH 의존은 PC마다 달라질 수 있습니다.',
+        })
+    checks.append({
+        'name': 'VLC',
+        'ok': bool(VLC_DIR and (Path(VLC_DIR) / 'libvlc.dll').exists()),
+        'message': _classify_runtime_source(VLC_DIR) if VLC_DIR else '찾을 수 없음',
+        'path': str(VLC_DIR or ''),
+        'hint': r'다른 PC에는 VLC 설치 또는 libvlc.dll 포함 경로가 필요합니다.',
+    })
+    separated = _path_key(APP_DIR) != _path_key(USER_DATA_DIR)
+    checks.append({
+        'name': '사용자 데이터 분리',
+        'ok': separated,
+        'message': 'EXE 폴더와 사용자 데이터 폴더 분리됨' if separated else 'EXE 폴더와 사용자 데이터 폴더가 같습니다',
+        'path': str(USER_DATA_DIR),
+        'hint': '배포본은 설정/DB/log/tmp를 LOCALAPPDATA에 저장하는 구성이 안전합니다.',
+    })
+    return checks
+
 def _runtime_tool_state(name):
     canonical = next((key for key in _RUNTIME_TOOL_META if key.lower() == str(name).lower()), str(name))
     meta = _RUNTIME_TOOL_META.get(canonical)
@@ -1224,6 +1274,7 @@ def check_runtime_environment():
         'ok': not problems,
         'items': items,
         'storage_policy': runtime_storage_policy(),
+        'package_check': runtime_package_check(),
         'migration': runtime_migration_events(),
         'migration_log': runtime_migration_log_info(),
         'legacy_data': runtime_legacy_root_data_status(),
@@ -1268,6 +1319,16 @@ def format_runtime_environment(runtime=None):
         lines.append(f"  역할: {item.get('role') or '-'}")
         lines.append(f"  위치: {item.get('path') or '-'}")
         lines.append(f"  상태: {item.get('status') or '-'}")
+        lines.append('')
+    lines.append('배포 실행본 점검')
+    lines.append('-' * 42)
+    for item in runtime.get('package_check', []):
+        mark = 'OK' if item.get('ok') else 'CHECK'
+        lines.append(f"[{mark}] {item.get('name', '')}")
+        lines.append(f"  위치: {item.get('path') or '-'}")
+        lines.append(f"  정보: {item.get('message') or '-'}")
+        if item.get('hint'):
+            lines.append(f"  참고: {item.get('hint')}")
         lines.append('')
     legacy_groups = runtime.get('legacy_data') or []
     lines.append('레거시 루트 데이터')
@@ -1565,6 +1626,10 @@ def runtime_child_process_status():
         return [{'pid': 0, 'label': 'child registry', 'state': 'error', 'returncode': None, 'command': '', 'error': str(e)}]
     return rows
 
+def _running_child_processes(rows=None):
+    rows = rows if rows is not None else runtime_child_process_status()
+    return [row for row in rows if row.get('state') == 'running']
+
 def terminate_child_process(proc, label='process', timeout=0.7):
     if not proc:
         return
@@ -1588,10 +1653,38 @@ def terminate_child_process(proc, label='process', timeout=0.7):
         unregister_child_process(proc)
 
 def cleanup_child_processes():
+    before = runtime_child_process_status()
+    running_before = _running_child_processes(before)
+    if running_before:
+        for row in running_before:
+            _safe_proc_log(
+                _logging.INFO if '_logging' in globals() else 20,
+                f"child cleanup before: pid={row.get('pid')} "
+                f"state={row.get('state')} label={row.get('label')} "
+                f"cmd={row.get('command') or '-'}"
+            )
     with _CHILD_PROC_LOCK:
         procs = list(_CHILD_PROCS.values())
     for proc, label in procs:
         terminate_child_process(proc, label)
+    after = runtime_child_process_status()
+    running_after = _running_child_processes(after)
+    if running_after:
+        for row in running_after:
+            _safe_proc_log(
+                _logging.WARNING if '_logging' in globals() else 30,
+                f"child cleanup remaining: pid={row.get('pid')} "
+                f"state={row.get('state')} label={row.get('label')} "
+                f"cmd={row.get('command') or '-'}"
+            )
+    else:
+        _safe_proc_log(_logging.INFO if '_logging' in globals() else 20, 'child cleanup complete: no registered child processes')
+    return {
+        'before': before,
+        'after': after,
+        'running_before': len(running_before),
+        'running_after': len(running_after),
+    }
 
 def cleanup_orphan_audio_processes():
     """이전 버전에서 남은 ffmpeg/ffplay 오디오 믹스 고아 프로세스만 좁게 정리."""
@@ -1660,6 +1753,24 @@ from logging.handlers import TimedRotatingFileHandler as _TRFHandler
 _LOG_MAX_BYTES = 10 * 1024 * 1024
 _LOG_BACKUP_COUNT = 30
 
+class _SafeTimedRotatingFileHandler(_TRFHandler):
+    """다른 MXF QC Player 프로세스가 로그를 잡고 있어도 롤오버 실패를 삼킨다."""
+    def doRollover(self):
+        try:
+            super().doRollover()
+        except PermissionError as e:
+            try:
+                if self.stream:
+                    self.stream.flush()
+            except Exception:
+                pass
+            self.rolloverAt = self.computeRollover(int(time.time()))
+        except OSError as e:
+            try:
+                self.rolloverAt = self.computeRollover(int(time.time()))
+            except Exception:
+                pass
+
 def _rotate_large_log_file():
     warnings = []
     try:
@@ -1702,7 +1813,7 @@ def _make_logger():
     try:
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         rotation_warnings = _rotate_large_log_file()
-        fh = _TRFHandler(
+        fh = _SafeTimedRotatingFileHandler(
             LOG_DIR / 'player.log',
             when='midnight', interval=1, backupCount=30,
             encoding='utf-8'

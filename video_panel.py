@@ -518,6 +518,7 @@ class VideoPanel(QWidget):
         self._tc_thread=None
         self._probe_thread = None
         self._probe_seq = 0
+        self._load_seq = 0
         self._metadata_ready = False
         self._cue_ready = False
         self._file_loaded_emitted = False
@@ -557,6 +558,20 @@ class VideoPanel(QWidget):
 
     def _is_busy_loading(self):
         return bool(getattr(self, '_loading', False))
+
+    def _next_load_seq(self, reason='', filepath=None):
+        self._load_seq += 1
+        if reason:
+            name = Path(filepath).name if filepath else '-'
+            log.debug(f'load seq advanced: seq={self._load_seq} reason={reason} file={name}')
+        return self._load_seq
+
+    def _load_is_current(self, seq, filepath=None):
+        if seq is not None and seq != self._load_seq:
+            return False
+        if filepath and filepath != self.cur_file:
+            return False
+        return True
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -1970,7 +1985,7 @@ class VideoPanel(QWidget):
         self.status_changed.emit(status_message)
         self._emit_file_loaded_once()
 
-    def _prepare_vlc_cue(self, filepath, target_ms=0):
+    def _prepare_vlc_cue(self, filepath, target_ms=0, load_seq=None):
         self._cue_ready_seq += 1
         seq = self._cue_ready_seq
         start = time.monotonic()
@@ -1979,7 +1994,7 @@ class VideoPanel(QWidget):
         file_name = Path(filepath).name
 
         def _force_cue_position(label='cue'):
-            if seq != self._cue_ready_seq or filepath != self.cur_file:
+            if seq != self._cue_ready_seq or not self._load_is_current(load_seq, filepath):
                 return False
             try:
                 before = int(self.player.position() or 0)
@@ -1997,12 +2012,12 @@ class VideoPanel(QWidget):
                 return False
 
         def _finish_cue():
-            if seq != self._cue_ready_seq or filepath != self.cur_file:
+            if seq != self._cue_ready_seq or not self._load_is_current(load_seq, filepath):
                 return
             _force_cue_position('pre-complete')
 
             def _complete_after_settle():
-                if seq != self._cue_ready_seq or filepath != self.cur_file:
+                if seq != self._cue_ready_seq or not self._load_is_current(load_seq, filepath):
                     return
                 _force_cue_position('complete')
                 self._complete_file_load(
@@ -2014,7 +2029,7 @@ class VideoPanel(QWidget):
             QTimer.singleShot(140, _complete_after_settle)
 
         def _poll():
-            if seq != self._cue_ready_seq or filepath != self.cur_file:
+            if seq != self._cue_ready_seq or not self._load_is_current(load_seq, filepath):
                 return
             elapsed = time.monotonic() - start
             media_len = 0
@@ -2053,7 +2068,7 @@ class VideoPanel(QWidget):
             QTimer.singleShot(120, _finish_cue)
 
         def _start_preroll():
-            if seq != self._cue_ready_seq or filepath != self.cur_file:
+            if seq != self._cue_ready_seq or not self._load_is_current(load_seq, filepath):
                 return
             self._empty_proxy.hide()
             self._video_item.show()
@@ -2189,7 +2204,7 @@ class VideoPanel(QWidget):
             warnings.append('길이 정보 확인 실패 — 탐색/REM 표시가 제한될 수 있습니다')
         return True, '', '', warnings
 
-    def _start_metadata_probe(self, filepath, load_t0, timings):
+    def _start_metadata_probe(self, filepath, load_t0, timings, load_seq=None):
         self._probe_seq += 1
         seq = self._probe_seq
         thread = ProbeThread(filepath)
@@ -2197,7 +2212,7 @@ class VideoPanel(QWidget):
         file_name = Path(filepath).name
 
         def _stale():
-            return seq != self._probe_seq or filepath != self.cur_file
+            return seq != self._probe_seq or not self._load_is_current(load_seq, filepath)
 
         def _done(info, elapsed, t=thread):
             if _stale():
@@ -2287,6 +2302,7 @@ class VideoPanel(QWidget):
 
         self._remember_recent_file(filepath)
         mark_step('recent')
+        load_seq = self._next_load_seq('load_file', filepath)
         log.info(f'load_file: {Path(filepath).name}')
         self._stop_all()
         mark_step('stop_all')
@@ -2338,11 +2354,12 @@ class VideoPanel(QWidget):
                 timings.append(f'vlc_set_source={time.monotonic() - vlc_set_t0:.3f}s')
                 log.info(
                     f'load_file async cue start: {Path(filepath).name} '
+                    f'seq={load_seq} '
                     f'total_before_cue={time.monotonic() - load_t0:.3f}s '
                     f'steps={" ".join(timings)}'
                 )
-                self._prepare_vlc_cue(filepath, 0)
-                self._start_metadata_probe(filepath, load_t0, list(timings))
+                self._prepare_vlc_cue(filepath, 0, load_seq=load_seq)
+                self._start_metadata_probe(filepath, load_t0, list(timings), load_seq=load_seq)
             except Exception as e:
                 msg = friendly_error_text('vlc_load', e, filepath)
                 self.empty_label.setText(f'⚠ {msg}')
@@ -2473,10 +2490,11 @@ class VideoPanel(QWidget):
                 timings.append(f'vlc_set_source={time.monotonic() - vlc_set_t0:.3f}s')
                 log.info(
                     f'load_file timing: {Path(filepath).name} '
+                    f'seq={load_seq} '
                     f'total_before_cue={time.monotonic() - load_t0:.3f}s '
                     f'steps={" ".join(timings)}'
                 )
-                self._prepare_vlc_cue(filepath, 0)
+                self._prepare_vlc_cue(filepath, 0, load_seq=load_seq)
             except Exception as e:
                 msg = friendly_error_text('vlc_load', e, filepath)
                 self.empty_label.setText(f'⚠ {msg}')
@@ -2506,7 +2524,7 @@ class VideoPanel(QWidget):
             # 사전 변환 캐시 있음 → 즉시 올림
             self.empty_label.setText('⏳  로딩 중...')
             self._empty_proxy.show(); self._video_item.hide()
-            QTimer.singleShot(50, lambda t=cached_tmp: self._on_transcode_ready(t))
+            QTimer.singleShot(50, lambda t=cached_tmp, fp=filepath, s=load_seq: self._on_transcode_ready(t, fp, s))
         else:
             # 캐시 없음 → 변환 시작
             ext = Path(filepath).suffix.lower()
@@ -2515,13 +2533,15 @@ class VideoPanel(QWidget):
             self.empty_label.setText(msg)
             self._empty_proxy.show(); self._video_item.hide()
             self._tc_thread = TranscodeThread(filepath, self._get_selected_ch_pairs())
-            self._tc_thread.ready.connect(self._on_transcode_ready)
-            self._tc_thread.ready_full.connect(self._on_transcode_full)
+            self._tc_thread.ready.connect(lambda tmp, fp=filepath, s=load_seq: self._on_transcode_ready(tmp, fp, s))
+            self._tc_thread.ready_full.connect(lambda tmp, fp=filepath, s=load_seq: self._on_transcode_full(tmp, fp, s))
             # 진행률 표시
             self.prog_ai.setRange(0, 100)
             self.prog_ai.setValue(0)
             self.prog_ai.show()
-            def _tc_progress(pct):
+            def _tc_progress(pct, fp=filepath, s=load_seq):
+                if not self._load_is_current(s, fp):
+                    return
                 self.prog_ai.setValue(pct)
                 if pct < 100:
                     self.ai_lbl.setText(f'⏳ 변환 중... {pct}%')
@@ -2530,7 +2550,10 @@ class VideoPanel(QWidget):
                     self.prog_ai.hide()
                     self.prog_ai.setRange(0, 0)  # indeterminate로 복원
             self._tc_thread.progress.connect(_tc_progress)
-            def _tc_err(msg, el=self.empty_label, ai=self.ai_lbl, fp=filepath):
+            def _tc_err(msg, el=self.empty_label, ai=self.ai_lbl, fp=filepath, s=load_seq):
+                if not self._load_is_current(s, fp):
+                    log.debug(f'stale transcode error ignored: {Path(fp).name}')
+                    return
                 friendly = friendly_error_text('ffmpeg_transcode', msg, fp)
                 el.setText(f'⚠ {friendly}')
                 ai.setText(f'⚠ {friendly_error_title("ffmpeg_transcode", msg, fp)}')
@@ -2556,7 +2579,10 @@ class VideoPanel(QWidget):
         else:
             self.player.setPosition(ms)
 
-    def _on_transcode_ready(self, tmp):
+    def _on_transcode_ready(self, tmp, expected_file=None, load_seq=None):
+        if expected_file and not self._load_is_current(load_seq, expected_file):
+            log.debug(f'stale transcode ready ignored: {Path(expected_file).name}')
+            return
         if not self.cur_file or getattr(self, '_loading', False): return
         import os
         if not os.path.exists(tmp): return
@@ -2579,7 +2605,10 @@ class VideoPanel(QWidget):
             self.ai_lbl.setText(f'⚠ {friendly_error_title("player_load", e, self.cur_file)}')
             log.error(f'transcode ready load error: {e}')
 
-    def _on_transcode_full(self, tmp):
+    def _on_transcode_full(self, tmp, expected_file=None, load_seq=None):
+        if expected_file and not self._load_is_current(load_seq, expected_file):
+            log.debug(f'stale transcode full ignored: {Path(expected_file).name}')
+            return
         if not self.cur_file or getattr(self, '_loading', False): return
         import os
         if not os.path.exists(tmp): return
@@ -3001,14 +3030,22 @@ class VideoPanel(QWidget):
         if not self._transport_allowed('play_pause'):
             return
         if self.player.playbackState()==QMediaPlayer.PlaybackState.PlayingState:
+            log.info(f'play request: pause file={Path(self.cur_file).name} pos={self.player.position()}ms')
             self.player.pause()
-        else: self.player.play()
+        else:
+            log.info(
+                f'play request: start file={Path(self.cur_file).name} '
+                f'pos={self.player.position()}ms metadata={self._metadata_ready} cue={self._cue_ready} '
+                f'ch={self._get_selected_audio_channels()}'
+            )
+            self.player.play()
 
     def stop(self):
         self._transport_guard_action = 'stop'
         self._transport_guard_until = time.monotonic() + 0.12
         if self._is_busy_loading():
             file_name = Path(self.cur_file).name if self.cur_file else '?'
+            self._next_load_seq('stop_cancel', self.cur_file)
             self._stop_all()
             for f in self._files:
                 if self._same_path(f.get("filepath"), self.cur_file):
@@ -3133,6 +3170,11 @@ class VideoPanel(QWidget):
                 self._right_panel.refresh_explorer()
         # LED 깜빡임 제어
         if playing:
+            log.info(
+                f'play state entered file={Path(self.cur_file).name if self.cur_file else "-"} '
+                f'pos={self.player.position()}ms metadata={self._metadata_ready} cue={self._cue_ready} '
+                f'audio_first={getattr(self, "_first_audio_start_after_cue", False)}'
+            )
             self._reset_audio_recovery()
             self._frame_clock_active = True
             self._sync_frame_clock(self.player.position())
@@ -3147,6 +3189,11 @@ class VideoPanel(QWidget):
                 self._schedule_audio_mix(delay_ms=60)
             self._arm_play_start_watchdog('state')
         else:
+            if self.cur_file:
+                log.debug(
+                    f'play state left file={Path(self.cur_file).name} '
+                    f'pos={self.player.position()}ms state={state.name if hasattr(state, "name") else state}'
+                )
             self._cancel_play_start_watchdog()
             self._frame_clock_active = False
             self._frame_display_timer.stop()
