@@ -596,8 +596,11 @@ class VideoPanel(QWidget):
         layout.setSpacing(0)
 
         # INFO BAR
-        ib = QWidget(); ib.setFixedHeight(28)
-        ib.setStyleSheet(f"background:{C['panel2']};border-bottom:1px solid {C['border']};")
+        ib = QWidget(); ib.setFixedHeight(30)
+        ib.setStyleSheet(
+            "background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #090b10,stop:0.5 #11151d,stop:1 #090b10);"
+            f"border-bottom:1px solid {C['border']};"
+        )
         ibl = QHBoxLayout(ib); ibl.setContentsMargins(12,0,12,0); ibl.setSpacing(0)
 
         # 재생 LED (깜빡임)
@@ -655,7 +658,8 @@ class VideoPanel(QWidget):
         self.empty_label = QLabel("▶\n\nMXF 파일을 열어주세요\n\n⏏ 파일을 드래그하거나 CUE 버튼을 누르세요")
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty_label.setStyleSheet(
-            f"color:{C['text2']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:14px;background:#000;")
+            f"color:{C['text2']};font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';"
+            "font-size:14px;font-weight:500;background:#000;")
         self._empty_proxy = self._scene.addWidget(self.empty_label)
         self._empty_proxy.setZValue(1)
 
@@ -838,10 +842,13 @@ class VideoPanel(QWidget):
 
         # TIMECODE DISPLAY
         tc_w = QWidget(); tc_w.setFixedHeight(88)
-        tc_w.setStyleSheet(f"background:{C['panel2']};border-top:1px solid {C['border']};border-bottom:1px solid {C['border']};")
+        tc_w.setStyleSheet(
+            "background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #0d1017,stop:1 #080a0f);"
+            f"border-top:1px solid {C['border']};border-bottom:1px solid {C['border']};"
+        )
         tcl = QHBoxLayout(tc_w); tcl.setContentsMargins(16,6,16,6); tcl.setSpacing(0)
         self.tc_main = QLabel('00:00:00;00')
-        self.tc_main.setStyleSheet(f"color:{C['yellow']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:38px;font-weight:500;background:transparent;")
+        self.tc_main.setStyleSheet(f"color:{C['yellow']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:39px;font-weight:600;background:transparent;")
         self.tc_main.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tcl.addWidget(self.tc_main, 3)
         div = QFrame(); div.setFrameShape(QFrame.Shape.VLine)
@@ -868,14 +875,14 @@ class VideoPanel(QWidget):
 
         # PROGRESS SLIDER
         pw = QWidget(); pw.setFixedHeight(18)
-        pw.setStyleSheet(f"background:{C['panel2']};")
+        pw.setStyleSheet("background:#090b10;")
         pbl = QHBoxLayout(pw); pbl.setContentsMargins(0,0,0,0)
         self.slider = QSlider(Qt.Orientation.Horizontal)
         self.slider.setRange(0,1000)
         self.slider.setStyleSheet(
-            f"QSlider::groove:horizontal{{height:4px;background:#242936;border-radius:2px;}}"
-            f"QSlider::sub-page:horizontal{{background:{C['blue']};border-radius:2px;}}"
-            f"QSlider::handle:horizontal{{width:14px;height:14px;margin:-5px 0;background:{C['text0']};"
+            "QSlider::groove:horizontal{height:3px;background:#202634;border-radius:2px;}"
+            f"QSlider::sub-page:horizontal{{background:qlineargradient(x1:0,x2:1,stop:0 {C['blue']},stop:1 {C['teal']});border-radius:2px;}}"
+            f"QSlider::handle:horizontal{{width:14px;height:14px;margin:-6px 0;background:{C['text0']};"
             f"border:1px solid {C['blue']};border-radius:7px;}}"
             "QSlider::handle:horizontal:hover{background:#ffffff;}"
         )
@@ -908,7 +915,7 @@ class VideoPanel(QWidget):
 
         TR_BASE = (
             "QPushButton{"
-            "background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #222734,stop:1 #151923);"
+            "background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #252b39,stop:0.55 #1a1f2a,stop:1 #11151d);"
             f"color:{C['text1']};"
             "border:1px solid #2f3645;"
             "border-radius:7px;"
@@ -918,8 +925,8 @@ class VideoPanel(QWidget):
             "padding:0;"
             f"min-width:{BTN_W}px;"
             "}"
-            f"QPushButton:hover{{background:#2a3142;color:{C['text0']};border-color:{C['blue']};}}"
-            "QPushButton:pressed{background:#0f131b;padding-top:1px;border-color:#8ec4ff;}"
+            f"QPushButton:hover{{background:#2e374a;color:{C['text0']};border-color:{C['blue']};}}"
+            "QPushButton:pressed{background:#0e1219;padding-top:1px;border-color:#8ec4ff;}"
             "QPushButton:disabled{background:#11141a;color:#3f4555;border-color:#1d222d;}"
         )
         TR_COMPACT = TR_BASE + "QPushButton{font-family:'Cascadia Mono','Consolas','D2Coding';font-size:13px;}"
@@ -931,12 +938,12 @@ class VideoPanel(QWidget):
         )
         TR_PLAY = (
             "QPushButton{"
-            "background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #4a9dff,stop:1 #2360ad);"
+            "background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #62b5ff,stop:0.48 #3286e8,stop:1 #1d5ca7);"
             f"color:{C['text0']};"
             f"border:1px solid {C['blue']};"
             "border-radius:7px;"
             "font-family:'Segoe UI Symbol','Segoe UI Variable Text','Segoe UI';"
-            "font-size:23px;"
+            "font-size:22px;"
             "font-weight:700;"
             "padding:0 1px 1px 0;"
             f"min-width:{PLAY_W}px;"
@@ -947,8 +954,8 @@ class VideoPanel(QWidget):
         )
         POD_STYLE = (
             "QFrame#transportPod{"
-            "background:rgba(7,9,14,150);"
-            "border:1px solid #252b38;"
+            "background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 rgba(255,255,255,13),stop:1 rgba(0,0,0,55));"
+            "border:1px solid #252d3c;"
             "border-radius:8px;"
             "}"
         )
@@ -998,7 +1005,7 @@ class VideoPanel(QWidget):
         self.btn_cue.setFixedHeight(BTN_H)
         self.btn_cue.setToolTip('CUE\n선택한 파일을 플레이어에 올립니다\n이미 로드된 파일이면 IN 포인트로 이동합니다')
         self.btn_cue.setStyleSheet(
-            f"QPushButton{{background:rgba(255,209,102,28);color:{C['yellow']};border:1px solid rgba(255,209,102,95);"
+            f"QPushButton{{background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 rgba(255,209,102,42),stop:1 rgba(255,209,102,18));color:{C['yellow']};border:1px solid rgba(255,209,102,95);"
             "border-radius:8px;font-family:'Cascadia Mono','Consolas','D2Coding';font-weight:700;font-size:14px;"
             "padding:0 22px;}"
             f"QPushButton:hover{{background:rgba(255,209,102,45);border-color:{C['yellow']};color:#ffffff;}}"
@@ -1028,8 +1035,8 @@ class VideoPanel(QWidget):
         self.vol_slider.setFixedHeight(BTN_H)
         self.vol_slider.setToolTip('볼륨 조절 (0~100%)')
         self.vol_slider.setStyleSheet(
-            f"QSlider::groove:horizontal{{height:3px;background:#242936;border-radius:2px;}}"
-            f"QSlider::sub-page:horizontal{{background:{C['text1']};border-radius:2px;}}"
+            "QSlider::groove:horizontal{height:3px;background:#202634;border-radius:2px;}"
+            f"QSlider::sub-page:horizontal{{background:{C['blue']};border-radius:2px;}}"
             'QSlider::handle:horizontal{width:12px;height:12px;margin:-5px 0;'
             f"background:{C['text0']};border-radius:6px;}}"
             'QSlider::handle:horizontal:hover{background:#ffffff;}'
@@ -1081,7 +1088,10 @@ class VideoPanel(QWidget):
 
         # AUDIO CHANNEL SELECT BAR
         ch_bar = QWidget(); ch_bar.setFixedHeight(34)
-        ch_bar.setStyleSheet(f"background:{C['panel2']};border-bottom:1px solid {C['border']};")
+        ch_bar.setStyleSheet(
+            "background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #0d1017,stop:1 #090b10);"
+            f"border-bottom:1px solid {C['border']};"
+        )
         chl = QHBoxLayout(ch_bar); chl.setContentsMargins(12,4,12,4); chl.setSpacing(6)
         ch_lbl = QLabel("CH"); ch_lbl.setStyleSheet(f"color:{C['text2']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;font-weight:700;")
         ch_lbl.setFixedWidth(20)
@@ -1094,8 +1104,8 @@ class VideoPanel(QWidget):
         CH_STYLE = (
             f"QCheckBox{{color:{C['text2']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;spacing:5px;}}"
             f"QCheckBox:checked{{color:{C['teal']};font-weight:bold;}}"
-            f"QCheckBox::indicator{{width:12px;height:12px;border:1px solid {C['border']};border-radius:3px;background:{C['panel']};}}"
-            f"QCheckBox::indicator:checked{{background:{C['teal']};border-color:{C['teal']};}}"
+            f"QCheckBox::indicator{{width:12px;height:12px;border:1px solid {C['border']};border-radius:4px;background:{C['panel']};}}"
+            f"QCheckBox::indicator:checked{{background:qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 {C['teal']},stop:1 {C['blue']});border-color:{C['teal']};}}"
             f"QCheckBox::indicator:hover{{border-color:{C['border2']};}}"
         )
         for i in range(8):
@@ -1115,16 +1125,20 @@ class VideoPanel(QWidget):
 
         # AI BAR
         ai = QWidget(); ai.setFixedHeight(46)
-        ai.setStyleSheet(f"background:{C['panel']};border-bottom:1px solid {C['border']};")
+        ai.setStyleSheet(
+            "background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #141821,stop:1 #10131a);"
+            f"border-bottom:1px solid {C['border']};"
+        )
         ail = QHBoxLayout(ai); ail.setContentsMargins(10,6,10,6); ail.setSpacing(6)
 
         def _ai_btn(label, tooltip):
             b = QPushButton(label); b.setFixedHeight(30); b.setEnabled(False)
             b.setToolTip(tooltip)
             b.setStyleSheet(
-                f"QPushButton{{background:{C['panel3']};color:{C['text1']};border:1px solid {C['border']};"
+                "QPushButton{background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #222734,stop:1 #171b24);"
+                f"color:{C['text1']};border:1px solid {C['border']};"
                 "border-radius:6px;font-size:11px;font-weight:600;padding:0 12px;}"
-                f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
+                f"QPushButton:hover{{background:#2a3142;color:{C['text0']};border-color:{C['blue']};}}"
                 f"QPushButton:enabled{{color:{C['text1']};}}"
                 f"QPushButton:disabled{{color:{C['text3']};border-color:#1c2029;background:#101218;}}"
             )
@@ -3241,7 +3255,7 @@ class VideoPanel(QWidget):
     def _on_state(self, state):
         self._raise_vlc_meters()
         playing = state == QMediaPlayer.PlaybackState.PlayingState
-        self.btn_play.setText("Ⅱ" if playing else "▶")
+        self.btn_play.setText("||" if playing else "▶")
         if self.cur_file:
             changed = False
             for f in self._files:

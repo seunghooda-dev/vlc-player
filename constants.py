@@ -55,42 +55,42 @@ C = {
 STYLE = f"""
 /* ── 툴팁 ── */
 QToolTip {{
-    background-color: #20242d;
+    background-color: #171c25;
     color: {C['text0']};
-    border: 1px solid {C['border2']};
+    border: 1px solid #465166;
     padding: 7px 10px;
     font-family: {APP_FONT_CSS};
     font-size: 12px;
-    border-radius: 6px;
+    border-radius: 7px;
 }}
 
 /* ── 기본 ── */
 QMainWindow, QWidget {{
-    background-color: {C['bg']};
+    background-color: #0b0d12;
     color: {C['text0']};
     font-family: {APP_FONT_CSS};
     font-size: 13px;
 }}
 QSplitter::handle {{
-    background-color: {C['border']};
+    background-color: #1d2330;
     width: 1px;
 }}
 
 /* ── 상태바 ── */
 QStatusBar {{
-    background-color: #0b0c10;
+    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #090b10,stop:0.5 #10141c,stop:1 #090b10);
     color: {C['text2']};
     font-family: {MONO_FONT_CSS};
     font-size: 11px;
-    border-top: 1px solid {C['border']};
+    border-top: 1px solid #202633;
     padding: 3px 12px;
 }}
 
 /* ── 탭 ── */
 QTabWidget::pane {{
     border: none;
-    background-color: {C['panel2']};
-    border-top: 1px solid {C['border']};
+    background-color: #090b10;
+    border-top: 1px solid #202633;
 }}
 QTabBar {{
     background: transparent;
@@ -98,26 +98,26 @@ QTabBar {{
 QTabBar::tab {{
     background-color: transparent;
     color: {C['text2']};
-    padding: 10px 18px;
+    padding: 11px 18px 10px 18px;
     border: none;
     border-bottom: 2px solid transparent;
     font-size: 12px;
-    font-weight: 500;
+    font-weight: 600;
     margin-right: 2px;
 }}
 QTabBar::tab:selected {{
     color: {C['text0']};
     border-bottom: 2px solid {C['blue']};
-    background-color: rgba(90, 167, 255, 22);
+    background-color: rgba(90, 167, 255, 18);
 }}
 QTabBar::tab:hover {{
     color: {C['text0']};
-    background-color: rgba(255,255,255,7);
+    background-color: rgba(255,255,255,9);
 }}
 
 /* ── 리스트 ── */
 QListWidget {{
-    background-color: {C['panel2']};
+    background-color: #090b10;
     border: none;
     color: {C['text0']};
     outline: none;
@@ -125,22 +125,22 @@ QListWidget {{
     font-size: 12px;
 }}
 QListWidget::item {{
-    padding: 8px 12px;
-    border-bottom: 1px solid {C['border']};
+    padding: 9px 12px;
+    border-bottom: 1px solid #202633;
 }}
 QListWidget::item:selected {{
-    background-color: rgba(90, 167, 255, 26);
+    background-color: rgba(90, 167, 255, 30);
     color: {C['text0']};
 }}
 QListWidget::item:hover {{
-    background-color: rgba(255,255,255,7);
+    background-color: rgba(255,255,255,9);
 }}
 
 /* ── 입력창 ── */
 QLineEdit {{
-    background-color: {C['input']};
-    border: 1px solid {C['border']};
-    border-radius: 5px;
+    background-color: #121721;
+    border: 1px solid #293243;
+    border-radius: 7px;
     color: {C['text0']};
     padding: 6px 10px;
     font-family: {APP_FONT_CSS};
@@ -148,27 +148,27 @@ QLineEdit {{
     selection-background-color: rgba(90,167,255,70);
 }}
 QLineEdit:focus {{
-    border: 1px solid rgba(90,167,255,140);
-    background-color: #1f2430;
+    border: 1px solid rgba(90,167,255,150);
+    background-color: #171e2b;
 }}
 
 /* ── 버튼 기본 ── */
 QPushButton {{
-    background-color: {C['panel3']};
+    background: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #222734,stop:1 #151923);
     color: {C['text0']};
-    border: 1px solid {C['border']};
-    border-radius: 6px;
+    border: 1px solid #2f3645;
+    border-radius: 7px;
     padding: 6px 14px;
     font-size: 12px;
-    font-weight: 500;
+    font-weight: 600;
     min-height: 28px;
 }}
 QPushButton:hover {{
-    background-color: #222734;
-    border-color: {C['border2']};
+    background: #2a3142;
+    border-color: {C['blue']};
 }}
 QPushButton:pressed {{
-    background-color: #12151c;
+    background-color: #0f131b;
     padding-top: 7px;
 }}
 QPushButton:disabled {{
@@ -179,8 +179,8 @@ QPushButton:disabled {{
 
 /* ── 슬라이더 ── */
 QSlider::groove:horizontal {{
-    background: #242936;
-    height: 4px;
+    background: #202634;
+    height: 3px;
     border-radius: 2px;
 }}
 QSlider::sub-page:horizontal {{
@@ -197,15 +197,12 @@ QSlider::handle:horizontal {{
 }}
 QSlider::handle:horizontal:hover {{
     background: #ffffff;
-    width: 16px;
-    height: 16px;
-    border-radius: 8px;
-    margin: -6px 0;
+    border: 1px solid rgba(90,167,255,210);
 }}
 
 /* ── 테이블 ── */
 QTableWidget {{
-    background-color: {C['panel2']};
+    background-color: #090b10;
     border: none;
     color: {C['text0']};
     gridline-color: {C['border']};
@@ -215,18 +212,18 @@ QTableWidget {{
 }}
 QTableWidget::item {{
     padding: 6px 10px;
-    border-bottom: 1px solid {C['border']};
+    border-bottom: 1px solid #202633;
 }}
 QTableWidget::item:selected {{
     background-color: rgba(90,167,255,28);
     color: {C['text0']};
 }}
 QHeaderView::section {{
-    background-color: {C['panel']};
+    background: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #171c25,stop:1 #11151d);
     color: {C['text2']};
     border: none;
-    border-right: 1px solid {C['border']};
-    border-bottom: 1px solid {C['border']};
+    border-right: 1px solid #202633;
+    border-bottom: 1px solid #202633;
     padding: 6px 10px;
     font-family: {APP_FONT_CSS};
     font-size: 11px;
@@ -236,31 +233,31 @@ QHeaderView::section {{
 /* ── 스크롤바 ── */
 QScrollBar:vertical {{
     background: transparent;
-    width: 4px;
+    width: 6px;
     margin: 0;
 }}
 QScrollBar::handle:vertical {{
-    background: rgba(167,173,190,45);
-    border-radius: 2px;
+    background: rgba(167,173,190,50);
+    border-radius: 3px;
     min-height: 30px;
 }}
 QScrollBar::handle:vertical:hover {{
-    background: rgba(167,173,190,80);
+    background: rgba(90,167,255,120);
 }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
 QScrollBar:horizontal {{
     background: transparent;
-    height: 4px;
+    height: 6px;
 }}
 QScrollBar::handle:horizontal {{
-    background: rgba(167,173,190,45);
-    border-radius: 2px;
+    background: rgba(167,173,190,50);
+    border-radius: 3px;
 }}
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
 
 /* ── 프로그레스바 ── */
 QProgressBar {{
-    background: #242936;
+    background: #202634;
     border: none;
     border-radius: 2px;
     text-align: center;

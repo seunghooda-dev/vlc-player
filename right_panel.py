@@ -69,12 +69,16 @@ class RightPanel(QWidget):
 
         # 툴바
         tb = QWidget(); tb.setFixedHeight(46)
-        tb.setStyleSheet(f"background:{C['panel']};border-bottom:1px solid {C['border']};")
+        tb.setStyleSheet(
+            "background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #141821,stop:1 #10131a);"
+            f"border-bottom:1px solid {C['border']};"
+        )
         tbl = QHBoxLayout(tb); tbl.setContentsMargins(6,3,6,3); tbl.setSpacing(4)
         _exp_btn_style = (
-            f"QPushButton{{background:{C['panel3']};color:{C['text1']};border:1px solid {C['border']};"
-            f"border-radius:6px;font-size:11px;font-weight:600;padding:0 12px;height:30px;}}"
-            f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
+            "QPushButton{background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #222734,stop:1 #171b24);"
+            f"color:{C['text1']};border:1px solid {C['border']};"
+            f"border-radius:7px;font-size:11px;font-weight:700;padding:0 12px;height:30px;}}"
+            f"QPushButton:hover{{background:#2a3142;color:{C['text0']};border-color:{C['blue']};}}"
         )
         self.btn_file = QPushButton("📄  파일 추가"); self.btn_file.setFixedHeight(32)
         self.btn_file.setToolTip("개별 영상 파일 추가")
@@ -94,11 +98,12 @@ class RightPanel(QWidget):
         self._sort_key = 'name'   # 'name' | 'added' | 'size'
         self._sort_asc = True
         _sort_btn_style = (
-            f"QPushButton{{background:{C['panel2']};color:{C['text2']};border:1px solid {C['border']};"
-            f"border-radius:5px;font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;font-weight:700;"
+            "QPushButton{background:#0f131b;"
+            f"color:{C['text2']};border:1px solid {C['border']};"
+            f"border-radius:6px;font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;font-weight:700;"
             f"padding:0 7px;height:24px;}}"
             f"QPushButton:checked{{background:rgba(90,167,255,30);color:{C['text0']};border-color:{C['blue']};}}"
-            f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
+            f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['blue']};}}"
         )
         self._sort_btns = {}
         for key, label, tip in [
@@ -132,7 +137,7 @@ class RightPanel(QWidget):
         self.exp_path = mk_label('파일을 추가하세요', C['text3'], 'Consolas', 10)
         self.exp_path.setStyleSheet(
             f"color:{C['text2']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;"
-            f"background:{C['panel2']};padding:4px 12px;"
+            "background:#090b10;padding:5px 12px;"
             f"border-bottom:1px solid {C['border']};")
         l.addWidget(self.exp_path)
 
@@ -141,12 +146,12 @@ class RightPanel(QWidget):
         self.exp_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.exp_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.exp_list.setStyleSheet(
-            f"QListWidget{{background:{C['panel2']};border:none;outline:none;}}"
-            f"QListWidget::item{{padding:9px 14px;border-bottom:1px solid {C['border']};"
+            "QListWidget{background:#090b10;border:none;outline:none;}"
+            f"QListWidget::item{{padding:10px 14px;border-bottom:1px solid #202633;"
             f"font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';font-size:12px;color:{C['text1']};}}"
             f"QListWidget::item:selected{{background:rgba(90,167,255,28);"
             f"border-left:2px solid {C['blue']};color:{C['text0']};}}"
-            f"QListWidget::item:hover{{background:rgba(255,255,255,7);}}"
+            f"QListWidget::item:hover{{background:rgba(255,255,255,9);}}"
         )
         # 단일 클릭은 선택만, 더블클릭은 CUE
         self.exp_list.itemClicked.connect(self._on_exp_clicked)
@@ -165,7 +170,10 @@ class RightPanel(QWidget):
 
         # 메타 패널
         self.meta_panel = QWidget()
-        self.meta_panel.setStyleSheet(f"background:{C['panel']};border-top:1px solid {C['border']};")
+        self.meta_panel.setStyleSheet(
+            "background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #141821,stop:1 #10131a);"
+            f"border-top:1px solid {C['border']};"
+        )
         self.meta_panel.hide()
         ml = QGridLayout(self.meta_panel); ml.setContentsMargins(8,6,8,6); ml.setSpacing(3)
         self.meta_labels = {}
@@ -182,8 +190,8 @@ class RightPanel(QWidget):
 
     def _menu_style(self):
         return (
-            f"QMenu{{background:{C['panel']};color:{C['text1']};border:1px solid {C['border2']};"
-            "font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';font-size:13px;padding:5px 0;border-radius:6px;}"
+            f"QMenu{{background:#141821;color:{C['text1']};border:1px solid {C['border2']};"
+            "font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';font-size:13px;padding:5px 0;border-radius:7px;}"
             "QMenu::item{padding:6px 20px;}"
             f"QMenu::item:selected{{background:rgba(90,167,255,35);color:{C['text0']};}}"
             f"QMenu::item:disabled{{color:{C['text3']};}}"
