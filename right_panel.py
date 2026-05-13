@@ -5,16 +5,18 @@ RightPanel: 파일 탐색기, 블랙 검출, 오디오 분석
 import csv
 import sys
 import time
+from html import escape
 from pathlib import Path
 from datetime import datetime
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QGridLayout, QLabel, QPushButton,
     QListWidget, QListWidgetItem, QTabWidget, QLineEdit, QComboBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
-    QFileDialog, QMenu, QMessageBox, QCheckBox,
+    QFileDialog, QMenu, QMessageBox, QCheckBox, QStyledItemDelegate,
+    QStyle, QStyleOptionViewItem,
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QRect
-from PyQt6.QtGui  import QColor, QFontMetrics
+from PyQt6.QtGui  import QColor, QFontMetrics, QTextDocument, QTextOption
 from PyQt6.QtMultimedia import QMediaPlayer
 
 from constants   import (
@@ -25,6 +27,39 @@ from constants   import (
 from db_models   import probe, sec_to_tc, tc_to_frames
 from threads     import AudioAnalyzeThread, BlackDetectThread
 from meters      import mk_label
+
+FILE_ITEM_HTML_ROLE = Qt.ItemDataRole.UserRole.value + 10
+FILE_ITEM_PLAIN_ROLE = Qt.ItemDataRole.UserRole.value + 11
+
+
+class FileListItemDelegate(QStyledItemDelegate):
+    def paint(self, painter, option, index):
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        html = index.data(FILE_ITEM_HTML_ROLE)
+        if not html:
+            super().paint(painter, option, index)
+            return
+
+        style = opt.widget.style() if opt.widget else None
+        opt.text = ""
+        if style:
+            style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, opt.widget)
+
+        doc = QTextDocument()
+        doc.setDocumentMargin(0)
+        text_option = doc.defaultTextOption()
+        text_option.setWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+        doc.setDefaultTextOption(text_option)
+        doc.setDefaultFont(opt.font)
+        doc.setHtml(html)
+        doc.setTextWidth(max(40, opt.rect.width() - 28))
+
+        painter.save()
+        painter.translate(opt.rect.left() + 14, opt.rect.top() + 8)
+        doc.drawContents(painter)
+        painter.restore()
+
 
 class RightPanel(QWidget):
     seek_requested = pyqtSignal(float)
@@ -223,6 +258,7 @@ class RightPanel(QWidget):
         self.exp_list.setTextElideMode(Qt.TextElideMode.ElideNone)
         self.exp_list.setUniformItemSizes(False)
         self.exp_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.exp_list.setItemDelegate(FileListItemDelegate(self.exp_list))
         self.exp_list.setStyleSheet(
             "QListWidget{background:#07090D;border:none;outline:none;}"
             f"QListWidget::item{{padding:9px 14px;border-bottom:1px solid #1D2635;"
@@ -398,11 +434,11 @@ class RightPanel(QWidget):
         if f.get("black") == "error" or f.get("mute") == "error":
             return "검사 오류", C['red']
         if f.get("black") == "found" and f.get("mute") == "found":
-            return "블랙/무음", C['orange']
+            return "블랙/무음", C['red']
         if f.get("black") == "found":
-            return "블랙 있음", C['yellow']
+            return "블랙 있음", C['red']
         if f.get("mute") == "found":
-            return "무음 있음", C['teal']
+            return "무음 있음", C['red']
         if f.get("black") == "ok" and f.get("mute") == "ok":
             return "정상", C['green']
         if f.get("playing"):
@@ -417,6 +453,44 @@ class RightPanel(QWidget):
         black = self._qc_status_text(f.get("black"), "black")
         mute = self._qc_status_text(f.get("mute"), "mute")
         return f"블랙 {black} {black_count} / 무음 {mute} {mute_count}"
+
+    def _qc_piece_html(self, label, state, count):
+        text = self._qc_status_text(state, label)
+        raw_state = str(state or '').lower()
+        color = C['red'] if raw_state in ('found', 'error') else C['text0']
+        weight = 800 if raw_state in ('found', 'error') else 500
+        return (
+            f"<span style='color:{color};font-weight:{weight};'>"
+            f"{escape(label)} {escape(text)} {int(count or 0)}"
+            "</span>"
+        )
+
+    def _file_status_detail_html(self, f):
+        black_count = int(f.get("black_count", 0) or 0)
+        mute_count = int(f.get("mute_count", 0) or 0)
+        black = self._qc_piece_html("블랙", f.get("black"), black_count)
+        mute = self._qc_piece_html("무음", f.get("mute"), mute_count)
+        return f"{black} <span style='color:{C['text2']};'>/</span> {mute}"
+
+    def _breakable_name_html(self, name):
+        safe = escape(str(name or ''), quote=False)
+        for ch in ('_', '-', '.', '(', ')', '[', ']'):
+            safe = safe.replace(ch, f"{ch}&#8203;")
+        return safe
+
+    def _file_item_html(self, f, prefix, badge, badge_color):
+        issue = str(f.get("black") or '').lower() in ('found', 'error') or str(f.get("mute") or '').lower() in ('found', 'error')
+        badge_color = C['red'] if issue else badge_color
+        name = self._breakable_name_html(f.get('name') or Path(f.get('filepath', '')).name)
+        return (
+            f"<div style=\"font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';"
+            f"font-size:12px;color:{C['text0']};font-weight:500;\">"
+            f"{escape(prefix, quote=False)}{name}</div>"
+            f"<div style=\"font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';"
+            f"font-size:12px;color:{C['text0']};font-weight:500;\">"
+            f"QC: <span style='color:{badge_color};font-weight:800;'>{escape(badge)}</span>"
+            f"&nbsp;&nbsp;&nbsp;{self._file_status_detail_html(f)}</div>"
+        )
 
     def _file_matches_filter(self, f):
         key = getattr(self, '_filter_key', 'all')
@@ -636,7 +710,8 @@ class RightPanel(QWidget):
             return
         for i in range(self.exp_list.count()):
             item = self.exp_list.item(i)
-            item.setSizeHint(QSize(0, self._file_item_height(item.text())))
+            text = item.data(FILE_ITEM_PLAIN_ROLE) or item.text()
+            item.setSizeHint(QSize(0, self._file_item_height(text)))
 
     def refresh_explorer(self):
         # info 없어도 파일 목록만 갱신 (파일 추가/제거 시 호출)
@@ -682,6 +757,8 @@ class RightPanel(QWidget):
             detail = self._file_status_detail(f)
             item_text = f"{prefix}{f['name']}\nQC: {badge}    {detail}"
             item = QListWidgetItem(item_text)
+            item.setData(FILE_ITEM_PLAIN_ROLE, item_text)
+            item.setData(FILE_ITEM_HTML_ROLE, self._file_item_html(f, prefix, badge, badge_color))
             item.setSizeHint(QSize(0, self._file_item_height(item_text)))
             item.setData(Qt.ItemDataRole.UserRole, f["filepath"])
             updated = f.get("qc_updated_at") or "-"
@@ -1020,6 +1097,7 @@ class RightPanel(QWidget):
             self._batch_queue = []
             self._batch_current = None
             self._batch_current_info = {}
+            self._finish_batch_elapsed_timer()
             try:
                 self.exp_path.setText(f"⏹ {reason} — 일괄 검수 중단")
             except Exception:
@@ -1217,6 +1295,7 @@ class RightPanel(QWidget):
         self._batch_current_info = {}
         self._batch_started_at = time.monotonic()
         self.tabs.setCurrentIndex(0)
+        self._start_batch_elapsed_timer()
         log.info(f'batch qc started files={self._batch_total}')
         record_state_event('batch-qc', 'started', files=self._batch_total)
         self._start_next_batch_file()
@@ -1359,6 +1438,7 @@ class RightPanel(QWidget):
         self._batch_current = None
         self._batch_current_info = {}
         self._stop_analysis_timeout()
+        self._finish_batch_elapsed_timer()
         self._finish_analysis_mode()
         self.refresh_explorer()
         report = None
@@ -1445,14 +1525,28 @@ class RightPanel(QWidget):
         elif kind == 'audio':
             self.audio_status.setText(f"  ⏳ {message}")
 
+    def _issue_count_text(self, count):
+        count = int(count or 0)
+        if count > 0:
+            return f"<span style='color:{C['red']};font-weight:800;'>{count}</span>"
+        return "0"
+
     def _black_done_label(self, count, *, compact=False):
         count = int(count or 0)
         if count <= 0:
             return f"{'' if compact else '  '}✓ 블랙 검출 완료 — 0구간" if compact else "  ✓ 완료 — 블랙 0구간"
-        red_count = f"<span style='color:{C['red']};font-weight:800;'>{count}</span>"
+        red_count = self._issue_count_text(count)
         if compact:
             return f"✓ 블랙 검출 완료 — {red_count}구간"
         return f"&nbsp;&nbsp;✓ 완료 — 블랙 {red_count}구간"
+
+    def _mute_done_label(self, count, detail='', *, compact=False):
+        count = int(count or 0)
+        count_text = self._issue_count_text(count)
+        suffix = f" | {detail}" if detail and not compact else ""
+        if compact:
+            return f"✓ 뮤트 검출 완료 — {count_text}구간"
+        return f"&nbsp;&nbsp;✓ 완료 — 뮤트 {count_text}구간{suffix}"
 
     def _on_black_done(self, ranges, seq=None):
         if not self._analysis_matches('black', seq, getattr(self, '_black_file', None)):
@@ -1748,11 +1842,11 @@ class RightPanel(QWidget):
                 self.mute_list.addItem(item)
 
         self.audio_status.setText(
-            f"  ✓ 완료 — 뮤트 {len(mutes)}구간 | {source_ch_count}ch 파일 / {basis} / {mode}")
+            self._mute_done_label(len(mutes), f"{source_ch_count}ch 파일 / {basis} / {mode}"))
         try:
             self.vp.btn_audio.setEnabled(True)
             self.vp.prog_ai.hide()
-            self.vp.ai_lbl.setText(f"✓ 뮤트 검출 완료 — {len(mutes)}구간")
+            self.vp.ai_lbl.setText(self._mute_done_label(len(mutes), compact=True))
             self._finish_audio_elapsed_timer()
         except Exception as e:
             log.debug(f'audio ai done state: {e}')
@@ -1855,6 +1949,40 @@ class RightPanel(QWidget):
             self.vp.ai_time_lbl.show()
         except Exception as e:
             log.debug(f'audio elapsed finish: {e}')
+
+    def _start_batch_elapsed_timer(self):
+        if not getattr(self, '_batch_started_at', None):
+            self._batch_started_at = time.monotonic()
+        if not hasattr(self, '_batch_elapsed_timer'):
+            self._batch_elapsed_timer = QTimer(self)
+            self._batch_elapsed_timer.setInterval(250)
+            self._batch_elapsed_timer.timeout.connect(self._update_batch_elapsed_timer)
+        self._update_batch_elapsed_timer()
+        self._batch_elapsed_timer.start()
+
+    def _update_batch_elapsed_timer(self):
+        start = getattr(self, '_batch_started_at', None)
+        if not start:
+            return
+        elapsed = time.monotonic() - start
+        try:
+            self.vp.ai_time_lbl.setText(f"BATCH {self._format_elapsed(elapsed)}")
+            self.vp.ai_time_lbl.show()
+        except Exception as e:
+            log.debug(f'batch elapsed update: {e}')
+
+    def _finish_batch_elapsed_timer(self, prefix='BATCH'):
+        start = getattr(self, '_batch_started_at', None)
+        if hasattr(self, '_batch_elapsed_timer'):
+            self._batch_elapsed_timer.stop()
+        if not start:
+            return
+        elapsed = time.monotonic() - start
+        try:
+            self.vp.ai_time_lbl.setText(f"{prefix} {self._format_elapsed(elapsed)}")
+            self.vp.ai_time_lbl.show()
+        except Exception as e:
+            log.debug(f'batch elapsed finish: {e}')
 
     # ── 공통 이벤트 ──────────────────────────────────────
     def _on_file_loaded(self, info, clip_id):
