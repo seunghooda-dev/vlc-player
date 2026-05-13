@@ -1260,8 +1260,14 @@ class VideoPanel(QWidget):
                 self._transport_scale_key = ('base',)
                 _base_transport_state()
                 return
-            scale = _clamp(available / float(self._transport_base_width), 0.82, 1.20)
-            if abs(scale - 1.0) < 0.025:
+            raw_scale = available / float(self._transport_base_width)
+            if raw_scale >= 1.0:
+                scale = 1.0
+            else:
+                # Shrink gently: panel width may fall quickly, but the controls
+                # should only compress a little so transport remains usable.
+                scale = _clamp(1.0 - ((1.0 - raw_scale) * 0.42), 0.90, 1.0)
+            if scale >= 0.995:
                 key = ('base',)
                 if force or key != self._transport_scale_key:
                     self._transport_scale_key = key
