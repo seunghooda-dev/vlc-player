@@ -200,6 +200,13 @@ class MainWindow(QMainWindow):
         log_btn.setStyleSheet(_top_btn_style)
         log_btn.clicked.connect(self._show_error_log)
         tbl.addWidget(log_btn)
+        report_btn = QPushButton("REPORT")
+        report_btn.setFixedHeight(24)
+        report_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        report_btn.setToolTip("진단 ZIP을 기본 리포트 폴더에 즉시 저장")
+        report_btn.setStyleSheet(_top_btn_style)
+        report_btn.clicked.connect(self._quick_save_diagnostic_report)
+        tbl.addWidget(report_btn)
         info_btn = QPushButton("INFO")
         info_btn.setFixedHeight(24)
         info_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -642,6 +649,18 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, '진단 리포트 저장 완료', f'진단 리포트를 저장했습니다.\n\n{report}')
         except Exception as e:
             log.error(f'diagnostic report export failed: {e}')
+            QMessageBox.warning(self, '진단 리포트 저장 실패', str(e))
+
+    def _quick_save_diagnostic_report(self):
+        runtime = check_runtime_environment()
+        self._attach_audio_child_status(runtime)
+        try:
+            report = create_diagnostic_report(runtime=runtime)
+            log.info(f'diagnostic report quick-exported: {report}')
+            self.statusBar().showMessage(f"  ✓ 진단 리포트 저장 완료 — {report}", 8000)
+            QMessageBox.information(self, '진단 리포트 저장 완료', f'진단 리포트를 저장했습니다.\n\n{report}')
+        except Exception as e:
+            log.error(f'diagnostic report quick export failed: {e}')
             QMessageBox.warning(self, '진단 리포트 저장 실패', str(e))
 
     def _show_deployment_check_dialog(self):

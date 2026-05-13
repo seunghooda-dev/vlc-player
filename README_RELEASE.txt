@@ -8,7 +8,9 @@ Quick Start
 1. Run "MXF QC Player.exe".
 2. Use "파일 추가" to add MXF files.
 3. Double-click a file in the list, or select it and press CUE.
-4. Use the Black / Mute tabs for manual QC detection.
+4. Use the Black / Mute tabs for manual QC detection, or press "일괄" in
+   the file tab to run black + mute detection for all listed files.
+5. Press "리포트" in the file tab to export the file-list QC result as CSV/TXT.
 
 Korean operator quick guide:
 
@@ -121,7 +123,9 @@ timecode, transport controls, volume area, right panel, and file list at
 
 Diagnostic Report
 -----------------
-In the ENV or CHECK dialog, press "리포트 저장" to create a diagnostic ZIP.
+Press REPORT in the top bar to immediately create a diagnostic ZIP under the
+default reports folder. In the ENV or CHECK dialog, press "리포트 저장" if you
+want to choose the destination manually.
 The report includes:
 
 - runtime environment text
@@ -133,6 +137,32 @@ The report includes:
 Reports are stored by default under:
 
 %LOCALAPPDATA%\MXF QC Player V.1.0\reports
+
+QC Result Report
+----------------
+The file tab has a "리포트" button. It exports the current file list with:
+
+- file name and path
+- file size
+- QC status
+- black detection status and range count
+- mute detection status and range count
+- last QC update time
+
+CSV export uses UTF-8 with BOM so it opens cleanly in Excel on Windows.
+
+Batch QC
+--------
+The file tab has an "일괄" button. It processes all files in the current list
+in order:
+
+1. black detection
+2. mute detection on 1/2CH
+3. DB status save
+4. file-list badge refresh
+
+Playback and audio helper processes are paused while batch analysis is running
+so FFmpeg analysis work does not fight with VLC playback.
 
 Automatic Retention
 -------------------
@@ -250,6 +280,15 @@ the user data backups folder before the package is refreshed.
 The Desktop shortcut points directly to mxf_qc_player.ico in the release
 folder. If the icon design changes, the shortcut is deleted and recreated so
 Windows is less likely to keep an old cached icon.
+
+Target PC Shortcut Setup
+------------------------
+After copying the release folder to another PC, run:
+
+install_desktop_shortcut.bat
+
+It creates a Desktop shortcut pointing to the copied folder, refreshes the
+shortcut icon, and runs a runtime check. It does not move or delete user data.
 
 Release ZIPs are written with a timestamped name and a latest-copy alias:
 

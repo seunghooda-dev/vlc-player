@@ -2,24 +2,27 @@
 right_panel.py — 오른쪽 탭 패널
 RightPanel: 파일 탐색기, 블랙 검출, 오디오 분석
 """
+import csv
 import sys
 import time
 from pathlib import Path
+from datetime import datetime
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QGridLayout, QLabel, QPushButton,
     QListWidget, QListWidgetItem, QTabWidget, QLineEdit, QComboBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
-    QFileDialog, QMenu,
+    QFileDialog, QMenu, QMessageBox,
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui  import QColor
 from PyQt6.QtMultimedia import QMediaPlayer
 
 from constants   import (
-    C, VIDEO_EXTS, BASE_DIR, log, load_settings, save_settings,
+    C, VIDEO_EXTS, BASE_DIR, REPORT_DIR, log, load_settings, save_settings,
     friendly_error_title, format_missing_runtime_tools, heavy_analysis_status,
+    format_bytes, record_state_event,
 )
-from db_models   import sec_to_tc
+from db_models   import probe, sec_to_tc, tc_to_frames
 from threads     import AudioAnalyzeThread, BlackDetectThread
 from meters      import mk_label
 
@@ -39,6 +42,12 @@ class RightPanel(QWidget):
         self._analysis_timeout_kind = None
         self._analysis_timeout_label = ''
         self._analysis_timeout_seq = None
+        self._batch_active = False
+        self._batch_queue = []
+        self._batch_total = 0
+        self._batch_current = None
+        self._batch_current_info = {}
+        self._batch_started_at = 0.0
         self._analysis_timeout_timer = QTimer(self)
         self._analysis_timeout_timer.setSingleShot(True)
         self._analysis_timeout_timer.timeout.connect(self._on_analysis_timeout)
@@ -153,6 +162,24 @@ class RightPanel(QWidget):
             b.clicked.connect(_on_sort)
             self._sort_btns[key] = b
             tbl.addWidget(b)
+
+        self.btn_batch = QPushButton("일괄")
+        self.btn_batch.setFixedHeight(24)
+        self.btn_batch.setToolTip("파일 목록 전체를 블랙/뮤트 순서로 일괄 검수")
+        self.btn_batch.setStyleSheet(_sort_btn_style)
+        self.btn_batch.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_batch.setEnabled(False)
+        self.btn_batch.clicked.connect(self._run_batch_qc)
+        tbl.addWidget(self.btn_batch)
+
+        self.btn_export = QPushButton("리포트")
+        self.btn_export.setFixedHeight(24)
+        self.btn_export.setToolTip("파일 목록 QC 결과를 CSV/TXT 리포트로 저장")
+        self.btn_export.setStyleSheet(_sort_btn_style)
+        self.btn_export.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_export.setEnabled(False)
+        self.btn_export.clicked.connect(self._export_qc_report)
+        tbl.addWidget(self.btn_export)
 
         l.addWidget(tb)
 
@@ -301,6 +328,16 @@ class RightPanel(QWidget):
         if fp:
             self.vp.load_file(fp)
 
+    def _qc_status_text(self, value, kind):
+        value = str(value or '').lower()
+        if value == 'ok':
+            return '정상'
+        if value == 'found':
+            return '있음'
+        if value == 'error':
+            return '오류'
+        return '미분석'
+
     def _file_status_badge(self, f, is_cue=False):
         analysis = f.get("analysis")
         if analysis == "black":
@@ -322,6 +359,13 @@ class RightPanel(QWidget):
         if is_cue or f.get("cue"):
             return "CUE", C['blue']
         return "미분석", C['text2']
+
+    def _file_status_detail(self, f):
+        black_count = int(f.get("black_count", 0) or 0)
+        mute_count = int(f.get("mute_count", 0) or 0)
+        black = self._qc_status_text(f.get("black"), "black")
+        mute = self._qc_status_text(f.get("mute"), "mute")
+        return f"블랙 {black} {black_count} / 무음 {mute} {mute_count}"
 
     def _status_summary_text(self, files):
         counts = {
@@ -346,6 +390,103 @@ class RightPanel(QWidget):
             if counts.get(key):
                 parts.append(f"{key} {counts[key]}")
         return " | ".join(parts)
+
+    def _iter_report_files(self):
+        files = list(getattr(self.vp, '_files', []) or [])
+        sort_key = getattr(self, '_sort_key', 'name')
+        sort_asc = getattr(self, '_sort_asc', True)
+        if sort_key == 'name':
+            files = sorted(files, key=lambda x: x.get('name', '').lower(), reverse=not sort_asc)
+        elif sort_key == 'size':
+            files = sorted(files, key=lambda x: x.get('size', 0), reverse=not sort_asc)
+        elif sort_key == 'added' and not sort_asc:
+            files = list(reversed(files))
+        return files
+
+    def _qc_report_rows(self):
+        rows = []
+        for f in self._iter_report_files():
+            fp = f.get('filepath', '')
+            p = Path(fp)
+            badge, _ = self._file_status_badge(f, fp == self.vp.cur_file)
+            size = int(f.get('size', 0) or 0)
+            if not size:
+                try:
+                    size = p.stat().st_size
+                except Exception:
+                    size = 0
+            rows.append({
+                '검수시각': datetime.now().isoformat(timespec='seconds'),
+                'QC상태': badge,
+                '파일명': f.get('name') or p.name,
+                '경로': fp,
+                '확장자': f.get('ext') or p.suffix.upper().lstrip('.'),
+                '크기': format_bytes(size) if size else '-',
+                '크기_bytes': str(size or ''),
+                '블랙상태': self._qc_status_text(f.get('black'), 'black'),
+                '블랙구간': str(int(f.get('black_count', 0) or 0)),
+                '무음상태': self._qc_status_text(f.get('mute'), 'mute'),
+                '무음구간': str(int(f.get('mute_count', 0) or 0)),
+                'QC요약': f.get('qc_summary') or badge,
+                '갱신시각': str(f.get('qc_updated_at') or ''),
+            })
+        return rows
+
+    def _write_qc_report_txt(self, path, rows):
+        lines = []
+        lines.append('MXF QC Player V.1.0 - QC 결과 리포트')
+        lines.append('=' * 64)
+        lines.append(f'생성시각: {datetime.now().isoformat(timespec="seconds")}')
+        lines.append(f'파일수  : {len(rows)}')
+        lines.append('')
+        for idx, row in enumerate(rows, 1):
+            lines.append(f"{idx:03d}. {row['파일명']}")
+            lines.append(f"     상태: {row['QC상태']} / {row['QC요약']}")
+            lines.append(f"     블랙: {row['블랙상태']} {row['블랙구간']}구간")
+            lines.append(f"     무음: {row['무음상태']} {row['무음구간']}구간")
+            lines.append(f"     크기: {row['크기']}")
+            lines.append(f"     갱신: {row['갱신시각'] or '-'}")
+            lines.append(f"     경로: {row['경로']}")
+            lines.append('')
+        Path(path).write_text('\n'.join(lines), encoding='utf-8')
+
+    def _export_qc_report(self):
+        rows = self._qc_report_rows()
+        if not rows:
+            QMessageBox.information(self, 'QC 리포트', '파일 목록에 리포트로 저장할 MXF가 없습니다.')
+            return
+        try:
+            REPORT_DIR.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        default = REPORT_DIR / f"qc-report-{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        path, selected = QFileDialog.getSaveFileName(
+            self,
+            'QC 결과 리포트 저장',
+            str(default),
+            'CSV 파일 (*.csv);;텍스트 파일 (*.txt)'
+        )
+        if not path:
+            return
+        try:
+            out = Path(path)
+            if selected.startswith('텍스트') or out.suffix.lower() == '.txt':
+                if out.suffix.lower() != '.txt':
+                    out = out.with_suffix('.txt')
+                self._write_qc_report_txt(out, rows)
+            else:
+                if out.suffix.lower() != '.csv':
+                    out = out.with_suffix('.csv')
+                with out.open('w', encoding='utf-8-sig', newline='') as fh:
+                    writer = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
+                    writer.writeheader()
+                    writer.writerows(rows)
+            log.info(f'qc report exported: {out}')
+            record_state_event('qc-report', 'exported', path=str(out), files=len(rows))
+            QMessageBox.information(self, 'QC 리포트 저장 완료', f'QC 리포트를 저장했습니다.\n\n{out}')
+        except Exception as e:
+            log.error(f'qc report export failed: {e}')
+            QMessageBox.warning(self, 'QC 리포트 저장 실패', str(e))
 
     def _exp_context_menu(self, pos):
         from PyQt6.QtWidgets import QMenu
@@ -375,6 +516,11 @@ class RightPanel(QWidget):
         self.exp_list.clear()
         files = self.vp._files
         cue_fp = self.vp.cur_file
+        can_use_files = bool(files) and not bool(getattr(self.vp, '_loading', False)) and not bool(getattr(self, '_analysis_active', None))
+        if hasattr(self, 'btn_batch'):
+            self.btn_batch.setEnabled(can_use_files)
+        if hasattr(self, 'btn_export'):
+            self.btn_export.setEnabled(bool(files) and not bool(getattr(self, '_analysis_active', None)))
 
         # 경로 표시: CUE 파일 기준, 없으면 첫 번째 파일 기준
         base_fp = cue_fp or (files[0]["filepath"] if files else "")
@@ -399,9 +545,14 @@ class RightPanel(QWidget):
             is_cue = (f["filepath"] == cue_fp)
             prefix = "▶  " if is_cue else "    "
             badge, badge_color = self._file_status_badge(f, is_cue)
-            item = QListWidgetItem(f"{prefix}{f['name']}    [QC: {badge}]")
+            detail = self._file_status_detail(f)
+            item = QListWidgetItem(f"{prefix}{f['name']}    [QC: {badge}]    {detail}")
             item.setData(Qt.ItemDataRole.UserRole, f["filepath"])
-            item.setToolTip(f"{Path(f['filepath']).name}\nQC 상태: {badge}")
+            updated = f.get("qc_updated_at") or "-"
+            item.setToolTip(
+                f"{Path(f['filepath']).name}\n"
+                f"QC 상태: {badge}\n{detail}\n갱신: {updated}\n{f['filepath']}"
+            )
             if is_cue and badge not in ("블랙 있음", "무음 있음", "블랙/무음", "검사 오류"):
                 item.setForeground(QColor(badge_color))
                 font = item.font()
@@ -577,6 +728,8 @@ class RightPanel(QWidget):
             log.debug(f'analysis preset apply: {e}')
 
     def _analysis_thread_running(self):
+        if getattr(self, '_batch_active', False):
+            return True
         for name in ('_black_thread', '_audio_thread'):
             thread = getattr(self, name, None)
             try:
@@ -586,9 +739,12 @@ class RightPanel(QWidget):
                 pass
         return False
 
-    def _analysis_timeout_seconds(self):
+    def _analysis_timeout_seconds(self, duration=None):
         try:
-            duration = float(getattr(self.vp, 'duration', 0) or self.vp.cur_info.get('duration', 0) or 0)
+            if duration is None:
+                duration = float(getattr(self.vp, 'duration', 0) or self.vp.cur_info.get('duration', 0) or 0)
+            else:
+                duration = float(duration or 0)
         except Exception:
             duration = 0
         return int(max(120, min(3600, duration * 4 + 60)))
@@ -614,8 +770,8 @@ class RightPanel(QWidget):
             f'current={self._analysis_seq}/{self._analysis_seq_kind} where={where}'
         )
 
-    def _start_analysis_timeout(self, kind, label, seq):
-        seconds = self._analysis_timeout_seconds()
+    def _start_analysis_timeout(self, kind, label, seq, seconds=None):
+        seconds = self._analysis_timeout_seconds() if seconds is None else int(seconds)
         self._analysis_timeout_kind = kind
         self._analysis_timeout_label = label
         self._analysis_timeout_seq = seq
@@ -647,6 +803,9 @@ class RightPanel(QWidget):
                     thread.abort()
             except Exception as e:
                 log.debug(f'black timeout abort: {e}')
+            if getattr(self, '_batch_active', False):
+                self._on_batch_black_error(msg, seq=seq)
+                return
             self._on_black_error(msg, seq=seq)
         elif kind == 'audio':
             thread = getattr(self, '_audio_thread', None)
@@ -655,6 +814,9 @@ class RightPanel(QWidget):
                     thread.abort()
             except Exception as e:
                 log.debug(f'audio timeout abort: {e}')
+            if getattr(self, '_batch_active', False):
+                self._on_batch_audio_error(msg, seq=seq)
+                return
             self._on_audio_error(msg, seq=seq)
 
     def cancel_active_analysis(self, reason='작업 취소', wait_ms=700):
@@ -716,12 +878,21 @@ class RightPanel(QWidget):
             except Exception:
                 pass
             log.info(f'analysis cancelled: {reason}')
+        if getattr(self, '_batch_active', False):
+            self._batch_active = False
+            self._batch_queue = []
+            self._batch_current = None
+            try:
+                self.exp_path.setText(f"⏹ {reason} — 일괄 검수 중단")
+            except Exception:
+                pass
+            log.info(f'batch qc cancelled: {reason}')
         self._finish_analysis_mode()
         return had_work
 
     def set_loading_state(self, loading):
         enabled = not bool(loading)
-        for name in ('btn_file', 'btn_recent'):
+        for name in ('btn_file', 'btn_recent', 'btn_batch', 'btn_export'):
             btn = getattr(self, name, None)
             if btn:
                 btn.setEnabled(enabled)
@@ -742,12 +913,19 @@ class RightPanel(QWidget):
         loading = bool(getattr(self.vp, '_loading', False))
         black = getattr(self, 'btn_run_black', None)
         audio = getattr(self, 'btn_run_audio', None)
+        batch = getattr(self, 'btn_batch', None)
+        export = getattr(self, 'btn_export', None)
         if black:
             black.setText("⬛  분석 중..." if busy and kind == 'black' else "⬛  블랙 검출")
             black.setEnabled(False if busy else (has_file and not loading))
         if audio:
             audio.setText("🔇  분석 중..." if busy and kind == 'audio' else "🔇  뮤트 검출")
             audio.setEnabled(False if busy else (has_file and not loading))
+        if batch:
+            batch.setText("진행중" if busy and kind == 'batch' else "일괄")
+            batch.setEnabled(False if busy else (bool(getattr(self.vp, '_files', [])) and not loading))
+        if export:
+            export.setEnabled(False if busy else bool(getattr(self.vp, '_files', [])))
 
     def _set_transport_enabled(self, enabled):
         for name in (
@@ -821,6 +999,217 @@ class RightPanel(QWidget):
             self._analysis_active = None
             self._analysis_paused_playback = False
             self._analysis_paused_meters = False
+
+    def _parse_detection_values(self):
+        amount = int(float(self.black_amount.text()))
+        threshold = int(float(self.black_threshold.text()))
+        amount = max(1, min(100, amount))
+        threshold = max(0, min(255, threshold))
+        thr = float(self.spin_threshold.text())
+        dur = float(self.spin_duration.text())
+        self.black_amount.setText(str(amount))
+        self.black_threshold.setText(str(threshold))
+        self.spin_threshold.setText(f'{thr:g}')
+        self.spin_duration.setText(f'{dur:g}')
+        self._save_detection_settings()
+        return amount, threshold, thr, dur
+
+    def _batch_timeout_seconds(self):
+        duration = 0.0
+        try:
+            duration = float((self._batch_current_info or {}).get('duration', 0) or 0)
+        except Exception:
+            duration = 0.0
+        return self._analysis_timeout_seconds(duration)
+
+    def _batch_tc_offset_frames(self, info):
+        try:
+            return tc_to_frames(info.get('timecode', ''), info.get('fps', 29.97), info.get('df'))
+        except Exception:
+            try:
+                return int(round(float(info.get('tc_offset', 0.0) or 0.0) * float(info.get('fps', 29.97) or 29.97)))
+            except Exception:
+                return 0
+
+    def _run_batch_qc(self):
+        files = [f for f in getattr(self.vp, '_files', []) if f.get('filepath')]
+        if not files:
+            QMessageBox.information(self, '일괄 검수', '파일 목록에 검수할 MXF가 없습니다.')
+            return
+        missing = format_missing_runtime_tools(['FFmpeg', 'FFprobe'])
+        if missing:
+            title = missing.splitlines()[0]
+            self.exp_path.setText(f"⚠ {title}")
+            self.vp.ai_lbl.setText(f"⚠ {title}")
+            log.warning(f'batch qc blocked: {missing}')
+            return
+        if self._analysis_thread_running():
+            self.exp_path.setText("⏳ 다른 분석 작업이 진행 중입니다")
+            return
+        try:
+            self._batch_amount, self._batch_threshold, self._batch_mute_thr, self._batch_mute_dur = self._parse_detection_values()
+        except ValueError:
+            QMessageBox.warning(self, '일괄 검수', '블랙/뮤트 분석 기준 값을 숫자로 입력하세요.')
+            return
+        if not self._begin_analysis_mode('batch', '일괄 검수'):
+            self.exp_path.setText("⏳ 다른 분석 작업이 진행 중입니다")
+            return
+
+        self._batch_active = True
+        self._batch_queue = [f.get('filepath') for f in files]
+        self._batch_total = len(self._batch_queue)
+        self._batch_current = None
+        self._batch_current_info = {}
+        self._batch_started_at = time.monotonic()
+        self.tabs.setCurrentIndex(0)
+        log.info(f'batch qc started files={self._batch_total}')
+        record_state_event('batch-qc', 'started', files=self._batch_total)
+        self._start_next_batch_file()
+
+    def _start_next_batch_file(self):
+        if not getattr(self, '_batch_active', False):
+            return
+        if not self._batch_queue:
+            self._finish_batch_qc()
+            return
+        fp = self._batch_queue.pop(0)
+        self._batch_current = fp
+        idx = self._batch_total - len(self._batch_queue)
+        file_name = Path(fp).name
+        if not Path(fp).exists():
+            if hasattr(self.vp, '_set_file_status'):
+                self.vp._set_file_status(fp, analysis=None, black='error', black_count=0, mute='error', mute_count=0)
+            log.warning(f'batch qc skipped missing file: {fp}')
+            QTimer.singleShot(50, self._start_next_batch_file)
+            return
+        try:
+            self._batch_current_info = probe(fp) or {}
+        except Exception as e:
+            self._batch_current_info = {}
+            log.warning(f'batch qc probe failed file={file_name}: {e}')
+        if hasattr(self.vp, '_set_file_status'):
+            self.vp._set_file_status(fp, analysis='black')
+        self.exp_path.setText(f"⏳ 일괄 검수 {idx}/{self._batch_total} — 블랙: {file_name}")
+        self.vp.ai_lbl.setText(f"⬛ 일괄 검수 {idx}/{self._batch_total} — {file_name}")
+        fps = self._batch_current_info.get('fps', 29.97)
+        df = self._batch_current_info.get('df', None)
+        offset = self._batch_tc_offset_frames(self._batch_current_info)
+        seq = self._next_analysis_seq('black', fp)
+        self._black_thread = BlackDetectThread(fp, fps, self._batch_amount, self._batch_threshold, df, offset)
+        self._black_thread.progress.connect(lambda m, s=seq: self._on_batch_progress('black', s, m))
+        self._black_thread.finished.connect(lambda ranges, s=seq: self._on_batch_black_done(ranges, seq=s))
+        self._black_thread.error.connect(lambda err, s=seq: self._on_batch_black_error(err, seq=s))
+        self._black_thread.start()
+        self._start_analysis_timeout('black', '일괄 블랙 검출', seq, seconds=self._batch_timeout_seconds())
+
+    def _on_batch_progress(self, kind, seq, message):
+        if not getattr(self, '_batch_active', False):
+            return
+        if not self._analysis_matches(kind, seq, self._batch_current):
+            return
+        idx = self._batch_total - len(self._batch_queue)
+        file_name = Path(self._batch_current or '').name
+        label = '블랙' if kind == 'black' else '뮤트'
+        self.exp_path.setText(f"⏳ 일괄 검수 {idx}/{self._batch_total} — {label}: {file_name}")
+        if kind == 'black':
+            self.black_status.setText(f"  ⏳ {message}")
+        else:
+            self.audio_status.setText(f"  ⏳ {message}")
+
+    def _on_batch_black_done(self, ranges, seq=None):
+        if not getattr(self, '_batch_active', False):
+            return
+        fp = self._batch_current
+        if not self._analysis_matches('black', seq, fp):
+            self._log_stale_analysis('black', seq, 'batch black done')
+            return
+        self._stop_analysis_timeout()
+        if getattr(self, '_black_thread', None) and not self._black_thread.isRunning():
+            self._black_thread = None
+        if hasattr(self.vp, '_set_file_status'):
+            self.vp._set_file_status(fp, analysis='mute', black='found' if ranges else 'ok', black_count=len(ranges))
+        log.info(f'batch qc black done file={Path(fp).name} ranges={len(ranges)}')
+        self._start_batch_audio()
+
+    def _on_batch_black_error(self, err, seq=None):
+        if not getattr(self, '_batch_active', False):
+            return
+        fp = self._batch_current
+        if seq is not None and not self._analysis_matches('black', seq, fp):
+            self._log_stale_analysis('black', seq, 'batch black error')
+            return
+        self._stop_analysis_timeout()
+        if getattr(self, '_black_thread', None) and not self._black_thread.isRunning():
+            self._black_thread = None
+        if hasattr(self.vp, '_set_file_status'):
+            self.vp._set_file_status(fp, analysis='mute', black='error', black_count=0)
+        log.error(f'batch qc black error file={Path(fp or "").name}: {err}')
+        self._start_batch_audio()
+
+    def _start_batch_audio(self):
+        if not getattr(self, '_batch_active', False):
+            return
+        fp = self._batch_current
+        idx = self._batch_total - len(self._batch_queue)
+        file_name = Path(fp).name
+        self.exp_path.setText(f"⏳ 일괄 검수 {idx}/{self._batch_total} — 뮤트: {file_name}")
+        self.vp.ai_lbl.setText(f"🔇 일괄 검수 {idx}/{self._batch_total} — {file_name}")
+        fps = self._batch_current_info.get('fps', 29.97)
+        df = self._batch_current_info.get('df', None)
+        offset = self._batch_tc_offset_frames(self._batch_current_info)
+        seq = self._next_analysis_seq('audio', fp)
+        self._audio_thread = AudioAnalyzeThread(fp, fps, self._batch_mute_thr, self._batch_mute_dur, df, offset)
+        self._audio_thread.progress.connect(lambda m, s=seq: self._on_batch_progress('audio', s, m))
+        self._audio_thread.finished.connect(lambda result, s=seq: self._on_batch_audio_done(result, seq=s))
+        self._audio_thread.error.connect(lambda err, s=seq: self._on_batch_audio_error(err, seq=s))
+        self._audio_thread.start()
+        self._start_analysis_timeout('audio', '일괄 뮤트 검출', seq, seconds=self._batch_timeout_seconds())
+
+    def _on_batch_audio_done(self, result, seq=None):
+        if not getattr(self, '_batch_active', False):
+            return
+        fp = self._batch_current
+        if not self._analysis_matches('audio', seq, fp):
+            self._log_stale_analysis('audio', seq, 'batch audio done')
+            return
+        self._stop_analysis_timeout()
+        if getattr(self, '_audio_thread', None) and not self._audio_thread.isRunning():
+            self._audio_thread = None
+        mutes = result.get('mutes', []) if isinstance(result, dict) else []
+        if hasattr(self.vp, '_set_file_status'):
+            self.vp._set_file_status(fp, analysis=None, mute='found' if mutes else 'ok', mute_count=len(mutes))
+        log.info(f'batch qc audio done file={Path(fp).name} mutes={len(mutes)}')
+        QTimer.singleShot(80, self._start_next_batch_file)
+
+    def _on_batch_audio_error(self, err, seq=None):
+        if not getattr(self, '_batch_active', False):
+            return
+        fp = self._batch_current
+        if seq is not None and not self._analysis_matches('audio', seq, fp):
+            self._log_stale_analysis('audio', seq, 'batch audio error')
+            return
+        self._stop_analysis_timeout()
+        if getattr(self, '_audio_thread', None) and not self._audio_thread.isRunning():
+            self._audio_thread = None
+        if hasattr(self.vp, '_set_file_status'):
+            self.vp._set_file_status(fp, analysis=None, mute='error', mute_count=0)
+        log.error(f'batch qc audio error file={Path(fp or "").name}: {err}')
+        QTimer.singleShot(80, self._start_next_batch_file)
+
+    def _finish_batch_qc(self):
+        elapsed = time.monotonic() - float(self._batch_started_at or time.monotonic())
+        total = int(self._batch_total or 0)
+        self._batch_active = False
+        self._batch_queue = []
+        self._batch_current = None
+        self._batch_current_info = {}
+        self._stop_analysis_timeout()
+        self._finish_analysis_mode()
+        self.refresh_explorer()
+        self.exp_path.setText(f"✓ 일괄 검수 완료 — {total}개 파일 / {elapsed:.1f}초")
+        self.vp.ai_lbl.setText(f"✓ 일괄 검수 완료 — {total}개 파일")
+        log.info(f'batch qc finished files={total} elapsed={elapsed:.1f}s')
+        record_state_event('batch-qc', 'finished', files=total, elapsed=f'{elapsed:.1f}s')
 
     def _run_black_detect(self):
         if not self.vp.cur_file:

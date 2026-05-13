@@ -61,6 +61,7 @@ copy /y "ui_layout_check.bat" "%PACKAGE_DIR%\ui_layout_check.bat" > nul
 copy /y "preflight_check.bat" "%PACKAGE_DIR%\preflight_check.bat" > nul
 copy /y "broadcast_sample_validation.bat" "%PACKAGE_DIR%\broadcast_sample_validation.bat" > nul
 copy /y "broadcast_sample_set_validation.bat" "%PACKAGE_DIR%\broadcast_sample_set_validation.bat" > nul
+copy /y "install_desktop_shortcut.bat" "%PACKAGE_DIR%\install_desktop_shortcut.bat" > nul
 copy /y "backup_release.bat" "%PACKAGE_DIR%\backup_release.bat" > nul
 copy /y "rollback_release.bat" "%PACKAGE_DIR%\rollback_release.bat" > nul
 copy /y "assets\mxf_qc_player.ico" "%PACKAGE_DIR%\mxf_qc_player.ico" > nul
