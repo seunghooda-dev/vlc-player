@@ -1925,7 +1925,7 @@ class VideoPanel(QWidget):
         self._res_text.setPlainText("")
         self.btn_black.setEnabled(False)
         self.btn_audio.setEnabled(False)
-        self.ai_lbl.setText(f"⏳ 메타데이터 분석 중: {Path(filepath).name}")
+        self.ai_lbl.setText(f"⏳ 3/4 메타데이터 분석 중 — {Path(filepath).name}")
 
     def _apply_probe_metadata(self, filepath, info, warnings, emit_loaded=False):
         self.cur_info = info
@@ -2154,8 +2154,8 @@ class VideoPanel(QWidget):
         )
         if not getattr(self, '_metadata_ready', False):
             file_name = Path(filepath).name
-            message = "✓ VLC CUE 완료 — 메타데이터 분석 중..."
-            status_message = f"  ▌CUE  {file_name}  |  VLC 먼저 준비됨 — 메타데이터 분석 중"
+            message = "✓ 2/4 VLC CUE 완료 — 3/4 메타데이터 분석 중..."
+            status_message = f"  ▌CUE  {file_name}  |  2/4 VLC 준비됨 — 3/4 메타데이터 분석 중"
             self._set_loading_state(True, message)
             self.status_changed.emit(status_message)
             return
@@ -2202,8 +2202,8 @@ class VideoPanel(QWidget):
                 _force_cue_position('complete')
                 self._complete_file_load(
                     filepath,
-                    "✓ VLC 원본 MXF CUE 완료 — ▶ 재생버튼을 누르세요",
-                    f"  ▌CUE  {file_name}  |  VLC MXF 원본 재생  —  ▶ 재생버튼을 누르세요",
+                    "✓ 4/4 재생 준비 완료 — ▶ 재생버튼을 누르세요",
+                    f"  ▌CUE  {file_name}  |  4/4 재생 준비 완료  —  ▶ 재생버튼을 누르세요",
                 )
 
             QTimer.singleShot(140, _complete_after_settle)
@@ -2485,6 +2485,8 @@ class VideoPanel(QWidget):
             return
         load_t0 = time.monotonic()
         preflight_start = load_t0
+        file_name = Path(filepath).name if filepath else '?'
+        self.status_changed.emit(f"  ⏳ 1/4 파일 확인 — {file_name}")
         ok, title, detail = self._quick_file_preflight(filepath)
         if not ok:
             log.warning(f'load_file preflight blocked: {filepath} | {title} | {detail}')
@@ -2511,7 +2513,7 @@ class VideoPanel(QWidget):
         mark_step('cancel_preconvert')
         self._reset_audio_recovery()
         mark_step('reset_audio')
-        self._set_loading_state(True, f"⏳ 파일 점검 중: {Path(filepath).name}")
+        self._set_loading_state(True, f"⏳ 1/4 파일 점검 완료 — {Path(filepath).name}")
         QApplication.processEvents()
         mark_step('loading_ui')
         self.cur_file = filepath
@@ -2545,8 +2547,8 @@ class VideoPanel(QWidget):
         if Path(filepath).suffix.lower() == '.mxf':
             self._apply_provisional_metadata(filepath)
             mark_step('provisional_ui')
-            self._set_loading_state(True, f"⏳ CUE 준비 중: {Path(filepath).name}")
-            self.empty_label.setText('⏳  VLC로 MXF 원본 로딩 중...')
+            self._set_loading_state(True, f"⏳ 2/4 VLC CUE 준비 중 — {Path(filepath).name}")
+            self.empty_label.setText('⏳  2/4 VLC로 MXF 원본 로딩 중...')
             self._empty_proxy.show(); self._video_item.hide()
             try:
                 vlc_set_t0 = time.monotonic()
@@ -2606,7 +2608,7 @@ class VideoPanel(QWidget):
             f'total_to_probe={time.monotonic() - probe_start:.3f}s '
             f'steps={" ".join(timings)}'
         )
-        self._set_loading_state(True, f"⏳ CUE 준비 중: {Path(filepath).name}")
+        self._set_loading_state(True, f"⏳ 2/4 CUE 준비 중 — {Path(filepath).name}")
         self._metadata_ready = True
         self.cur_info = info
         self.fps       = info.get("fps", 29.97)
@@ -2690,7 +2692,7 @@ class VideoPanel(QWidget):
         mark_step('meter_loudness_start')
 
         if Path(filepath).suffix.lower() == '.mxf':
-            self.empty_label.setText('⏳  VLC로 MXF 원본 로딩 중...')
+            self.empty_label.setText('⏳  2/4 VLC로 MXF 원본 로딩 중...')
             self._empty_proxy.show(); self._video_item.hide()
             try:
                 vlc_set_t0 = time.monotonic()
@@ -3255,6 +3257,9 @@ class VideoPanel(QWidget):
                 pos=f'{self.player.position()}ms',
                 channels=self._get_selected_audio_channels(),
             )
+            self.status_changed.emit(
+                f"  ▶ PLAY 요청 — {Path(self.cur_file).name} | CH {','.join(map(str, self._get_selected_audio_channels()))}"
+            )
             self.player.play()
 
     def stop(self):
@@ -3402,6 +3407,8 @@ class VideoPanel(QWidget):
                 metadata=self._metadata_ready,
                 cue=self._cue_ready,
             )
+            if self.cur_file:
+                self.status_changed.emit(f"  ▶ 재생 중 — {Path(self.cur_file).name} | 오디오 믹스 준비")
             self._reset_audio_recovery()
             self._frame_clock_active = True
             self._sync_frame_clock(self.player.position())

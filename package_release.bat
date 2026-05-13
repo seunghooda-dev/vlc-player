@@ -8,7 +8,9 @@ set "APP_VERSION=V.1.0"
 set "PACKAGE_NAME=%APP_NAME% %APP_VERSION%"
 set "RELEASE_ROOT=release"
 set "PACKAGE_DIR=%CD%\%RELEASE_ROOT%\%PACKAGE_NAME%"
-set "ZIP_PATH=%CD%\%RELEASE_ROOT%\%PACKAGE_NAME%.zip"
+for /f %%T in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-Date -Format yyyyMMdd_HHmmss"') do set "BUILD_STAMP=%%T"
+set "ZIP_PATH=%CD%\%RELEASE_ROOT%\%PACKAGE_NAME%_%BUILD_STAMP%.zip"
+set "ZIP_LATEST_PATH=%CD%\%RELEASE_ROOT%\%PACKAGE_NAME%.zip"
 set "USER_DATA_DIR=%LOCALAPPDATA%\%PACKAGE_NAME%"
 
 echo ================================================
@@ -61,6 +63,7 @@ copy /y "broadcast_sample_validation.bat" "%PACKAGE_DIR%\broadcast_sample_valida
 copy /y "broadcast_sample_set_validation.bat" "%PACKAGE_DIR%\broadcast_sample_set_validation.bat" > nul
 copy /y "backup_release.bat" "%PACKAGE_DIR%\backup_release.bat" > nul
 copy /y "rollback_release.bat" "%PACKAGE_DIR%\rollback_release.bat" > nul
+copy /y "assets\mxf_qc_player.ico" "%PACKAGE_DIR%\mxf_qc_player.ico" > nul
 copy /y "THIRD_PARTY_NOTICES.txt" "%PACKAGE_DIR%\LICENSES\THIRD_PARTY_NOTICES.txt" > nul
 
 echo.
@@ -100,7 +103,7 @@ if exist "%PACKAGE_DIR%\backups" rmdir /s /q "%PACKAGE_DIR%\backups"
 
 echo.
 echo Creating zip package...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "if (Test-Path -LiteralPath '%ZIP_PATH%') { Remove-Item -LiteralPath '%ZIP_PATH%' -Force }; Compress-Archive -LiteralPath '%PACKAGE_DIR%' -DestinationPath '%ZIP_PATH%' -Force"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "if (Test-Path -LiteralPath '%ZIP_PATH%') { Remove-Item -LiteralPath '%ZIP_PATH%' -Force }; if (Test-Path -LiteralPath '%ZIP_LATEST_PATH%') { Remove-Item -LiteralPath '%ZIP_LATEST_PATH%' -Force }; Compress-Archive -LiteralPath '%PACKAGE_DIR%' -DestinationPath '%ZIP_PATH%' -Force; Copy-Item -LiteralPath '%ZIP_PATH%' -Destination '%ZIP_LATEST_PATH%' -Force"
 if errorlevel 1 goto fail
 
 echo.
@@ -108,6 +111,8 @@ echo Release folder:
 echo   %PACKAGE_DIR%
 echo Release zip:
 echo   %ZIP_PATH%
+echo Latest zip:
+echo   %ZIP_LATEST_PATH%
 echo User data folder:
 echo   %USER_DATA_DIR%
 echo.

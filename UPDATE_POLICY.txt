@@ -12,6 +12,7 @@ The release folder contains only files needed to run the program:
 - MXF QC Player.exe
 - _internal\
 - tools\
+- mxf_qc_player.ico
 - README.txt
 - OPERATOR_QUICK_START_KO.txt
 - UPDATE_POLICY.txt
@@ -59,6 +60,9 @@ This rebuilds the package, refreshes the Desktop shortcut, performs a startup
 smoke test, and opens the packaged EXE. It does not copy settings.json,
 archive.db, logs\, tmp\, or backups\ back into the release folder.
 
+The Desktop shortcut uses mxf_qc_player.ico from the release folder directly.
+This avoids stale Windows icon-cache behavior when the EXE icon changes.
+
 Before the release folder is replaced, backup_release.bat copies the current
 program folder to:
 
@@ -70,6 +74,12 @@ Target PC Update
 2. Replace the release folder with the new package folder.
 3. Run preflight_check.bat.
 4. Start MXF QC Player.exe.
+
+Release ZIP files include a build timestamp, for example:
+
+MXF QC Player V.1.0_20260513_143000.zip
+
+MXF QC Player V.1.0.zip is also refreshed as the latest-copy alias.
 
 Legacy Data
 -----------

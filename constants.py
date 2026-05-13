@@ -1604,6 +1604,47 @@ def _recent_log_text(path, max_lines=1000):
     except Exception as e:
         return f'로그 읽기 실패: {e}'
 
+def _diagnostic_recent_files_text(limit=20):
+    try:
+        settings = load_settings()
+        rows = []
+        rows.append(f'SETTINGS_PATH: {SETTINGS_PATH}')
+        rows.append('')
+        for i, fp in enumerate((settings.get('recent_files') or [])[:int(limit)], start=1):
+            p = Path(fp)
+            state = 'exists' if p.exists() else 'missing'
+            details = []
+            try:
+                if p.exists():
+                    details.append(format_bytes(p.stat().st_size))
+                    details.append(p.stat().st_mtime and datetime.fromtimestamp(p.stat().st_mtime).isoformat(timespec='seconds'))
+            except Exception as e:
+                details.append(f'stat-error={e}')
+            rows.append(f'{i:02d}. [{state}] {p.name}')
+            rows.append(f'    path={p}')
+            if details:
+                rows.append(f'    info={", ".join(str(x) for x in details if x)}')
+        if len(rows) <= 2:
+            rows.append('최근 파일 없음')
+        return '\n'.join(rows)
+    except Exception as e:
+        return f'최근 파일 진단 생성 실패: {e}'
+
+def _latest_report_text(patterns, max_chars=40000):
+    try:
+        candidates = []
+        for pattern in patterns:
+            candidates.extend(REPORT_DIR.glob(pattern))
+        candidates = [p for p in candidates if p.is_file()]
+        if not candidates:
+            return '관련 샘플 검증 리포트 없음'
+        latest = max(candidates, key=lambda p: p.stat().st_mtime)
+        text = latest.read_text(encoding='utf-8', errors='replace')
+        header = f'LATEST_REPORT: {latest}\nMODIFIED: {datetime.fromtimestamp(latest.stat().st_mtime).isoformat(timespec="seconds")}\n\n'
+        return header + text[-int(max_chars):]
+    except Exception as e:
+        return f'샘플 검증 리포트 읽기 실패: {e}'
+
 _STATE_TIMELINE = deque(maxlen=240)
 _STATE_TIMELINE_LOCK = threading.RLock()
 
@@ -1703,6 +1744,11 @@ def create_diagnostic_report(destination=None, runtime=None, max_log_lines=1500)
         zf.writestr('child_processes.json', json.dumps(runtime_child_process_status(), ensure_ascii=False, indent=2))
         zf.writestr('state_timeline.json', json.dumps(runtime_state_timeline(), ensure_ascii=False, indent=2))
         zf.writestr('state_timeline.txt', format_state_timeline())
+        zf.writestr('recent_files.txt', _diagnostic_recent_files_text())
+        zf.writestr(
+            'reports/latest_broadcast_sample_report.txt',
+            _latest_report_text(('broadcast-sample*.txt',)),
+        )
         zf.writestr('logs/player_tail.log', _recent_log_text(LOG_DIR / 'player.log', max_log_lines))
         zf.writestr('logs/migration_tail.log', _recent_log_text(LOG_DIR / 'migration.log', 500))
         try:

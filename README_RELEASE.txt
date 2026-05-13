@@ -21,6 +21,7 @@ The release folder is for program files only:
 - MXF QC Player.exe
 - _internal\
 - tools\
+- mxf_qc_player.ico
 - README.txt
 - LICENSES\
 
@@ -245,6 +246,15 @@ smoke test, and starts the packaged EXE. It does not copy settings.json,
 archive.db, logs\, tmp\, or backups\ back into the release folder. If old
 runtime files are found in a previous release folder, they are preserved under
 the user data backups folder before the package is refreshed.
+
+The Desktop shortcut points directly to mxf_qc_player.ico in the release
+folder. If the icon design changes, the shortcut is deleted and recreated so
+Windows is less likely to keep an old cached icon.
+
+Release ZIPs are written with a timestamped name and a latest-copy alias:
+
+MXF QC Player V.1.0_YYYYMMDD_HHMMSS.zip
+MXF QC Player V.1.0.zip
 
 Before replacing the development release folder, update_desktop_release.bat
 backs up the current program folder under:

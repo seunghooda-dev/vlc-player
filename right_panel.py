@@ -737,6 +737,18 @@ class RightPanel(QWidget):
         if hasattr(self, 'btn_run_audio'):
             self.btn_run_audio.setEnabled(enabled and has_file)
 
+    def _set_analysis_buttons_busy(self, kind=None, busy=False):
+        has_file = bool(getattr(self.vp, 'cur_file', None))
+        loading = bool(getattr(self.vp, '_loading', False))
+        black = getattr(self, 'btn_run_black', None)
+        audio = getattr(self, 'btn_run_audio', None)
+        if black:
+            black.setText("⬛  분석 중..." if busy and kind == 'black' else "⬛  블랙 검출")
+            black.setEnabled(False if busy else (has_file and not loading))
+        if audio:
+            audio.setText("🔇  분석 중..." if busy and kind == 'audio' else "🔇  뮤트 검출")
+            audio.setEnabled(False if busy else (has_file and not loading))
+
     def _set_transport_enabled(self, enabled):
         for name in (
             'btn_folder', 'btn_m1', 'btn_gos', 'btn_rew', 'btn_play',
@@ -777,6 +789,7 @@ class RightPanel(QWidget):
                 self.vp.meter_ctrl.set_playing(False)
                 self._analysis_paused_meters = True
             self._set_transport_enabled(False)
+            self._set_analysis_buttons_busy(kind, True)
             if hasattr(self.vp, 'status_changed'):
                 self.vp.status_changed.emit(f"  ⏸ {label} 중 — 재생/오디오 미터 일시정지")
         except Exception as e:
@@ -785,6 +798,7 @@ class RightPanel(QWidget):
 
     def _finish_analysis_mode(self):
         self._set_transport_enabled(True)
+        self._set_analysis_buttons_busy(None, False)
         if self.vp.cur_file:
             try:
                 self.btn_run_black.setEnabled(True)

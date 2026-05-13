@@ -32,6 +32,32 @@ APP_ICON_PATH = RESOURCE_DIR / "assets" / "mxf_qc_player.ico"
 _single_instance_handle = None
 
 
+def _final_child_cleanup(label='shutdown'):
+    """Run a final two-pass child-process cleanup and log what remains."""
+    try:
+        summary = cleanup_child_processes()
+        log.info(
+            f'{label} child cleanup pass1: '
+            f"running_before={summary.get('running_before')} "
+            f"running_after={summary.get('running_after')}"
+        )
+        if summary.get('running_after'):
+            time.sleep(0.25)
+            summary = cleanup_child_processes()
+            log.warning(
+                f'{label} child cleanup pass2: '
+                f"running_before={summary.get('running_before')} "
+                f"running_after={summary.get('running_after')}"
+            )
+        cleaned = cleanup_orphan_audio_processes()
+        if cleaned:
+            log.warning(f'{label} orphan audio cleanup: {cleaned} process(es)')
+        return summary
+    except Exception as e:
+        log.debug(f'{label} final child cleanup failed: {e}')
+        return {}
+
+
 def _activate_existing_window():
     if not sys.platform.startswith('win'):
         return False
@@ -969,15 +995,7 @@ class MainWindow(QMainWindow):
             except Exception as e: log.debug(f'audio_mix stop: {e}')
             try: vp.player.stop()
             except Exception as e: log.debug(f'player stop: {e}')
-            try:
-                summary = cleanup_child_processes()
-                log.info(
-                    "close child cleanup summary: "
-                    f"running_before={summary.get('running_before')} "
-                    f"running_after={summary.get('running_after')}"
-                )
-            except Exception as e:
-                log.debug(f'cleanup child processes: {e}')
+            _final_child_cleanup('close')
             self._log_child_process_snapshot('close after cleanup')
 
             # tmp 파일 정리
@@ -1378,7 +1396,7 @@ def main():
     win.show_runtime_status(runtime)
     QTimer.singleShot(700, win.start_runtime_warmup)
     ret = app.exec()
-    cleanup_child_processes()
+    _final_child_cleanup('app exit')
     log.info('MXF QC Player 종료')
     sys.exit(ret)
 

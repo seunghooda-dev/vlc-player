@@ -7,6 +7,7 @@ set "APP_NAME=MXF QC Player"
 set "APP_VERSION=V.1.0"
 set "PACKAGE_DIR=%CD%\release\%APP_NAME% %APP_VERSION%"
 set "TARGET_EXE=%PACKAGE_DIR%\%APP_NAME%.exe"
+set "TARGET_ICON=%PACKAGE_DIR%\mxf_qc_player.ico"
 set "SHORTCUT_NAME=%APP_NAME% %APP_VERSION%.lnk"
 
 echo ================================================
@@ -32,20 +33,28 @@ if not exist "%TARGET_EXE%" (
     echo   %TARGET_EXE%
     goto fail
 )
+if not exist "%TARGET_ICON%" (
+    echo [warning] Shortcut icon was not found, using EXE icon:
+    echo   %TARGET_ICON%
+    set "TARGET_ICON=%TARGET_EXE%"
+)
 
 echo.
 echo Updating desktop shortcut...
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$desktop=[Environment]::GetFolderPath('Desktop');" ^
   "$target=$env:TARGET_EXE;" ^
+  "$icon=$env:TARGET_ICON;" ^
   "$shortcutPath=Join-Path $desktop $env:SHORTCUT_NAME;" ^
+  "if(Test-Path -LiteralPath $shortcutPath){ Remove-Item -LiteralPath $shortcutPath -Force };" ^
   "$shell=New-Object -ComObject WScript.Shell;" ^
   "$shortcut=$shell.CreateShortcut($shortcutPath);" ^
   "$shortcut.TargetPath=$target;" ^
   "$shortcut.WorkingDirectory=(Split-Path -Parent $target);" ^
   "$shortcut.Description='%APP_NAME% %APP_VERSION%';" ^
-  "$shortcut.IconLocation=$target + ',0';" ^
+  "$shortcut.IconLocation=$icon + ',0';" ^
   "$shortcut.Save();" ^
+  "try { Start-Process -FilePath ie4uinit.exe -ArgumentList '-show' -WindowStyle Hidden -Wait } catch {};" ^
   "Write-Host $shortcutPath"
 if errorlevel 1 goto fail
 
