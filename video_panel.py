@@ -1149,6 +1149,203 @@ class VideoPanel(QWidget):
         right_col_l.addWidget(vol_pod)
         right_col_l.addWidget(transport_pod([self.btn_cue], margins=(4, 4, 4, 4)))
 
+        self._transport_scale_key = None
+        self._transport_base_width = None
+
+        def _clamp(v, lo, hi):
+            return max(lo, min(hi, v))
+
+        def _base_transport_state():
+            tr.setFixedHeight(70)
+            trl.setContentsMargins(10, 7, 10, 7)
+            trl.setSpacing(8)
+            center_l.setSpacing(8)
+            right_col_l.setSpacing(8)
+            left_col.setMinimumWidth(342)
+            right_col.setMinimumWidth(342)
+            for pod in self._transport_pods:
+                pod.setFixedHeight(BTN_H + 8)
+            vol_pod.setFixedHeight(BTN_H + 8)
+            self.btn_folder.setFixedSize(70, BTN_H)
+            self.btn_folder.setStyleSheet(TR_BASE + "QPushButton{font-family:'Cascadia Mono','Consolas','D2Coding';font-size:11px;}")
+            for b in (self.btn_m1, self.btn_rew, self.btn_fwd, self.btn_p1):
+                b.setFixedSize(BTN_W, BTN_H)
+                b.setStyleSheet(TR_COMPACT)
+            for b in (self.btn_gos, self.btn_goe):
+                b.setFixedSize(BTN_W, BTN_H)
+                b.setStyleSheet(TR_JUMP)
+            self.btn_stop.setFixedSize(BTN_W, BTN_H)
+            self.btn_stop.setStyleSheet(TR_STOP)
+            self.btn_play.setFixedSize(PLAY_W, BTN_H)
+            self.btn_play.setStyleSheet(TR_PLAY)
+            self.btn_cue.setMinimumWidth(0)
+            self.btn_cue.setFixedHeight(BTN_H)
+            self.btn_cue.setStyleSheet(
+                f"QPushButton{{background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 rgba(255,209,102,42),stop:1 rgba(255,209,102,18));color:{C['yellow']};border:1px solid rgba(255,209,102,95);"
+                "border-radius:8px;font-family:'Cascadia Mono','Consolas','D2Coding';font-weight:700;font-size:14px;"
+                "padding:0 22px;}"
+                f"QPushButton:hover{{background:rgba(255,209,102,45);border-color:{C['yellow']};color:#ffffff;}}"
+                "QPushButton:pressed{padding-top:1px;background:#181818;}"
+            )
+            vol_lbl.setFixedWidth(28)
+            vol_lbl.setStyleSheet(
+                f"color:{C['text2']};font-family:'JetBrains Mono','Cascadia Mono','Consolas','D2Coding';"
+                "font-size:10px;font-weight:800;background:transparent;"
+            )
+            self.vol_slider.setFixedWidth(122)
+            self.vol_slider.setFixedHeight(26)
+            self.vol_pct.setFixedSize(44, 28)
+            self.vol_pct.setStyleSheet(
+                f"color:{C['text0']};font-family:'JetBrains Mono','Cascadia Mono','Consolas','D2Coding';"
+                "font-size:10px;font-weight:800;"
+                "background:rgba(90,167,255,18);border:1px solid #34435A;border-radius:7px;"
+            )
+
+        def _scaled_transport_style(kind, font_size, radius, play_w=None):
+            if kind == 'play':
+                return (
+                    "QPushButton{"
+                    "background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #70C1FF,stop:0.48 #2D8CFF,stop:1 #155EA8);"
+                    f"color:{C['text0']};border:1px solid {C['blue']};"
+                    f"border-radius:{radius}px;"
+                    "font-family:'Segoe UI Symbol','Segoe UI Variable Text','Segoe UI';"
+                    f"font-size:{font_size}px;font-weight:700;padding:0 1px 1px 0;"
+                    f"min-width:{play_w or PLAY_W}px;"
+                    "}"
+                    "QPushButton:hover{background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #7AC8FF,stop:1 #2976D2);border-color:#c0e1ff;}"
+                    "QPushButton:pressed{background:#173153;padding-top:1px;border-color:#b5d9ff;}"
+                    "QPushButton:disabled{background:#141821;color:#4b5365;border-color:#252b37;}"
+                )
+            base = (
+                "QPushButton{"
+                "background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #283247,stop:0.56 #1B2332,stop:1 #101620);"
+                f"color:{C['text1']};border:1px solid #334159;"
+                f"border-radius:{radius}px;"
+                "font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';"
+                f"font-size:{font_size}px;font-weight:700;padding:0;min-width:0px;"
+                "}"
+                f"QPushButton:hover{{background:#33405A;color:{C['text0']};border-color:{C['blue']};}}"
+                "QPushButton:pressed{background:#0B1018;padding-top:1px;border-color:#8ec4ff;}"
+                "QPushButton:disabled{background:#11141a;color:#3f4555;border-color:#1d222d;}"
+            )
+            if kind == 'compact':
+                return base + f"QPushButton{{font-family:'Cascadia Mono','Consolas','D2Coding';font-size:{font_size}px;}}"
+            if kind == 'jump':
+                return base + f"QPushButton{{color:{C['text0']};font-size:{font_size + 1}px;}}"
+            if kind == 'stop':
+                return (
+                    base
+                    + f"QPushButton{{color:{C['text0']};font-family:'Segoe UI Symbol','Segoe UI';font-size:{font_size + 11}px;border-color:#3a4050;}}"
+                    + "QPushButton:hover{background:#252a36;border-color:#697184;}"
+                )
+            if kind == 'eject':
+                return base + f"QPushButton{{font-family:'Cascadia Mono','Consolas','D2Coding';font-size:{max(10, font_size - 2)}px;}}"
+            return base
+
+        def _cue_style(font_size, radius, pad_x):
+            return (
+                f"QPushButton{{background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 rgba(255,209,102,42),stop:1 rgba(255,209,102,18));color:{C['yellow']};border:1px solid rgba(255,209,102,95);"
+                f"border-radius:{radius}px;font-family:'Cascadia Mono','Consolas','D2Coding';font-weight:700;font-size:{font_size}px;"
+                f"padding:0 {pad_x}px;}}"
+                f"QPushButton:hover{{background:rgba(255,209,102,45);border-color:{C['yellow']};color:#ffffff;}}"
+                "QPushButton:pressed{padding-top:1px;background:#181818;}"
+            )
+
+        def _apply_transport_scale(force=False):
+            available = int(tr.width() or self.width() or 0)
+            if available <= 0:
+                return
+            if self._transport_base_width is None:
+                self._transport_base_width = max(1, available)
+                self._transport_scale_key = ('base',)
+                _base_transport_state()
+                return
+            scale = _clamp(available / float(self._transport_base_width), 0.82, 1.20)
+            if abs(scale - 1.0) < 0.025:
+                key = ('base',)
+                if force or key != self._transport_scale_key:
+                    self._transport_scale_key = key
+                    _base_transport_state()
+                return
+
+            btn_h = _clamp(int(round(BTN_H * scale)), 40, 58)
+            btn_w = _clamp(int(round(BTN_W * scale)), 42, 62)
+            play_w = _clamp(int(round(PLAY_W * scale)), 64, 92)
+            eject_w = _clamp(int(round(70 * scale)), 58, 84)
+            cue_w = _clamp(int(round(92 * scale)), 76, 112)
+            font = _clamp(int(round(13 * scale)), 11, 16)
+            radius = _clamp(int(round(7 * scale)), 5, 10)
+            pod_h = btn_h + _clamp(int(round(8 * scale)), 6, 10)
+            bar_h = btn_h + _clamp(int(round(22 * scale)), 18, 28)
+            key = (btn_h, btn_w, play_w, eject_w, cue_w, font)
+            if not force and key == self._transport_scale_key:
+                return
+            self._transport_scale_key = key
+
+            tr.setFixedHeight(bar_h)
+            margin_x = _clamp(int(round(10 * scale)), 7, 13)
+            margin_y = _clamp(int(round(7 * scale)), 5, 9)
+            trl.setContentsMargins(margin_x, margin_y, margin_x, margin_y)
+            trl.setSpacing(_clamp(int(round(8 * scale)), 5, 10))
+            center_l.setSpacing(_clamp(int(round(8 * scale)), 5, 10))
+            right_col_l.setSpacing(_clamp(int(round(8 * scale)), 5, 10))
+            left_col.setMinimumWidth(_clamp(int(round(342 * scale)), 250, 390))
+            right_col.setMinimumWidth(_clamp(int(round(342 * scale)), 270, 400))
+            for pod in self._transport_pods:
+                pod.setFixedHeight(pod_h)
+            vol_pod.setFixedHeight(pod_h)
+
+            for b in (self.btn_m1, self.btn_rew, self.btn_fwd, self.btn_p1):
+                b.setFixedSize(btn_w, btn_h)
+                b.setStyleSheet(_scaled_transport_style('compact', font, radius))
+            for b in (self.btn_gos, self.btn_goe):
+                b.setFixedSize(btn_w, btn_h)
+                b.setStyleSheet(_scaled_transport_style('jump', font, radius))
+            self.btn_stop.setFixedSize(btn_w, btn_h)
+            self.btn_stop.setStyleSheet(_scaled_transport_style('stop', font, radius))
+            self.btn_play.setFixedSize(play_w, btn_h)
+            self.btn_play.setStyleSheet(_scaled_transport_style('play', _clamp(int(round(22 * scale)), 18, 27), radius, play_w))
+            self.btn_folder.setFixedSize(eject_w, btn_h)
+            self.btn_folder.setStyleSheet(_scaled_transport_style('eject', font, radius))
+            self.btn_cue.setFixedSize(cue_w, btn_h)
+            self.btn_cue.setStyleSheet(_cue_style(_clamp(int(round(14 * scale)), 12, 17), radius + 1, _clamp(int(round(22 * scale)), 14, 25)))
+
+            vol_lbl.setFixedWidth(_clamp(int(round(28 * scale)), 23, 34))
+            vol_lbl.setStyleSheet(
+                f"color:{C['text2']};font-family:'JetBrains Mono','Cascadia Mono','Consolas','D2Coding';"
+                f"font-size:{_clamp(int(round(10 * scale)), 9, 12)}px;font-weight:800;background:transparent;"
+            )
+            self.vol_slider.setFixedWidth(_clamp(int(round(122 * scale)), 94, 150))
+            self.vol_slider.setFixedHeight(_clamp(int(round(26 * scale)), 22, 31))
+            self.vol_pct.setFixedSize(
+                _clamp(int(round(44 * scale)), 36, 52),
+                _clamp(int(round(28 * scale)), 24, 34),
+            )
+            self.vol_pct.setStyleSheet(
+                f"color:{C['text0']};font-family:'JetBrains Mono','Cascadia Mono','Consolas','D2Coding';"
+                f"font-size:{_clamp(int(round(10 * scale)), 9, 12)}px;font-weight:800;"
+                "background:rgba(90,167,255,18);border:1px solid #34435A;border-radius:7px;"
+            )
+
+        self._transport_pods = []
+        for child in (left_col, center_col, right_col):
+            for pod in child.findChildren(QFrame, "transportPod"):
+                if pod not in self._transport_pods:
+                    self._transport_pods.append(pod)
+        self._apply_transport_scale = _apply_transport_scale
+
+        def _transport_resize(evt):
+            QWidget.resizeEvent(tr, evt)
+            if self._transport_base_width is not None:
+                self._apply_transport_scale()
+        tr.resizeEvent = _transport_resize
+
+        def _capture_transport_baseline():
+            if tr.width() > 0:
+                self._transport_base_width = None
+                self._apply_transport_scale(force=True)
+        QTimer.singleShot(450, _capture_transport_baseline)
+
         trl.addWidget(left_col, 1)
         trl.addWidget(center_col, 0, Qt.AlignmentFlag.AlignCenter)
         trl.addWidget(right_col, 1)
