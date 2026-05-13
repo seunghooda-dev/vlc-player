@@ -13,8 +13,8 @@ from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
     QFileDialog, QMenu, QMessageBox, QCheckBox,
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui  import QColor
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QRect
+from PyQt6.QtGui  import QColor, QFontMetrics
 from PyQt6.QtMultimedia import QMediaPlayer
 
 from constants   import (
@@ -219,9 +219,13 @@ class RightPanel(QWidget):
         self.exp_list = QListWidget()
         self.exp_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.exp_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.exp_list.setWordWrap(True)
+        self.exp_list.setTextElideMode(Qt.TextElideMode.ElideNone)
+        self.exp_list.setUniformItemSizes(False)
+        self.exp_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.exp_list.setStyleSheet(
             "QListWidget{background:#07090D;border:none;outline:none;}"
-            f"QListWidget::item{{padding:10px 14px;border-bottom:1px solid #1D2635;"
+            f"QListWidget::item{{padding:9px 14px;border-bottom:1px solid #1D2635;"
             f"font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';font-size:12px;color:{C['text1']};}}"
             f"QListWidget::item:selected{{background:rgba(90,167,255,28);"
             f"border-left:2px solid {C['blue']};color:{C['text0']};}}"
@@ -237,6 +241,10 @@ class RightPanel(QWidget):
                 return
             QListWidget.keyPressEvent(self.exp_list, evt)
         self.exp_list.keyPressEvent = _exp_key
+        def _exp_resize(evt):
+            QListWidget.resizeEvent(self.exp_list, evt)
+            QTimer.singleShot(0, self._update_file_item_size_hints)
+        self.exp_list.resizeEvent = _exp_resize
         # 우클릭 컨텍스트 메뉴
         self.exp_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.exp_list.customContextMenuRequested.connect(self._exp_context_menu)
@@ -611,6 +619,25 @@ class RightPanel(QWidget):
             self.vp._refresh_clip_list()
             self._update_explorer(self.vp.cur_info, self.vp.cur_id or "")
 
+    def _file_item_height(self, text):
+        width = max(170, self.exp_list.viewport().width() - 34)
+        flags = (
+            Qt.TextFlag.TextWordWrap.value
+            | Qt.TextFlag.TextWrapAnywhere.value
+            | Qt.AlignmentFlag.AlignLeft.value
+        )
+        rect = QFontMetrics(self.exp_list.font()).boundingRect(
+            QRect(0, 0, width, 2000), flags, text
+        )
+        return max(52, min(176, rect.height() + 30))
+
+    def _update_file_item_size_hints(self):
+        if not hasattr(self, 'exp_list'):
+            return
+        for i in range(self.exp_list.count()):
+            item = self.exp_list.item(i)
+            item.setSizeHint(QSize(0, self._file_item_height(item.text())))
+
     def refresh_explorer(self):
         # info 없어도 파일 목록만 갱신 (파일 추가/제거 시 호출)
         self.exp_list.clear()
@@ -650,10 +677,12 @@ class RightPanel(QWidget):
 
         for f in files:
             is_cue = (f["filepath"] == cue_fp)
-            prefix = "▶  " if is_cue else "    "
+            prefix = "▶  " if is_cue else ""
             badge, badge_color = self._file_status_badge(f, is_cue)
             detail = self._file_status_detail(f)
-            item = QListWidgetItem(f"{prefix}{f['name']}    [QC: {badge}]    {detail}")
+            item_text = f"{prefix}{f['name']}\nQC: {badge}    {detail}"
+            item = QListWidgetItem(item_text)
+            item.setSizeHint(QSize(0, self._file_item_height(item_text)))
             item.setData(Qt.ItemDataRole.UserRole, f["filepath"])
             updated = f.get("qc_updated_at") or "-"
             item.setToolTip(
@@ -670,6 +699,7 @@ class RightPanel(QWidget):
             self.exp_list.addItem(item)
             if is_cue:
                 self.exp_list.setCurrentItem(item)
+        self._update_file_item_size_hints()
 
     def _update_explorer(self, info, clip_id):
         # 파일 목록 갱신
