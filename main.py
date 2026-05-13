@@ -9,7 +9,7 @@ from pathlib import Path
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
     QSplitter, QDialog, QPushButton, QMessageBox, QPlainTextEdit,
-    QComboBox, QLineEdit, QFileDialog,
+    QComboBox, QLineEdit, QFileDialog, QSizePolicy,
 )
 from PyQt6.QtCore    import Qt, QTimer, QUrl
 from PyQt6.QtGui     import QColor, QPalette, QFont, QFontDatabase, QIcon, QDesktopServices
@@ -223,10 +223,16 @@ class MainWindow(QMainWindow):
         self.vp = VideoPanel()
         self.rp = RightPanel(self.vp)
         self.vp._right_panel = self.rp   # Explorer 연동
+        self.vp.setMinimumWidth(720)
+        self.rp.setMinimumWidth(320)
+        self.vp.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
+        self.rp.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         splitter.addWidget(self.vp)
         splitter.addWidget(self.rp)
         splitter.setChildrenCollapsible(False)
         splitter.setOpaqueResize(True)
+        splitter.setCollapsible(0, False)
+        splitter.setCollapsible(1, False)
         splitter.setHandleWidth(10)
         splitter.setStyleSheet(
             "QSplitter::handle{"
@@ -243,6 +249,10 @@ class MainWindow(QMainWindow):
         )
         splitter.setStretchFactor(0, 7)
         splitter.setStretchFactor(1, 3)
+        try:
+            splitter.handle(1).setCursor(Qt.CursorShape.SizeHorCursor)
+        except Exception:
+            pass
         splitter_sizes = self._settings.get('splitter_sizes', [980, 420])
         try:
             splitter.setSizes([int(splitter_sizes[0]), int(splitter_sizes[1])])
