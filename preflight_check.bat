@@ -56,6 +56,12 @@ for %%B in (smoke_mxf_test.bat stability_mxf_test.bat ui_layout_check.bat broadc
     )
 )
 
+if exist "%ROOT%broadcast_sample_set_validation.ps1" (
+    echo [OK] broadcast_sample_set_validation.ps1
+) else (
+    echo [WARN] broadcast_sample_set_validation.ps1 is missing.
+)
+
 echo.
 echo Running packaged UI layout check...
 call "%ROOT%ui_layout_check.bat"

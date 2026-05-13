@@ -49,6 +49,9 @@ Fixed sample-set validation:
 
 broadcast_sample_set_validation.bat BROADCAST_SAMPLE_SET.txt
 
+The BAT wrapper calls broadcast_sample_set_validation.ps1 so every row in the
+set file is processed and summarized in one report.
+
 Long playback check:
 
 stability_mxf_test.bat "C:\path\long_sample.mxf" 1800 30

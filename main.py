@@ -11,8 +11,8 @@ from PyQt6.QtWidgets import (
     QSplitter, QDialog, QPushButton, QMessageBox, QPlainTextEdit,
     QComboBox, QLineEdit, QFileDialog,
 )
-from PyQt6.QtCore    import Qt, QTimer
-from PyQt6.QtGui     import QColor, QPalette, QFont, QFontDatabase, QIcon
+from PyQt6.QtCore    import Qt, QTimer, QUrl
+from PyQt6.QtGui     import QColor, QPalette, QFont, QFontDatabase, QIcon, QDesktopServices
 from PyQt6.QtMultimedia import QMediaPlayer
 
 from constants    import (
@@ -225,7 +225,22 @@ class MainWindow(QMainWindow):
         self.vp._right_panel = self.rp   # Explorer 연동
         splitter.addWidget(self.vp)
         splitter.addWidget(self.rp)
-        splitter.setHandleWidth(2)
+        splitter.setChildrenCollapsible(False)
+        splitter.setOpaqueResize(True)
+        splitter.setHandleWidth(10)
+        splitter.setStyleSheet(
+            "QSplitter::handle{"
+            "background:qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            "stop:0 #07090D,stop:0.45 #151B26,stop:0.55 #263247,stop:1 #07090D);"
+            f"border-left:1px solid {C['border']};border-right:1px solid {C['border']};"
+            "margin:0 1px;"
+            "}"
+            "QSplitter::handle:hover{"
+            "background:qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            f"stop:0 #101722,stop:0.45 {C['blue']},stop:0.55 {C['teal']},stop:1 #101722);"
+            f"border-left:1px solid {C['blue']};border-right:1px solid {C['teal']};"
+            "}"
+        )
         splitter.setStretchFactor(0, 7)
         splitter.setStretchFactor(1, 3)
         splitter_sizes = self._settings.get('splitter_sizes', [980, 420])
@@ -597,9 +612,11 @@ class MainWindow(QMainWindow):
         rl.addStretch()
         copy_btn = QPushButton('복사')
         report_btn = QPushButton('리포트 저장')
+        latest_btn = QPushButton('최근 리포트')
+        folder_btn = QPushButton('폴더 열기')
         refresh_btn = QPushButton('새로고침')
         close_btn = QPushButton('닫기')
-        for btn in (copy_btn, report_btn, refresh_btn, close_btn):
+        for btn in (copy_btn, report_btn, latest_btn, folder_btn, refresh_btn, close_btn):
             btn.setFixedHeight(30)
             btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             btn.setStyleSheet(
@@ -619,10 +636,14 @@ class MainWindow(QMainWindow):
             title.setText('릴리즈 정보 — 복사됨')
         ))
         report_btn.clicked.connect(lambda: self._save_diagnostic_report(self._runtime))
+        latest_btn.clicked.connect(self._open_latest_diagnostic_report)
+        folder_btn.clicked.connect(self._open_reports_folder)
         refresh_btn.clicked.connect(_refresh)
         close_btn.clicked.connect(dlg.accept)
         rl.addWidget(copy_btn)
         rl.addWidget(report_btn)
+        rl.addWidget(latest_btn)
+        rl.addWidget(folder_btn)
         rl.addWidget(refresh_btn)
         rl.addWidget(close_btn)
         lay.addWidget(row)
@@ -663,6 +684,39 @@ class MainWindow(QMainWindow):
             log.error(f'diagnostic report quick export failed: {e}')
             QMessageBox.warning(self, '진단 리포트 저장 실패', str(e))
 
+    def _latest_diagnostic_report(self):
+        try:
+            candidates = list(REPORT_DIR.glob('mxf-qc-diagnostic-*.zip'))
+            candidates.extend(REPORT_DIR.glob('mxf-qc-diagnostic.zip'))
+            candidates = [p for p in candidates if p.is_file()]
+            if not candidates:
+                return None
+            return max(candidates, key=lambda p: p.stat().st_mtime)
+        except Exception as e:
+            log.debug(f'latest diagnostic lookup failed: {e}')
+            return None
+
+    def _open_reports_folder(self):
+        try:
+            REPORT_DIR.mkdir(parents=True, exist_ok=True)
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(REPORT_DIR)))
+            self.statusBar().showMessage(f"  📁 리포트 폴더 열기 — {REPORT_DIR}", 5000)
+        except Exception as e:
+            log.warning(f'open reports folder failed: {e}')
+            QMessageBox.warning(self, '리포트 폴더 열기 실패', str(e))
+
+    def _open_latest_diagnostic_report(self):
+        report = self._latest_diagnostic_report()
+        if not report:
+            QMessageBox.information(self, '최근 진단 리포트', '아직 저장된 진단 ZIP이 없습니다.')
+            return
+        try:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(report)))
+            self.statusBar().showMessage(f"  📄 최근 진단 리포트 열기 — {report.name}", 5000)
+        except Exception as e:
+            log.warning(f'open latest diagnostic failed: {e}')
+            QMessageBox.warning(self, '최근 진단 리포트 열기 실패', str(e))
+
     def _show_deployment_check_dialog(self):
         runtime = check_runtime_environment()
         self._attach_audio_child_status(runtime)
@@ -693,9 +747,11 @@ class MainWindow(QMainWindow):
         rl.setContentsMargins(0,0,0,0)
         rl.addStretch()
         report_btn = QPushButton('리포트 저장')
+        latest_btn = QPushButton('최근 리포트')
+        folder_btn = QPushButton('폴더 열기')
         refresh_btn = QPushButton('새로고침')
         close_btn = QPushButton('닫기')
-        for btn in (report_btn, refresh_btn, close_btn):
+        for btn in (report_btn, latest_btn, folder_btn, refresh_btn, close_btn):
             btn.setFixedHeight(30)
             btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             btn.setStyleSheet(
@@ -709,9 +765,13 @@ class MainWindow(QMainWindow):
             text.setPlainText(self._deployment_check_text(rt))
             title.setText('배포 전 체크리스트 — 갱신됨')
         report_btn.clicked.connect(lambda: self._save_diagnostic_report(runtime))
+        latest_btn.clicked.connect(self._open_latest_diagnostic_report)
+        folder_btn.clicked.connect(self._open_reports_folder)
         refresh_btn.clicked.connect(_refresh)
         close_btn.clicked.connect(dlg.accept)
         rl.addWidget(report_btn)
+        rl.addWidget(latest_btn)
+        rl.addWidget(folder_btn)
         rl.addWidget(refresh_btn)
         rl.addWidget(close_btn)
         lay.addWidget(row)
@@ -769,10 +829,12 @@ class MainWindow(QMainWindow):
         rl.addStretch()
         copy_btn = QPushButton('복사')
         report_btn = QPushButton('리포트 저장')
+        latest_btn = QPushButton('최근 리포트')
+        folder_btn = QPushButton('폴더 열기')
         refresh_btn = QPushButton('새로고침')
         log_btn = QPushButton('로그 보기')
         close_btn = QPushButton('닫기')
-        for btn in (copy_btn, report_btn, refresh_btn, log_btn, close_btn):
+        for btn in (copy_btn, report_btn, latest_btn, folder_btn, refresh_btn, log_btn, close_btn):
             btn.setFixedHeight(30)
             btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             btn.setStyleSheet(
@@ -785,11 +847,15 @@ class MainWindow(QMainWindow):
             title.setText('실행 환경 진단 — 복사됨')
         ))
         report_btn.clicked.connect(lambda: self._save_diagnostic_report(self._runtime))
+        latest_btn.clicked.connect(self._open_latest_diagnostic_report)
+        folder_btn.clicked.connect(self._open_reports_folder)
         refresh_btn.clicked.connect(_refresh_runtime)
         log_btn.clicked.connect(self._show_error_log)
         close_btn.clicked.connect(dlg.accept)
         rl.addWidget(copy_btn)
         rl.addWidget(report_btn)
+        rl.addWidget(latest_btn)
+        rl.addWidget(folder_btn)
         rl.addWidget(refresh_btn)
         rl.addWidget(log_btn)
         rl.addWidget(close_btn)

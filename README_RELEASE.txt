@@ -10,7 +10,8 @@ Quick Start
 3. Double-click a file in the list, or select it and press CUE.
 4. Use the Black / Mute tabs for manual QC detection, or press "일괄" in
    the file tab to run black + mute detection for all listed files.
-5. Press "리포트" in the file tab to export the file-list QC result as CSV/TXT.
+5. During batch QC, press "취소" if the current validation needs to stop.
+6. Press "리포트" in the file tab to export the file-list QC result as CSV/TXT.
 
 Korean operator quick guide:
 
@@ -125,7 +126,8 @@ Diagnostic Report
 -----------------
 Press REPORT in the top bar to immediately create a diagnostic ZIP under the
 default reports folder. In the ENV or CHECK dialog, press "리포트 저장" if you
-want to choose the destination manually.
+want to choose the destination manually. Use "최근 리포트" to open the newest
+diagnostic ZIP and "폴더 열기" to open the reports folder.
 The report includes:
 
 - runtime environment text
@@ -144,12 +146,16 @@ The file tab has a "리포트" button. It exports the current file list with:
 
 - file name and path
 - file size
+- media format, codec, resolution, FPS, DF flag, duration, audio channel count,
+  source timecode, and bit rate when FFprobe can read them
 - QC status
 - black detection status and range count
 - mute detection status and range count
 - last QC update time
 
 CSV export uses UTF-8 with BOM so it opens cleanly in Excel on Windows.
+The file list also has filters for "전체", "완료", and "문제" so multiple MXF
+files can be reviewed faster after analysis.
 
 Batch QC
 --------
@@ -163,6 +169,10 @@ in order:
 
 Playback and audio helper processes are paused while batch analysis is running
 so FFmpeg analysis work does not fight with VLC playback.
+
+The "취소" button stops an active batch run after the current analysis worker is
+closed. When "자동저장" is checked, a CSV QC report is automatically written to
+the reports folder after the batch finishes.
 
 Automatic Retention
 -------------------
@@ -256,6 +266,8 @@ broadcast_sample_set_validation.bat BROADCAST_SAMPLE_SET.txt
 
 This is useful when you want every release to pass the same representative
 MXF set instead of whatever files happen to be on the Desktop.
+The BAT file delegates the row-by-row loop to broadcast_sample_set_validation.ps1
+so all sample rows are validated and written to one report.
 
 Access Notes
 ------------

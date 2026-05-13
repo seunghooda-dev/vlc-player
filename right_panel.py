@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QGridLayout, QLabel, QPushButton,
     QListWidget, QListWidgetItem, QTabWidget, QLineEdit, QComboBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
-    QFileDialog, QMenu, QMessageBox,
+    QFileDialog, QMenu, QMessageBox, QCheckBox,
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui  import QColor
@@ -52,6 +52,9 @@ class RightPanel(QWidget):
         self._analysis_timeout_timer.setSingleShot(True)
         self._analysis_timeout_timer.timeout.connect(self._on_analysis_timeout)
         self._settings = load_settings()
+        self._filter_key = str(self._settings.get('file_filter', 'all') or 'all')
+        if self._filter_key not in ('all', 'done', 'issues'):
+            self._filter_key = 'all'
         self._analysis_presets = {
             'broadcast': {
                 'label': '방송 QC',
@@ -172,6 +175,31 @@ class RightPanel(QWidget):
         self.btn_batch.clicked.connect(self._run_batch_qc)
         tbl.addWidget(self.btn_batch)
 
+        self.btn_batch_cancel = QPushButton("취소")
+        self.btn_batch_cancel.setFixedHeight(24)
+        self.btn_batch_cancel.setToolTip("진행 중인 일괄 검수를 중단")
+        self.btn_batch_cancel.setStyleSheet(
+            _sort_btn_style.replace(f"color:{C['text2']};", f"color:{C['red']};")
+        )
+        self.btn_batch_cancel.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_batch_cancel.setEnabled(False)
+        self.btn_batch_cancel.clicked.connect(self._cancel_batch_qc)
+        tbl.addWidget(self.btn_batch_cancel)
+
+        self.chk_auto_report = QCheckBox("자동저장")
+        self.chk_auto_report.setToolTip("일괄 검수 완료 후 QC CSV 리포트를 reports 폴더에 자동 저장")
+        self.chk_auto_report.setChecked(bool(self._settings.get('batch_auto_report', True)))
+        self.chk_auto_report.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.chk_auto_report.setStyleSheet(
+            f"QCheckBox{{color:{C['text2']};font-size:10px;font-weight:700;background:transparent;spacing:4px;}}"
+            f"QCheckBox::indicator{{width:12px;height:12px;border:1px solid {C['border2']};border-radius:3px;background:#0f131b;}}"
+            f"QCheckBox::indicator:checked{{background:{C['teal']};border-color:{C['teal']};}}"
+        )
+        self.chk_auto_report.stateChanged.connect(
+            lambda _=None: self._save_file_tab_settings()
+        )
+        tbl.addWidget(self.chk_auto_report)
+
         self.btn_export = QPushButton("리포트")
         self.btn_export.setFixedHeight(24)
         self.btn_export.setToolTip("파일 목록 QC 결과를 CSV/TXT 리포트로 저장")
@@ -190,6 +218,35 @@ class RightPanel(QWidget):
             "background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #07090D,stop:1 #101722);padding:5px 12px;"
             f"border-bottom:1px solid {C['border']};")
         l.addWidget(self.exp_path)
+
+        # 필터 표시
+        filter_bar = QWidget()
+        filter_bar.setFixedHeight(30)
+        filter_bar.setStyleSheet(
+            "background:#090D14;"
+            f"border-bottom:1px solid {C['border']};"
+        )
+        fbl = QHBoxLayout(filter_bar)
+        fbl.setContentsMargins(8,3,8,3)
+        fbl.setSpacing(5)
+        self._filter_btns = {}
+        for key, label, tip in [
+            ('all', '전체', '모든 파일 보기'),
+            ('done', '완료', '블랙/뮤트 검수가 완료된 파일만 보기'),
+            ('issues', '문제', '블랙/무음/검사 오류가 있는 파일만 보기'),
+        ]:
+            b = QPushButton(label)
+            b.setCheckable(True)
+            b.setChecked(key == self._filter_key)
+            b.setFixedHeight(22)
+            b.setToolTip(tip)
+            b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            b.setStyleSheet(_sort_btn_style)
+            b.clicked.connect(lambda checked=False, k=key: self._set_file_filter(k))
+            self._filter_btns[key] = b
+            fbl.addWidget(b)
+        fbl.addStretch()
+        l.addWidget(filter_bar)
 
         # 파일 목록
         self.exp_list = QListWidget()
@@ -247,6 +304,25 @@ class RightPanel(QWidget):
             f"QMenu::item:disabled{{color:{C['text3']};}}"
             f"QMenu::separator{{height:1px;background:{C['border']};margin:3px 0;}}"
         )
+
+    def _save_file_tab_settings(self):
+        try:
+            self._settings = save_settings(
+                file_filter=self._filter_key,
+                batch_auto_report=bool(getattr(self, 'chk_auto_report', None) and self.chk_auto_report.isChecked()),
+            )
+            self.vp._settings = load_settings()
+        except Exception as e:
+            log.debug(f'file tab settings save: {e}')
+
+    def _set_file_filter(self, key):
+        if key not in ('all', 'done', 'issues'):
+            key = 'all'
+        self._filter_key = key
+        for kk, btn in getattr(self, '_filter_btns', {}).items():
+            btn.setChecked(kk == key)
+        self._save_file_tab_settings()
+        self.refresh_explorer()
 
     def _show_recent_menu(self):
         settings = load_settings()
@@ -367,6 +443,25 @@ class RightPanel(QWidget):
         mute = self._qc_status_text(f.get("mute"), "mute")
         return f"블랙 {black} {black_count} / 무음 {mute} {mute_count}"
 
+    def _file_matches_filter(self, f):
+        key = getattr(self, '_filter_key', 'all')
+        if key == 'all':
+            return True
+        black = str(f.get('black') or '').lower()
+        mute = str(f.get('mute') or '').lower()
+        if key == 'done':
+            return black in ('ok', 'found') and mute in ('ok', 'found')
+        if key == 'issues':
+            return black in ('found', 'error') or mute in ('found', 'error')
+        return True
+
+    def _filter_label(self):
+        return {
+            'all': '전체',
+            'done': '완료',
+            'issues': '문제',
+        }.get(getattr(self, '_filter_key', 'all'), '전체')
+
     def _status_summary_text(self, files):
         counts = {
             "미분석": 0,
@@ -415,12 +510,33 @@ class RightPanel(QWidget):
                     size = p.stat().st_size
                 except Exception:
                     size = 0
+            info = {}
+            try:
+                if Path(fp).exists():
+                    info = probe(fp) or {}
+            except Exception as e:
+                log.debug(f'qc report probe skipped file={p.name}: {e}')
+            fps = float(info.get('fps', 0) or 0)
+            duration = float(info.get('duration', 0) or 0)
+            width = int(info.get('width', 0) or 0)
+            height = int(info.get('height', 0) or 0)
             rows.append({
                 '검수시각': datetime.now().isoformat(timespec='seconds'),
                 'QC상태': badge,
                 '파일명': f.get('name') or p.name,
                 '경로': fp,
                 '확장자': f.get('ext') or p.suffix.upper().lstrip('.'),
+                '포맷': info.get('format_short', ''),
+                '코덱': info.get('codec', ''),
+                '해상도': f'{width}x{height}' if width and height else '',
+                'FPS': f'{fps:.3f}' if fps else '',
+                'DF': 'Y' if info.get('df') else 'N',
+                '길이_TC': sec_to_tc(duration, fps or 29.97, info.get('df')) if duration else '',
+                '길이_sec': f'{duration:.3f}' if duration else '',
+                '오디오채널': str(int(info.get('channels', 0) or 0)),
+                '오디오스트림': str(int(info.get('audio_stream_count', 0) or 0)),
+                '소스타임코드': info.get('timecode', '') or '',
+                '비트레이트': str(info.get('bit_rate', '') or ''),
                 '크기': format_bytes(size) if size else '-',
                 '크기_bytes': str(size or ''),
                 '블랙상태': self._qc_status_text(f.get('black'), 'black'),
@@ -442,6 +558,9 @@ class RightPanel(QWidget):
         for idx, row in enumerate(rows, 1):
             lines.append(f"{idx:03d}. {row['파일명']}")
             lines.append(f"     상태: {row['QC상태']} / {row['QC요약']}")
+            lines.append(f"     미디어: {row.get('해상도') or '-'} / {row.get('FPS') or '-'}fps / {row.get('오디오채널') or '-'}CH / {row.get('길이_TC') or '-'}")
+            if row.get('소스타임코드'):
+                lines.append(f"     소스TC: {row['소스타임코드']}")
             lines.append(f"     블랙: {row['블랙상태']} {row['블랙구간']}구간")
             lines.append(f"     무음: {row['무음상태']} {row['무음구간']}구간")
             lines.append(f"     크기: {row['크기']}")
@@ -449,6 +568,23 @@ class RightPanel(QWidget):
             lines.append(f"     경로: {row['경로']}")
             lines.append('')
         Path(path).write_text('\n'.join(lines), encoding='utf-8')
+
+    def _write_qc_report_csv(self, path, rows):
+        with Path(path).open('w', encoding='utf-8-sig', newline='') as fh:
+            writer = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(rows)
+
+    def _auto_save_qc_report(self, prefix='batch-qc'):
+        rows = self._qc_report_rows()
+        if not rows:
+            return None
+        REPORT_DIR.mkdir(parents=True, exist_ok=True)
+        out = REPORT_DIR / f"{prefix}-{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        self._write_qc_report_csv(out, rows)
+        log.info(f'qc report auto-exported: {out}')
+        record_state_event('qc-report', 'auto exported', path=str(out), files=len(rows))
+        return out
 
     def _export_qc_report(self):
         rows = self._qc_report_rows()
@@ -477,10 +613,7 @@ class RightPanel(QWidget):
             else:
                 if out.suffix.lower() != '.csv':
                     out = out.with_suffix('.csv')
-                with out.open('w', encoding='utf-8-sig', newline='') as fh:
-                    writer = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
-                    writer.writeheader()
-                    writer.writerows(rows)
+                self._write_qc_report_csv(out, rows)
             log.info(f'qc report exported: {out}')
             record_state_event('qc-report', 'exported', path=str(out), files=len(rows))
             QMessageBox.information(self, 'QC 리포트 저장 완료', f'QC 리포트를 저장했습니다.\n\n{out}')
@@ -514,19 +647,26 @@ class RightPanel(QWidget):
     def refresh_explorer(self):
         # info 없어도 파일 목록만 갱신 (파일 추가/제거 시 호출)
         self.exp_list.clear()
-        files = self.vp._files
+        all_files = list(self.vp._files)
+        files = [f for f in all_files if self._file_matches_filter(f)]
         cue_fp = self.vp.cur_file
-        can_use_files = bool(files) and not bool(getattr(self.vp, '_loading', False)) and not bool(getattr(self, '_analysis_active', None))
+        can_use_files = bool(all_files) and not bool(getattr(self.vp, '_loading', False)) and not bool(getattr(self, '_analysis_active', None))
         if hasattr(self, 'btn_batch'):
             self.btn_batch.setEnabled(can_use_files)
         if hasattr(self, 'btn_export'):
-            self.btn_export.setEnabled(bool(files) and not bool(getattr(self, '_analysis_active', None)))
+            self.btn_export.setEnabled(bool(all_files) and not bool(getattr(self, '_analysis_active', None)))
+        if hasattr(self, 'btn_batch_cancel'):
+            self.btn_batch_cancel.setEnabled(bool(getattr(self, '_batch_active', False)))
+        for key, btn in getattr(self, '_filter_btns', {}).items():
+            btn.setChecked(key == getattr(self, '_filter_key', 'all'))
 
         # 경로 표시: CUE 파일 기준, 없으면 첫 번째 파일 기준
-        base_fp = cue_fp or (files[0]["filepath"] if files else "")
-        summary = self._status_summary_text(files)
+        base_fp = cue_fp or (all_files[0]["filepath"] if all_files else "")
+        summary = self._status_summary_text(all_files)
         if base_fp:
-            self.exp_path.setText(f"📁 {Path(base_fp).parent}    QC {summary}")
+            self.exp_path.setText(
+                f"📁 {Path(base_fp).parent}    QC {summary}    표시 {len(files)}/{len(all_files)} ({self._filter_label()})"
+            )
         else:
             self.exp_path.setText("파일을 추가하세요")
 
@@ -882,10 +1022,13 @@ class RightPanel(QWidget):
             self._batch_active = False
             self._batch_queue = []
             self._batch_current = None
+            self._batch_current_info = {}
             try:
                 self.exp_path.setText(f"⏹ {reason} — 일괄 검수 중단")
             except Exception:
                 pass
+            if hasattr(self, 'btn_batch_cancel'):
+                self.btn_batch_cancel.setEnabled(False)
             log.info(f'batch qc cancelled: {reason}')
         self._finish_analysis_mode()
         return had_work
@@ -924,6 +1067,9 @@ class RightPanel(QWidget):
         if batch:
             batch.setText("진행중" if busy and kind == 'batch' else "일괄")
             batch.setEnabled(False if busy else (bool(getattr(self.vp, '_files', [])) and not loading))
+        cancel = getattr(self, 'btn_batch_cancel', None)
+        if cancel:
+            cancel.setEnabled(bool(busy and kind == 'batch'))
         if export:
             export.setEnabled(False if busy else bool(getattr(self.vp, '_files', [])))
 
@@ -999,6 +1145,18 @@ class RightPanel(QWidget):
             self._analysis_active = None
             self._analysis_paused_playback = False
             self._analysis_paused_meters = False
+            if hasattr(self, 'btn_batch_cancel'):
+                self.btn_batch_cancel.setEnabled(False)
+
+    def _cancel_batch_qc(self):
+        if not getattr(self, '_batch_active', False):
+            return
+        self.cancel_active_analysis('일괄 검수 취소')
+        self.refresh_explorer()
+        try:
+            self.vp.ai_lbl.setText('⏹ 일괄 검수 취소됨')
+        except Exception:
+            pass
 
     def _parse_detection_values(self):
         amount = int(float(self.black_amount.text()))
@@ -1206,10 +1364,17 @@ class RightPanel(QWidget):
         self._stop_analysis_timeout()
         self._finish_analysis_mode()
         self.refresh_explorer()
-        self.exp_path.setText(f"✓ 일괄 검수 완료 — {total}개 파일 / {elapsed:.1f}초")
-        self.vp.ai_lbl.setText(f"✓ 일괄 검수 완료 — {total}개 파일")
+        report = None
+        if bool(getattr(self, 'chk_auto_report', None) and self.chk_auto_report.isChecked()):
+            try:
+                report = self._auto_save_qc_report('batch-qc-report')
+            except Exception as e:
+                log.warning(f'batch qc auto report failed: {e}')
+        suffix = f" / 리포트 {Path(report).name}" if report else ""
+        self.exp_path.setText(f"✓ 일괄 검수 완료 — {total}개 파일 / {elapsed:.1f}초{suffix}")
+        self.vp.ai_lbl.setText(f"✓ 일괄 검수 완료 — {total}개 파일{suffix}")
         log.info(f'batch qc finished files={total} elapsed={elapsed:.1f}s')
-        record_state_event('batch-qc', 'finished', files=total, elapsed=f'{elapsed:.1f}s')
+        record_state_event('batch-qc', 'finished', files=total, elapsed=f'{elapsed:.1f}s', report=str(report or ''))
 
     def _run_black_detect(self):
         if not self.vp.cur_file:

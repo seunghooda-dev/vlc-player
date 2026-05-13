@@ -24,6 +24,7 @@ The release folder contains only files needed to run the program:
 - preflight_check.bat
 - broadcast_sample_validation.bat
 - broadcast_sample_set_validation.bat
+- broadcast_sample_set_validation.ps1
 - backup_release.bat
 - rollback_release.bat
 - LICENSES\
