@@ -4,6 +4,7 @@ MainWindow + 전역 예외 처리 + 앱 실행
 """
 import sys
 import time
+import subprocess
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
@@ -15,7 +16,8 @@ from PyQt6.QtGui     import QColor, QPalette, QFont, QFontDatabase, QIcon
 from PyQt6.QtMultimedia import QMediaPlayer
 
 from constants    import (
-    C, STYLE, LOG_DIR, TMP_DIR, BASE_DIR, RESOURCE_DIR, REPORT_DIR, log, APP_FONT_QT,
+    C, STYLE, LOG_DIR, TMP_DIR, BASE_DIR, RESOURCE_DIR, REPORT_DIR, APP_DIR, USER_DATA_DIR,
+    SETTINGS_PATH, DB_PATH, log, APP_FONT_QT,
     check_runtime_environment, format_runtime_environment, format_runtime_startup_alert,
     cleanup_child_processes, cleanup_orphan_audio_processes, runtime_child_process_status,
     cache_summary, cleanup_runtime_cache, cleanup_old_generated_files, format_bytes, format_cache_summary,
@@ -198,6 +200,13 @@ class MainWindow(QMainWindow):
         log_btn.setStyleSheet(_top_btn_style)
         log_btn.clicked.connect(self._show_error_log)
         tbl.addWidget(log_btn)
+        info_btn = QPushButton("INFO")
+        info_btn.setFixedHeight(24)
+        info_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        info_btn.setToolTip("릴리즈 / 빌드 정보 보기")
+        info_btn.setStyleSheet(_top_btn_style)
+        info_btn.clicked.connect(self._show_release_info_dialog)
+        tbl.addWidget(info_btn)
         ver = QLabel("V.1.0"); ver.setStyleSheet(f"color:{C['text3']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;background:transparent;")
         tbl.addWidget(ver)
         root.addWidget(tb)
@@ -433,6 +442,184 @@ class MainWindow(QMainWindow):
         lines.append('- settings.json, archive.db, logs, tmp, backups, reports는 LOCALAPPDATA에 저장됩니다.')
         lines.append('- 문제 발생 시 ENV > 리포트 저장으로 진단 ZIP을 전달하세요.')
         return '\n'.join(lines)
+
+    def _git_commit_short(self):
+        roots = []
+        for root in (Path(__file__).resolve().parent, BASE_DIR, APP_DIR, APP_DIR.parent):
+            try:
+                root = Path(root).resolve()
+            except Exception:
+                continue
+            if root not in roots:
+                roots.append(root)
+        for root in roots:
+            if not (root / '.git').exists():
+                continue
+            try:
+                flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if sys.platform.startswith('win') else 0
+                result = subprocess.run(
+                    ['git', 'rev-parse', '--short', 'HEAD'],
+                    cwd=str(root),
+                    capture_output=True,
+                    text=True,
+                    timeout=2,
+                    creationflags=flags,
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    return result.stdout.strip()
+            except Exception as e:
+                log.debug(f'git commit read failed at {root}: {e}')
+        return '-'
+
+    def _latest_release_package(self):
+        roots = []
+        for root in (APP_DIR.parent, APP_DIR.parent.parent, BASE_DIR / 'release'):
+            try:
+                root = Path(root).resolve()
+            except Exception:
+                continue
+            if root not in roots:
+                roots.append(root)
+        candidates = []
+        for root in roots:
+            try:
+                candidates.extend(root.glob('MXF QC Player V.1.0*.zip'))
+            except Exception:
+                pass
+        candidates = [p for p in candidates if p.is_file()]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda p: p.stat().st_mtime)
+
+    def _release_info_text(self, runtime=None):
+        runtime = runtime or self._runtime or check_runtime_environment()
+        self._attach_audio_child_status(runtime)
+        exe_path = Path(sys.executable if getattr(sys, 'frozen', False) else __file__).resolve()
+        try:
+            exe_modified = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(exe_path.stat().st_mtime))
+            exe_size = format_bytes(exe_path.stat().st_size)
+        except Exception:
+            exe_modified = '-'
+            exe_size = '-'
+        package = self._latest_release_package()
+        if package:
+            try:
+                package_text = (
+                    f"{package}\n"
+                    f"  modified={time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(package.stat().st_mtime))} "
+                    f"size={format_bytes(package.stat().st_size)}"
+                )
+            except Exception:
+                package_text = str(package)
+        else:
+            package_text = '-'
+
+        lines = []
+        lines.append(APP_WINDOW_TITLE)
+        lines.append('=' * 52)
+        lines.append(f'실행 모드      : {"패키지 EXE" if getattr(sys, "frozen", False) else "개발 실행"}')
+        lines.append(f'Git 커밋       : {self._git_commit_short()}')
+        lines.append(f'실행 파일      : {exe_path}')
+        lines.append(f'실행 파일 정보 : modified={exe_modified} size={exe_size}')
+        lines.append(f'최신 패키지    : {package_text}')
+        lines.append('')
+        lines.append('저장 위치')
+        lines.append('-' * 52)
+        lines.append(f'APP_DIR        : {APP_DIR}')
+        lines.append(f'RESOURCE_DIR   : {RESOURCE_DIR}')
+        lines.append(f'USER_DATA_DIR  : {USER_DATA_DIR}')
+        lines.append(f'SETTINGS_PATH  : {SETTINGS_PATH}')
+        lines.append(f'DB_PATH        : {DB_PATH}')
+        lines.append(f'LOG_DIR        : {LOG_DIR}')
+        lines.append(f'TMP_DIR        : {TMP_DIR}')
+        lines.append(f'REPORT_DIR     : {REPORT_DIR}')
+        lines.append('')
+        lines.append('런타임 도구')
+        lines.append('-' * 52)
+        for item in runtime.get('items', []):
+            mark = 'OK' if item.get('ok') else 'CHECK'
+            lines.append(f"[{mark}] {item.get('name')} — {item.get('message') or '-'}")
+            if item.get('path'):
+                lines.append(f"  path={item.get('path')}")
+        audio = runtime.get('audio_mix') or {}
+        lines.append('')
+        lines.append('오디오 자식 프로세스')
+        lines.append('-' * 52)
+        lines.append(
+            f"expected={audio.get('expected')} playing={audio.get('playing')} "
+            f"ffmpeg={audio.get('ffmpeg')} pid={audio.get('ffmpeg_pid') or '-'} "
+            f"ffplay={audio.get('ffplay')} pid={audio.get('ffplay_pid') or '-'} "
+            f"ch={audio.get('channels') or '-'}"
+        )
+        if audio.get('last_error'):
+            lines.append(f"last_error={audio.get('last_error')}")
+        lines.append('')
+        lines.append('메모')
+        lines.append('-' * 52)
+        lines.append('- 설정, DB, 로그, 캐시, 리포트는 사용자 데이터 폴더에 분리 저장됩니다.')
+        lines.append('- QC 요약은 archive.db에 저장되어 파일을 다시 추가해도 상태가 유지됩니다.')
+        lines.append('- 재생 진행 이상은 화면을 방해하지 않고 player.log와 진단 리포트에 기록됩니다.')
+        return '\n'.join(lines)
+
+    def _show_release_info_dialog(self):
+        dlg = QDialog(self)
+        dlg.setWindowTitle('릴리즈 정보')
+        dlg.resize(900, 620)
+        dlg.setStyleSheet(
+            f"background:{C['panel']};color:{C['text0']};"
+            f"font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';font-size:12px;"
+        )
+        lay = QVBoxLayout(dlg)
+        lay.setContentsMargins(16,14,16,14)
+        lay.setSpacing(10)
+        title = QLabel('릴리즈 정보')
+        title.setStyleSheet(f"color:{C['text0']};font-size:14px;font-weight:700;background:transparent;")
+        lay.addWidget(title)
+        text = QPlainTextEdit()
+        text.setReadOnly(True)
+        text.setPlainText(self._release_info_text())
+        text.setStyleSheet(
+            f"QPlainTextEdit{{background:{C['panel2']};color:{C['text1']};border:1px solid {C['border']};"
+            f"border-radius:6px;font-family:'Cascadia Mono','Consolas','D2Coding';font-size:11px;"
+            "padding:10px;selection-background-color:#264f78;}}"
+        )
+        lay.addWidget(text, 1)
+        row = QWidget()
+        rl = QHBoxLayout(row)
+        rl.setContentsMargins(0,0,0,0)
+        rl.addStretch()
+        copy_btn = QPushButton('복사')
+        report_btn = QPushButton('리포트 저장')
+        refresh_btn = QPushButton('새로고침')
+        close_btn = QPushButton('닫기')
+        for btn in (copy_btn, report_btn, refresh_btn, close_btn):
+            btn.setFixedHeight(30)
+            btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            btn.setStyleSheet(
+                f"QPushButton{{background:{C['panel3']};color:{C['text1']};border:1px solid {C['border']};"
+                "border-radius:6px;font-size:12px;padding:0 14px;}"
+                f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
+            )
+
+        def _refresh():
+            rt = check_runtime_environment()
+            self._attach_audio_child_status(rt)
+            text.setPlainText(self._release_info_text(rt))
+            title.setText('릴리즈 정보 — 갱신됨')
+
+        copy_btn.clicked.connect(lambda: (
+            QApplication.clipboard().setText(text.toPlainText()),
+            title.setText('릴리즈 정보 — 복사됨')
+        ))
+        report_btn.clicked.connect(lambda: self._save_diagnostic_report(self._runtime))
+        refresh_btn.clicked.connect(_refresh)
+        close_btn.clicked.connect(dlg.accept)
+        rl.addWidget(copy_btn)
+        rl.addWidget(report_btn)
+        rl.addWidget(refresh_btn)
+        rl.addWidget(close_btn)
+        lay.addWidget(row)
+        dlg.exec()
 
     def _save_diagnostic_report(self, runtime=None):
         runtime = runtime or check_runtime_environment()

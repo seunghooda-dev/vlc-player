@@ -908,6 +908,7 @@ class RightPanel(QWidget):
                 fp,
                 analysis=None,
                 black="found" if ranges else "ok",
+                black_count=len(ranges),
             )
         try:
             self.vp.btn_black.setEnabled(True)
@@ -946,7 +947,7 @@ class RightPanel(QWidget):
         if getattr(self, '_black_thread', None) and not self._black_thread.isRunning():
             self._black_thread = None
         if hasattr(self.vp, '_set_file_status'):
-            self.vp._set_file_status(fp, analysis=None, black="error")
+            self.vp._set_file_status(fp, analysis=None, black="error", black_count=0)
         try:
             self.vp.btn_black.setEnabled(True)
             self.vp.prog_ai.hide()
@@ -1151,6 +1152,7 @@ class RightPanel(QWidget):
                 fp,
                 analysis=None,
                 mute="found" if mutes else "ok",
+                mute_count=len(mutes),
             )
         peaks    = result.get('peaks', {})
         rms_vals = result.get('rms', {})
@@ -1208,7 +1210,7 @@ class RightPanel(QWidget):
         if getattr(self, '_audio_thread', None) and not self._audio_thread.isRunning():
             self._audio_thread = None
         if hasattr(self.vp, '_set_file_status'):
-            self.vp._set_file_status(fp, analysis=None, mute="error")
+            self.vp._set_file_status(fp, analysis=None, mute="error", mute_count=0)
         try:
             self.vp.btn_audio.setEnabled(True)
             self.vp.prog_ai.hide()

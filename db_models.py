@@ -62,6 +62,12 @@ class Clip(Base):
     tag_out      = Column(String)
     stt_done     = Column(Boolean, default=False)
     scene_done   = Column(Boolean, default=False)
+    qc_black_status = Column(String, default="")
+    qc_mute_status  = Column(String, default="")
+    qc_black_count  = Column(Integer, default=0)
+    qc_mute_count   = Column(Integer, default=0)
+    qc_summary      = Column(String, default="")
+    qc_updated_at   = Column(DateTime)
     created_at   = Column(DateTime, default=datetime.now)
     updated_at   = Column(DateTime, default=datetime.now)
 
@@ -84,6 +90,29 @@ class Scene(Base):
     start_sec   = Column(Float)
 
 Base.metadata.create_all(engine)
+
+def _ensure_clip_qc_columns():
+    """Add lightweight QC summary columns for existing SQLite databases."""
+    columns = {
+        "qc_black_status": "VARCHAR",
+        "qc_mute_status": "VARCHAR",
+        "qc_black_count": "INTEGER DEFAULT 0",
+        "qc_mute_count": "INTEGER DEFAULT 0",
+        "qc_summary": "VARCHAR",
+        "qc_updated_at": "DATETIME",
+    }
+    try:
+        with engine.begin() as conn:
+            rows = conn.execute(text("PRAGMA table_info(clips)")).fetchall()
+            existing = {row[1] for row in rows}
+            for name, ddl in columns.items():
+                if name not in existing:
+                    conn.execute(text(f"ALTER TABLE clips ADD COLUMN {name} {ddl}"))
+                    log.info(f"[DB] clips column added: {name}")
+    except Exception as e:
+        log.warning(f"[DB] QC column migration failed: {e}")
+
+_ensure_clip_qc_columns()
 
 _PROBE_CACHE = {}
 _PROBE_CACHE_ORDER = []
@@ -292,19 +321,106 @@ def probe(filepath):
         log.warning(f'probe failed: {e}')
         return {}
 
-def save_clip(info):
-    cid = hashlib.md5(info["filepath"].encode()).hexdigest()
+def _clip_id_for_path(filepath):
+    return hashlib.md5(str(filepath or "").encode()).hexdigest()
+
+def _normalize_qc_status(value):
+    value = str(value or "").strip().lower()
+    return value if value in ("ok", "found", "error") else ""
+
+def qc_summary_from_status(black_status="", mute_status=""):
+    black_status = _normalize_qc_status(black_status)
+    mute_status = _normalize_qc_status(mute_status)
+    if "error" in (black_status, mute_status):
+        return "검사 오류"
+    if black_status == "found" and mute_status == "found":
+        return "블랙/무음 있음"
+    if black_status == "found":
+        return "블랙 있음"
+    if mute_status == "found":
+        return "무음 있음"
+    if black_status == "ok" and mute_status == "ok":
+        return "정상"
+    return "미분석"
+
+def load_qc_status(filepath):
+    if not filepath:
+        return {}
+    cid = _clip_id_for_path(filepath)
     with Session(engine) as s:
-        if s.get(Clip, cid):
-            return cid
-        s.add(Clip(
-            id=cid, filename=info["filename"], filepath=info["filepath"],
-            format_short=info.get("format_short",""), codec=info.get("codec",""),
-            width=info.get("width",0), height=info.get("height",0),
-            fps=info.get("fps",29.97), duration=info.get("duration",0),
-            file_size=info.get("size",0), bit_rate=info.get("bit_rate",0),
-            channels=info.get("channels",0), timecode=info.get("timecode",""),
-        ))
+        clip = s.get(Clip, cid)
+        if not clip:
+            return {}
+        black = _normalize_qc_status(getattr(clip, "qc_black_status", ""))
+        mute = _normalize_qc_status(getattr(clip, "qc_mute_status", ""))
+        return {
+            "black": black,
+            "mute": mute,
+            "black_count": int(getattr(clip, "qc_black_count", 0) or 0),
+            "mute_count": int(getattr(clip, "qc_mute_count", 0) or 0),
+            "summary": getattr(clip, "qc_summary", "") or qc_summary_from_status(black, mute),
+            "updated_at": getattr(clip, "qc_updated_at", None),
+        }
+
+def update_clip_qc(filepath, black=None, mute=None, black_count=None, mute_count=None):
+    if not filepath:
+        return {}
+    cid = _clip_id_for_path(filepath)
+    now = datetime.now()
+    with Session(engine) as s:
+        clip = s.get(Clip, cid)
+        if not clip:
+            p = Path(filepath)
+            clip = Clip(id=cid, filename=p.name, filepath=str(filepath), created_at=now)
+            s.add(clip)
+        if black is not None:
+            clip.qc_black_status = _normalize_qc_status(black)
+        if mute is not None:
+            clip.qc_mute_status = _normalize_qc_status(mute)
+        if black_count is not None:
+            try:
+                clip.qc_black_count = max(0, int(black_count))
+            except Exception:
+                clip.qc_black_count = 0
+        if mute_count is not None:
+            try:
+                clip.qc_mute_count = max(0, int(mute_count))
+            except Exception:
+                clip.qc_mute_count = 0
+        clip.qc_summary = qc_summary_from_status(clip.qc_black_status, clip.qc_mute_status)
+        clip.qc_updated_at = now
+        clip.updated_at = now
+        s.commit()
+        return {
+            "black": clip.qc_black_status,
+            "mute": clip.qc_mute_status,
+            "black_count": int(clip.qc_black_count or 0),
+            "mute_count": int(clip.qc_mute_count or 0),
+            "summary": clip.qc_summary,
+            "updated_at": clip.qc_updated_at,
+        }
+
+def save_clip(info):
+    cid = _clip_id_for_path(info["filepath"])
+    now = datetime.now()
+    with Session(engine) as s:
+        clip = s.get(Clip, cid)
+        if not clip:
+            clip = Clip(id=cid, created_at=now)
+            s.add(clip)
+        clip.filename = info["filename"]
+        clip.filepath = info["filepath"]
+        clip.format_short = info.get("format_short","")
+        clip.codec = info.get("codec","")
+        clip.width = info.get("width",0)
+        clip.height = info.get("height",0)
+        clip.fps = info.get("fps",29.97)
+        clip.duration = info.get("duration",0)
+        clip.file_size = info.get("size",0)
+        clip.bit_rate = info.get("bit_rate",0)
+        clip.channels = info.get("channels",0)
+        clip.timecode = info.get("timecode","")
+        clip.updated_at = now
         s.commit()
     return cid
 

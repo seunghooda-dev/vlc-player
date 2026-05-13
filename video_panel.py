@@ -30,7 +30,10 @@ from constants  import (
     format_missing_runtime_tools,
     record_state_event,
 )
-from db_models  import probe, save_clip, frames_to_tc, tc_to_frames
+from db_models  import (
+    probe, save_clip, frames_to_tc, tc_to_frames,
+    load_qc_status, update_clip_qc,
+)
 from threads    import ProbeThread, TranscodeThread, LoudnessAnalyzeThread
 from meters     import SideMeter, LoudnessMeter, MeterController, mk_btn, mk_label, separator
 
@@ -845,6 +848,14 @@ class VideoPanel(QWidget):
         self._audio_recovery_timer = QTimer(self)
         self._audio_recovery_timer.setInterval(900)
         self._audio_recovery_timer.timeout.connect(self._check_audio_mix_recovery)
+        self._playback_progress_timer = QTimer(self)
+        self._playback_progress_timer.setInterval(1000)
+        self._playback_progress_timer.timeout.connect(self._check_playback_progress)
+        self._playback_progress_last_ms = 0
+        self._playback_progress_last_frame = 0
+        self._playback_progress_started_at = 0.0
+        self._playback_progress_stall_ticks = 0
+        self._playback_progress_last_warn = 0.0
 
         # MEDIA PLAYER
         self.player = VlcPlayerAdapter(self.video_view.viewport())
@@ -1520,6 +1531,7 @@ class VideoPanel(QWidget):
 
     def _new_file_record(self, filepath):
         p = Path(filepath)
+        qc = load_qc_status(filepath)
         return {
             "name": p.name,
             "filepath": filepath,
@@ -1527,8 +1539,12 @@ class VideoPanel(QWidget):
             "ext": p.suffix.upper().lstrip("."),
             "cue": False,
             "playing": False,
-            "black": None,   # None | ok | found | error
-            "mute": None,    # None | ok | found | error
+            "black": qc.get("black") or None,   # None | ok | found | error
+            "mute": qc.get("mute") or None,     # None | ok | found | error
+            "black_count": int(qc.get("black_count", 0) or 0),
+            "mute_count": int(qc.get("mute_count", 0) or 0),
+            "qc_summary": qc.get("summary") or "미분석",
+            "qc_updated_at": qc.get("updated_at"),
             "analysis": None,
         }
 
@@ -1539,6 +1555,10 @@ class VideoPanel(QWidget):
                 item.setdefault("playing", False)
                 item.setdefault("black", None)
                 item.setdefault("mute", None)
+                item.setdefault("black_count", 0)
+                item.setdefault("mute_count", 0)
+                item.setdefault("qc_summary", "미분석")
+                item.setdefault("qc_updated_at", None)
                 item.setdefault("analysis", None)
                 return item
         return None
@@ -1548,6 +1568,39 @@ class VideoPanel(QWidget):
         if not entry:
             return
         entry.update(changes)
+        qc_keys = {"black", "mute", "black_count", "mute_count"}
+        if qc_keys.intersection(changes):
+            try:
+                saved = update_clip_qc(
+                    filepath,
+                    black=changes.get("black") if "black" in changes else None,
+                    mute=changes.get("mute") if "mute" in changes else None,
+                    black_count=changes.get("black_count") if "black_count" in changes else None,
+                    mute_count=changes.get("mute_count") if "mute_count" in changes else None,
+                )
+                if saved:
+                    entry["black"] = saved.get("black") or None
+                    entry["mute"] = saved.get("mute") or None
+                    entry["black_count"] = int(saved.get("black_count", 0) or 0)
+                    entry["mute_count"] = int(saved.get("mute_count", 0) or 0)
+                    entry["qc_summary"] = saved.get("summary") or "미분석"
+                    entry["qc_updated_at"] = saved.get("updated_at")
+                    log.info(
+                        "qc status saved "
+                        f"file={Path(filepath).name} summary={entry['qc_summary']} "
+                        f"black={entry['black']}({entry['black_count']}) "
+                        f"mute={entry['mute']}({entry['mute_count']})"
+                    )
+                    record_state_event(
+                        "qc",
+                        "status saved",
+                        file=Path(filepath).name,
+                        summary=entry["qc_summary"],
+                        black=entry["black"],
+                        mute=entry["mute"],
+                    )
+            except Exception as e:
+                log.warning(f"qc status save failed file={Path(filepath).name}: {e}")
         if hasattr(self, '_right_panel'):
             self._right_panel.refresh_explorer()
 
@@ -2288,6 +2341,8 @@ class VideoPanel(QWidget):
         mark_step('analysis_cancel')
         if hasattr(self, '_audio_recovery_timer'):
             self._audio_recovery_timer.stop()
+        if hasattr(self, '_playback_progress_timer'):
+            self._playback_progress_timer.stop()
         self._reset_audio_recovery()
         self._cue_ready_seq += 1
         if hasattr(self, 'meter_ctrl'):
@@ -3124,6 +3179,84 @@ class VideoPanel(QWidget):
         )
         self._restart_audio_mix(pos_ms=pos_ms, lead_sec=0.0)
 
+    def _reset_playback_progress_watch(self):
+        try:
+            pos_ms = int(self.player.position() or 0)
+        except Exception:
+            pos_ms = 0
+        self._playback_progress_last_ms = pos_ms
+        self._playback_progress_last_frame = self._ms_to_frame(pos_ms)
+        self._playback_progress_started_at = time.monotonic()
+        self._playback_progress_stall_ticks = 0
+
+    def _start_playback_progress_watch(self):
+        self._reset_playback_progress_watch()
+        if hasattr(self, '_playback_progress_timer') and not self._playback_progress_timer.isActive():
+            self._playback_progress_timer.start()
+
+    def _stop_playback_progress_watch(self):
+        if hasattr(self, '_playback_progress_timer'):
+            self._playback_progress_timer.stop()
+        self._playback_progress_stall_ticks = 0
+
+    def _check_playback_progress(self):
+        if not self.cur_file:
+            return
+        if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+            self._stop_playback_progress_watch()
+            return
+        try:
+            pos_ms = int(self.player.position() or 0)
+            frame = self._ms_to_frame(pos_ms)
+        except Exception as e:
+            log.debug(f'playback progress read failed: {e}')
+            return
+
+        last_ms = int(getattr(self, '_playback_progress_last_ms', pos_ms) or 0)
+        last_frame = int(getattr(self, '_playback_progress_last_frame', frame) or 0)
+        moved_ms = pos_ms - last_ms
+        moved_frames = frame - last_frame
+        now = time.monotonic()
+        started = float(getattr(self, '_playback_progress_started_at', now) or now)
+        near_end = bool(self.duration and pos_ms >= int(max(0, self.duration * 1000 - 900)))
+
+        if now - started < 2.0 or near_end:
+            self._playback_progress_last_ms = pos_ms
+            self._playback_progress_last_frame = frame
+            self._playback_progress_stall_ticks = 0
+            return
+
+        stagnant = moved_ms < 180 and moved_frames <= 0
+        if stagnant:
+            self._playback_progress_stall_ticks += 1
+        else:
+            self._playback_progress_stall_ticks = 0
+
+        if self._playback_progress_stall_ticks >= 2:
+            last_warn = float(getattr(self, '_playback_progress_last_warn', 0.0) or 0.0)
+            if now - last_warn >= 5.0:
+                status = self.audio_mix.process_status() if hasattr(self, 'audio_mix') else {}
+                file_name = Path(self.cur_file).name
+                log.warning(
+                    "playback progress warning "
+                    f"file={file_name} pos={pos_ms}ms frame={frame} "
+                    f"moved={moved_ms}ms/{moved_frames}f "
+                    f"ticks={self._playback_progress_stall_ticks} audio={status}"
+                )
+                record_state_event(
+                    "playback-watch",
+                    "progress stagnant",
+                    file=file_name,
+                    pos=f"{pos_ms}ms",
+                    frame=frame,
+                    moved=f"{moved_ms}ms/{moved_frames}f",
+                    ticks=self._playback_progress_stall_ticks,
+                )
+                self._playback_progress_last_warn = now
+
+        self._playback_progress_last_ms = pos_ms
+        self._playback_progress_last_frame = frame
+
     def _arm_play_start_watchdog(self, reason='play'):
         if not self.cur_file:
             return
@@ -3413,6 +3546,7 @@ class VideoPanel(QWidget):
             self._frame_clock_active = True
             self._sync_frame_clock(self.player.position())
             self._frame_display_timer.start()
+            self._start_playback_progress_watch()
             if not self._audio_recovery_timer.isActive():
                 self._audio_recovery_timer.start()
             self._led_timer.start()
@@ -3436,6 +3570,7 @@ class VideoPanel(QWidget):
                     state=state.name if hasattr(state, "name") else state,
                 )
             self._cancel_play_start_watchdog()
+            self._stop_playback_progress_watch()
             self._frame_clock_active = False
             self._frame_display_timer.stop()
             self._audio_recovery_timer.stop()
