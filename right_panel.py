@@ -1445,6 +1445,15 @@ class RightPanel(QWidget):
         elif kind == 'audio':
             self.audio_status.setText(f"  ⏳ {message}")
 
+    def _black_done_label(self, count, *, compact=False):
+        count = int(count or 0)
+        if count <= 0:
+            return f"{'' if compact else '  '}✓ 블랙 검출 완료 — 0구간" if compact else "  ✓ 완료 — 블랙 0구간"
+        red_count = f"<span style='color:{C['red']};font-weight:800;'>{count}</span>"
+        if compact:
+            return f"✓ 블랙 검출 완료 — {red_count}구간"
+        return f"&nbsp;&nbsp;✓ 완료 — 블랙 {red_count}구간"
+
     def _on_black_done(self, ranges, seq=None):
         if not self._analysis_matches('black', seq, getattr(self, '_black_file', None)):
             self._log_stale_analysis('black', seq, 'done')
@@ -1464,7 +1473,7 @@ class RightPanel(QWidget):
         try:
             self.vp.btn_black.setEnabled(True)
             self.vp.prog_ai.hide()
-            self.vp.ai_lbl.setText(f"✓ 블랙 검출 완료 — {len(ranges)}구간")
+            self.vp.ai_lbl.setText(self._black_done_label(len(ranges), compact=True))
             self._finish_black_elapsed_timer()
         except Exception as e:
             log.debug(f'black ai done state: {e}')
@@ -1483,7 +1492,7 @@ class RightPanel(QWidget):
                 item.setData(Qt.ItemDataRole.UserRole, r['start'])
                 item.setForeground(QColor(C['yellow'] if frames == 1 else C['orange']))
                 self.black_list.addItem(item)
-        self.black_status.setText(f"  ✓ 완료 — 블랙 {len(ranges)}구간")
+        self.black_status.setText(self._black_done_label(len(ranges)))
         self._finish_analysis_mode()
 
     def _on_black_error(self, err, seq=None):
