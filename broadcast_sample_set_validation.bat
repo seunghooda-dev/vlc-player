@@ -15,6 +15,7 @@ set "REPORT=%REPORT_DIR%\broadcast-sample-set-%STAMP%.txt"
 set /a SAMPLE_COUNT=0
 set /a PASS_COUNT=0
 set /a FAIL_COUNT=0
+set /a MISSING_COUNT=0
 
 echo ================================================
 echo   %PACKAGE_NAME% - broadcast sample set validation
@@ -35,15 +36,19 @@ if not exist "%SET_FILE%" (
 >>"%REPORT%" echo Started: %DATE% %TIME%
 >>"%REPORT%" echo Sample set: %SET_FILE%
 >>"%REPORT%" echo.
+>>"%REPORT%" echo Result table
+>>"%REPORT%" echo ------------
+>>"%REPORT%" echo.
 
 for /f "usebackq tokens=1,2,* delims=|" %%A in ("%SET_FILE%") do call :run_line "%%~A" "%%~B" "%%~C"
 
 >>"%REPORT%" echo.
->>"%REPORT%" echo Summary: total=%SAMPLE_COUNT% pass=%PASS_COUNT% fail=%FAIL_COUNT%
+>>"%REPORT%" echo Finished: %DATE% %TIME%
+>>"%REPORT%" echo Summary: total=%SAMPLE_COUNT% pass=%PASS_COUNT% fail=%FAIL_COUNT% missing=%MISSING_COUNT%
 
 echo.
 echo Summary:
-echo   total=%SAMPLE_COUNT% pass=%PASS_COUNT% fail=%FAIL_COUNT%
+echo   total=%SAMPLE_COUNT% pass=%PASS_COUNT% fail=%FAIL_COUNT% missing=%MISSING_COUNT%
 echo Report:
 echo   %REPORT%
 
@@ -83,7 +88,9 @@ echo   !SAMPLE!
 
 if not exist "!SAMPLE!" (
     set /a FAIL_COUNT+=1
+    set /a MISSING_COUNT+=1
     echo   [FAIL] missing file
+    >>"%REPORT%" echo [FAIL] !LABEL! ^| missing ^| !SAMPLE!
     >>"%REPORT%" echo Result: FAIL missing file
     exit /b 0
 )
@@ -93,10 +100,12 @@ set "RC=!ERRORLEVEL!"
 if "!RC!"=="0" (
     set /a PASS_COUNT+=1
     echo   [PASS]
+    >>"%REPORT%" echo [PASS] !LABEL! ^| smoke ok ^| !SAMPLE!
     >>"%REPORT%" echo Result: PASS
 ) else (
     set /a FAIL_COUNT+=1
     echo   [FAIL] exit=!RC!
+    >>"%REPORT%" echo [FAIL] !LABEL! ^| exit=!RC! ^| !SAMPLE!
     >>"%REPORT%" echo Result: FAIL exit=!RC!
 )
 exit /b 0

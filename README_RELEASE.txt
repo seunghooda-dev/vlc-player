@@ -10,6 +10,10 @@ Quick Start
 3. Double-click a file in the list, or select it and press CUE.
 4. Use the Black / Mute tabs for manual QC detection.
 
+Korean operator quick guide:
+
+OPERATOR_QUICK_START_KO.txt
+
 Runtime Files
 -------------
 The release folder is for program files only:

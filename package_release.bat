@@ -49,6 +49,7 @@ echo Copying application files...
 xcopy /E /I /Y "dist\%APP_NAME%\*" "%PACKAGE_DIR%\" > nul
 if errorlevel 1 goto fail
 copy /y "README_RELEASE.txt" "%PACKAGE_DIR%\README.txt" > nul
+copy /y "OPERATOR_QUICK_START_KO.txt" "%PACKAGE_DIR%\OPERATOR_QUICK_START_KO.txt" > nul
 copy /y "UPDATE_POLICY.txt" "%PACKAGE_DIR%\UPDATE_POLICY.txt" > nul
 copy /y "BROADCAST_SAMPLE_CHECKLIST.txt" "%PACKAGE_DIR%\BROADCAST_SAMPLE_CHECKLIST.txt" > nul
 copy /y "BROADCAST_SAMPLE_SET.txt" "%PACKAGE_DIR%\BROADCAST_SAMPLE_SET.txt" > nul

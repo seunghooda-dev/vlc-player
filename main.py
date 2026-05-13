@@ -11,11 +11,11 @@ from PyQt6.QtWidgets import (
     QComboBox, QLineEdit, QFileDialog,
 )
 from PyQt6.QtCore    import Qt, QTimer
-from PyQt6.QtGui     import QColor, QPalette, QFont, QFontDatabase
+from PyQt6.QtGui     import QColor, QPalette, QFont, QFontDatabase, QIcon
 from PyQt6.QtMultimedia import QMediaPlayer
 
 from constants    import (
-    C, STYLE, LOG_DIR, TMP_DIR, BASE_DIR, REPORT_DIR, log, APP_FONT_QT,
+    C, STYLE, LOG_DIR, TMP_DIR, BASE_DIR, RESOURCE_DIR, REPORT_DIR, log, APP_FONT_QT,
     check_runtime_environment, format_runtime_environment, format_runtime_startup_alert,
     cleanup_child_processes, cleanup_orphan_audio_processes, runtime_child_process_status,
     cache_summary, cleanup_runtime_cache, cleanup_old_generated_files, format_bytes, format_cache_summary,
@@ -28,6 +28,7 @@ from threads      import RuntimeWarmupThread
 
 APP_WINDOW_TITLE = "MXF QC Player V.1.0"
 APP_MUTEX_NAME = r"Local\MXF_QC_Player_V1_SingleInstance"
+APP_ICON_PATH = RESOURCE_DIR / "assets" / "mxf_qc_player.ico"
 _single_instance_handle = None
 
 
@@ -94,6 +95,8 @@ class MainWindow(QMainWindow):
         self._warmup_thread = None
         self._migration_notice_shown = False
         self.setWindowTitle(APP_WINDOW_TITLE)
+        if APP_ICON_PATH.exists():
+            self.setWindowIcon(QIcon(str(APP_ICON_PATH)))
         size = self._settings.get('window_size', [1400, 980])
         try:
             self.resize(int(size[0]), int(size[1]))
@@ -112,65 +115,64 @@ class MainWindow(QMainWindow):
         root.setSpacing(0)
 
         # 타이틀 바
-        tb = QWidget(); tb.setFixedHeight(38)
-        tb.setStyleSheet(f"background:#101218;border-bottom:1px solid {C['border']};")
-        tbl = QHBoxLayout(tb); tbl.setContentsMargins(10,0,10,0); tbl.setSpacing(6)
-        for col in ['#FF5F57','#FFBD2E','#28C941']:
-            d=QLabel('⬤'); d.setStyleSheet(f"color:{col};font-size:11px;"); tbl.addWidget(d)
-        tbl.addSpacing(8)
+        tb = QWidget(); tb.setFixedHeight(42)
+        tb.setStyleSheet(
+            "background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #080A0F,stop:0.5 #111827,stop:1 #080A0F);"
+            f"border-bottom:1px solid {C['border']};"
+        )
+        tbl = QHBoxLayout(tb); tbl.setContentsMargins(12,0,12,0); tbl.setSpacing(8)
+        mark = QLabel('▣')
+        mark.setFixedWidth(22)
+        mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        mark.setStyleSheet(
+            f"color:{C['blue']};font-family:'Segoe UI Symbol','Segoe UI';font-size:17px;"
+            "font-weight:700;background:transparent;"
+        )
+        tbl.addWidget(mark)
         ttl = QLabel("MXF  QC  PLAYER")
-        ttl.setStyleSheet(f"color:{C['text1']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:15px;font-weight:700;")
+        ttl.setStyleSheet(
+            f"color:{C['text1']};font-family:'Cascadia Mono','Consolas','D2Coding';"
+            "font-size:14px;font-weight:800;letter-spacing:0px;background:transparent;"
+        )
         ttl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tbl.addWidget(ttl,1)
+        _top_btn_style = (
+            f"QPushButton{{background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #1C2433,stop:1 #101722);"
+            f"color:{C['text2']};border:1px solid {C['border']};"
+            "border-radius:6px;font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;font-weight:800;"
+            "padding:0 9px;}"
+            f"QPushButton:hover{{background:#253149;color:{C['text0']};border-color:{C['blue']};}}"
+            "QPushButton:pressed{background:#0B1018;padding-top:1px;}"
+        )
         env_btn = QPushButton("ENV")
         env_btn.setFixedHeight(24)
         env_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         env_btn.setToolTip("VLC / FFmpeg 실행 환경 확인")
-        env_btn.setStyleSheet(
-            f"QPushButton{{background:{C['panel3']};color:{C['text2']};border:1px solid {C['border']};"
-            "border-radius:5px;font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;font-weight:700;"
-            "padding:0 8px;}"
-            f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
-        )
+        env_btn.setStyleSheet(_top_btn_style)
         env_btn.clicked.connect(self._show_runtime_dialog)
         tbl.addWidget(env_btn)
         check_btn = QPushButton("CHECK")
         check_btn.setFixedHeight(24)
         check_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         check_btn.setToolTip("배포 전 체크리스트")
-        check_btn.setStyleSheet(
-            f"QPushButton{{background:{C['panel3']};color:{C['text2']};border:1px solid {C['border']};"
-            "border-radius:5px;font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;font-weight:700;"
-            "padding:0 8px;}"
-            f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
-        )
+        check_btn.setStyleSheet(_top_btn_style)
         check_btn.clicked.connect(self._show_deployment_check_dialog)
         tbl.addWidget(check_btn)
         cache_btn = QPushButton("CACHE")
         cache_btn.setFixedHeight(24)
         cache_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         cache_btn.setToolTip("tmp 캐시 상태 보기 / 정리")
-        cache_btn.setStyleSheet(
-            f"QPushButton{{background:{C['panel3']};color:{C['text2']};border:1px solid {C['border']};"
-            "border-radius:5px;font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;font-weight:700;"
-            "padding:0 8px;}"
-            f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
-        )
+        cache_btn.setStyleSheet(_top_btn_style)
         cache_btn.clicked.connect(self._show_cache_dialog)
         tbl.addWidget(cache_btn)
         log_btn = QPushButton("LOG")
         log_btn.setFixedHeight(24)
         log_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         log_btn.setToolTip("최근 오류 로그 보기")
-        log_btn.setStyleSheet(
-            f"QPushButton{{background:{C['panel3']};color:{C['text2']};border:1px solid {C['border']};"
-            "border-radius:5px;font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;font-weight:700;"
-            "padding:0 8px;}"
-            f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['border2']};}}"
-        )
+        log_btn.setStyleSheet(_top_btn_style)
         log_btn.clicked.connect(self._show_error_log)
         tbl.addWidget(log_btn)
-        ver = QLabel("V.1.0"); ver.setStyleSheet(f"color:{C['text3']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;")
+        ver = QLabel("V.1.0"); ver.setStyleSheet(f"color:{C['text3']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;background:transparent;")
         tbl.addWidget(ver)
         root.addWidget(tb)
 
@@ -1072,6 +1074,8 @@ def _cleanup_old_generated_files():
 
 def _configure_app_style(app):
     app.setStyle("Fusion")
+    if APP_ICON_PATH.exists():
+        app.setWindowIcon(QIcon(str(APP_ICON_PATH)))
     installed = set(QFontDatabase.families())
     app_font = APP_FONT_QT
     for candidate in ("Pretendard", "Inter", "Segoe UI Variable Text", "Segoe UI", "Noto Sans KR", "Malgun Gothic"):

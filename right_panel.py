@@ -160,7 +160,7 @@ class RightPanel(QWidget):
         self.exp_path = mk_label('파일을 추가하세요', C['text3'], 'Consolas', 10)
         self.exp_path.setStyleSheet(
             f"color:{C['text2']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;"
-            "background:#090b10;padding:5px 12px;"
+            "background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #07090D,stop:1 #101722);padding:5px 12px;"
             f"border-bottom:1px solid {C['border']};")
         l.addWidget(self.exp_path)
 
@@ -169,8 +169,8 @@ class RightPanel(QWidget):
         self.exp_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.exp_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.exp_list.setStyleSheet(
-            "QListWidget{background:#090b10;border:none;outline:none;}"
-            f"QListWidget::item{{padding:10px 14px;border-bottom:1px solid #202633;"
+            "QListWidget{background:#07090D;border:none;outline:none;}"
+            f"QListWidget::item{{padding:10px 14px;border-bottom:1px solid #1D2635;"
             f"font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';font-size:12px;color:{C['text1']};}}"
             f"QListWidget::item:selected{{background:rgba(90,167,255,28);"
             f"border-left:2px solid {C['blue']};color:{C['text0']};}}"

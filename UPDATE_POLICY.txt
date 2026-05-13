@@ -13,6 +13,7 @@ The release folder contains only files needed to run the program:
 - _internal\
 - tools\
 - README.txt
+- OPERATOR_QUICK_START_KO.txt
 - UPDATE_POLICY.txt
 - BROADCAST_SAMPLE_CHECKLIST.txt
 - BROADCAST_SAMPLE_SET.txt

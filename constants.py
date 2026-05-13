@@ -32,13 +32,13 @@ def css_font(family=None):
 # ── 색상 ──────────────────────────────────────────────────
 C = {
     # 배경 계층
-    'bg'     :'#0f1014',   # 최상위 배경
-    'panel'  :'#15171d',   # 패널
-    'panel2' :'#0a0b0f',   # 서브패널
-    'panel3' :'#1b1e27',   # 강조 패널
-    'border' :'#272b35',   # 구분선
-    'border2':'#3a4050',   # 활성 구분선
-    'input'  :'#181b22',   # 입력창
+    'bg'     :'#090B10',   # 최상위 배경
+    'panel'  :'#121722',   # 패널
+    'panel2' :'#07090D',   # 서브패널
+    'panel3' :'#1A2130',   # 강조 패널
+    'border' :'#252D3B',   # 구분선
+    'border2':'#46536A',   # 활성 구분선
+    'input'  :'#151B26',   # 입력창
     # 강조색 — 단일 포인트 컬러 + 용도별
     'blue'   :'#5AA7FF',   # 주 강조 (선택, 포커스)
     'yellow' :'#FFD166',   # 타임코드, CUE
@@ -68,19 +68,19 @@ QToolTip {{
 
 /* ── 기본 ── */
 QMainWindow, QWidget {{
-    background-color: #0b0d12;
+    background-color: #090B10;
     color: {C['text0']};
     font-family: {APP_FONT_CSS};
     font-size: 13px;
 }}
 QSplitter::handle {{
-    background-color: #1d2330;
+    background-color: #1E2635;
     width: 1px;
 }}
 
 /* ── 상태바 ── */
 QStatusBar {{
-    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #090b10,stop:0.5 #10141c,stop:1 #090b10);
+    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #07090D,stop:0.5 #111927,stop:1 #07090D);
     color: {C['text2']};
     font-family: {MONO_FONT_CSS};
     font-size: 11px;
@@ -91,7 +91,7 @@ QStatusBar {{
 /* ── 탭 ── */
 QTabWidget::pane {{
     border: none;
-    background-color: #090b10;
+    background-color: #07090D;
     border-top: 1px solid #202633;
 }}
 QTabBar {{
@@ -110,7 +110,7 @@ QTabBar::tab {{
 QTabBar::tab:selected {{
     color: {C['text0']};
     border-bottom: 2px solid {C['blue']};
-    background-color: rgba(90, 167, 255, 18);
+    background-color: rgba(90, 167, 255, 22);
 }}
 QTabBar::tab:hover {{
     color: {C['text0']};
@@ -119,7 +119,7 @@ QTabBar::tab:hover {{
 
 /* ── 리스트 ── */
 QListWidget {{
-    background-color: #090b10;
+    background-color: #07090D;
     border: none;
     color: {C['text0']};
     outline: none;
@@ -131,7 +131,7 @@ QListWidget::item {{
     border-bottom: 1px solid #202633;
 }}
 QListWidget::item:selected {{
-    background-color: rgba(90, 167, 255, 30);
+    background-color: rgba(90, 167, 255, 34);
     color: {C['text0']};
 }}
 QListWidget::item:hover {{
@@ -140,9 +140,9 @@ QListWidget::item:hover {{
 
 /* ── 입력창 ── */
 QLineEdit {{
-    background-color: #121721;
-    border: 1px solid #293243;
-    border-radius: 7px;
+    background-color: #111824;
+    border: 1px solid #2A3446;
+    border-radius: 6px;
     color: {C['text0']};
     padding: 6px 10px;
     font-family: {APP_FONT_CSS};
@@ -156,21 +156,21 @@ QLineEdit:focus {{
 
 /* ── 버튼 기본 ── */
 QPushButton {{
-    background: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #222734,stop:1 #151923);
+    background: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #252D3C,stop:0.58 #19202C,stop:1 #111722);
     color: {C['text0']};
-    border: 1px solid #2f3645;
-    border-radius: 7px;
+    border: 1px solid #334056;
+    border-radius: 6px;
     padding: 6px 14px;
     font-size: 12px;
     font-weight: 600;
     min-height: 28px;
 }}
 QPushButton:hover {{
-    background: #2a3142;
+    background: #2D374A;
     border-color: {C['blue']};
 }}
 QPushButton:pressed {{
-    background-color: #0f131b;
+    background-color: #0D121A;
     padding-top: 7px;
 }}
 QPushButton:disabled {{
@@ -204,7 +204,7 @@ QSlider::handle:horizontal:hover {{
 
 /* ── 테이블 ── */
 QTableWidget {{
-    background-color: #090b10;
+    background-color: #07090D;
     border: none;
     color: {C['text0']};
     gridline-color: {C['border']};
@@ -221,7 +221,7 @@ QTableWidget::item:selected {{
     color: {C['text0']};
 }}
 QHeaderView::section {{
-    background: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #171c25,stop:1 #11151d);
+    background: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #182031,stop:1 #101620);
     color: {C['text2']};
     border: none;
     border-right: 1px solid #202633;
@@ -239,7 +239,7 @@ QScrollBar:vertical {{
     margin: 0;
 }}
 QScrollBar::handle:vertical {{
-    background: rgba(167,173,190,50);
+    background: rgba(167,173,190,58);
     border-radius: 3px;
     min-height: 30px;
 }}
@@ -259,7 +259,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
 
 /* ── 프로그레스바 ── */
 QProgressBar {{
-    background: #202634;
+    background: #1E2635;
     border: none;
     border-radius: 2px;
     text-align: center;
@@ -765,6 +765,15 @@ def friendly_error_text(area, detail='', filename=None, max_detail=160):
         title = '파일을 찾을 수 없습니다'
         hint = '파일이 이동/삭제됐거나 외장 드라이브 연결이 끊겼는지 확인하세요.'
     elif (
+        'used by another process' in low
+        or 'being used by another process' in low
+        or 'sharing violation' in low
+        or 'locked' in low
+        or '잠금' in low
+    ):
+        title = '파일이 다른 프로그램에서 사용 중입니다'
+        hint = '편집기, 복사 작업, 네트워크 전송, 다른 플레이어가 파일을 잡고 있는지 확인한 뒤 다시 여세요.'
+    elif (
         'permission' in area_key
         or 'access_denied' in area_key
         or 'access-denied' in area_key
@@ -808,6 +817,9 @@ def friendly_error_text(area, detail='', filename=None, max_detail=160):
     elif 'network' in area_key:
         title = '네트워크 오류가 발생했습니다'
         hint = '네트워크 경로의 파일이면 연결 상태와 권한을 확인하세요.'
+    elif 'drive' in low or 'device is not ready' in low or '지정된 장치' in low:
+        title = '저장장치에 접근할 수 없습니다'
+        hint = '외장하드, NAS, 네트워크 드라이브 연결 상태를 확인한 뒤 다시 시도하세요.'
 
     hide_detail = any(pattern in low for pattern in (
         'vlc could not play this file',
@@ -1716,7 +1728,8 @@ def format_runtime_startup_alert(runtime=None):
         lines.append(f"- {item.get('name')}: {item.get('role') or '-'}")
         lines.append(f"  조치: {item.get('hint') or item.get('message') or '쓰기 권한을 확인하세요.'}")
     lines.append('')
-    lines.append('상단 ENV 버튼에서 전체 진단 내용을 확인하고 복사할 수 있습니다.')
+    lines.append('상단 ENV 버튼에서 전체 진단 내용을 확인하고, LOG 버튼에서 최근 오류를 볼 수 있습니다.')
+    lines.append('다른 PC 배포본에서는 README.txt의 Dependencies 섹션도 함께 확인하세요.')
     return '\n'.join(lines)
 
 # ── 보조 프로세스 추적/정리 ──────────────────────────────

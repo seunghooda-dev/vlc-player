@@ -28,6 +28,12 @@ if not exist "%ROOT%README.txt" if not exist "%ROOT%README_RELEASE.txt" (
     echo [OK] README found.
 )
 
+if exist "%ROOT%OPERATOR_QUICK_START_KO.txt" (
+    echo [OK] OPERATOR_QUICK_START_KO.txt
+) else (
+    echo [WARN] OPERATOR_QUICK_START_KO.txt is missing.
+)
+
 for %%T in (ffmpeg.exe ffprobe.exe ffplay.exe) do (
     if exist "%ROOT%tools\%%T" (
         echo [OK] tools\%%T

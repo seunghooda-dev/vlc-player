@@ -581,6 +581,7 @@ class VideoPanel(QWidget):
         if reason:
             name = Path(filepath).name if filepath else '-'
             log.debug(f'load seq advanced: seq={self._load_seq} reason={reason} file={name}')
+            record_state_event('load-seq', reason, seq=self._load_seq, file=name)
         return self._load_seq
 
     def _load_is_current(self, seq, filepath=None):
@@ -945,9 +946,9 @@ class VideoPanel(QWidget):
 
         TR_BASE = (
             "QPushButton{"
-            "background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #252b39,stop:0.55 #1a1f2a,stop:1 #11151d);"
+            "background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #283247,stop:0.56 #1B2332,stop:1 #101620);"
             f"color:{C['text1']};"
-            "border:1px solid #2f3645;"
+            "border:1px solid #334159;"
             "border-radius:7px;"
             "font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';"
             "font-size:13px;"
@@ -955,8 +956,8 @@ class VideoPanel(QWidget):
             "padding:0;"
             f"min-width:{BTN_W}px;"
             "}"
-            f"QPushButton:hover{{background:#2e374a;color:{C['text0']};border-color:{C['blue']};}}"
-            "QPushButton:pressed{background:#0e1219;padding-top:1px;border-color:#8ec4ff;}"
+            f"QPushButton:hover{{background:#33405A;color:{C['text0']};border-color:{C['blue']};}}"
+            "QPushButton:pressed{background:#0B1018;padding-top:1px;border-color:#8ec4ff;}"
             "QPushButton:disabled{background:#11141a;color:#3f4555;border-color:#1d222d;}"
         )
         TR_COMPACT = TR_BASE + "QPushButton{font-family:'Cascadia Mono','Consolas','D2Coding';font-size:13px;}"
@@ -968,7 +969,7 @@ class VideoPanel(QWidget):
         )
         TR_PLAY = (
             "QPushButton{"
-            "background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #62b5ff,stop:0.48 #3286e8,stop:1 #1d5ca7);"
+            "background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #70C1FF,stop:0.48 #2D8CFF,stop:1 #155EA8);"
             f"color:{C['text0']};"
             f"border:1px solid {C['blue']};"
             "border-radius:7px;"
@@ -978,21 +979,21 @@ class VideoPanel(QWidget):
             "padding:0 1px 1px 0;"
             f"min-width:{PLAY_W}px;"
             "}"
-            "QPushButton:hover{background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #66b4ff,stop:1 #2d72c8);border-color:#c0e1ff;}"
+            "QPushButton:hover{background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #7AC8FF,stop:1 #2976D2);border-color:#c0e1ff;}"
             "QPushButton:pressed{background:#173153;padding-top:1px;border-color:#b5d9ff;}"
             "QPushButton:disabled{background:#141821;color:#4b5365;border-color:#252b37;}"
         )
         POD_STYLE = (
             "QFrame#transportPod{"
-            "background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 rgba(255,255,255,13),stop:1 rgba(0,0,0,55));"
-            "border:1px solid #252d3c;"
+            "background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 rgba(255,255,255,16),stop:1 rgba(0,0,0,60));"
+            "border:1px solid #2D374A;"
             "border-radius:8px;"
             "}"
         )
         VOL_POD_STYLE = (
             "QFrame#volumePod{"
-            "background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #171d28,stop:1 #0d1118);"
-            "border:1px solid #2b3546;"
+            "background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #182236,stop:1 #0B1018);"
+            "border:1px solid #334159;"
             "border-radius:8px;"
             "}"
         )
@@ -1088,7 +1089,7 @@ class VideoPanel(QWidget):
         self.vol_pct.setStyleSheet(
             f"color:{C['text0']};font-family:'JetBrains Mono','Cascadia Mono','Consolas','D2Coding';"
             "font-size:10px;font-weight:800;"
-            "background:rgba(255,255,255,9);border:1px solid #2d3647;border-radius:7px;"
+            "background:rgba(90,167,255,18);border:1px solid #34435A;border-radius:7px;"
         )
         self.vol_pct.setAlignment(Qt.AlignmentFlag.AlignCenter)
         def _on_vol(v):
@@ -1160,7 +1161,7 @@ class VideoPanel(QWidget):
         CH_STYLE = (
             f"QCheckBox{{color:{C['text2']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:10px;spacing:5px;}}"
             f"QCheckBox:checked{{color:{C['teal']};font-weight:bold;}}"
-            f"QCheckBox::indicator{{width:12px;height:12px;border:1px solid {C['border']};border-radius:4px;background:{C['panel']};}}"
+            f"QCheckBox::indicator{{width:12px;height:12px;border:1px solid {C['border']};border-radius:3px;background:{C['panel']};}}"
             f"QCheckBox::indicator:checked{{background:qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 {C['teal']},stop:1 {C['blue']});border-color:{C['teal']};}}"
             f"QCheckBox::indicator:hover{{border-color:{C['border2']};}}"
         )
@@ -2144,6 +2145,13 @@ class VideoPanel(QWidget):
         if filepath != self.cur_file:
             return
         self._cue_ready = True
+        record_state_event(
+            'cue',
+            'cue complete',
+            file=Path(filepath).name,
+            metadata=getattr(self, '_metadata_ready', False),
+            pos=f'{self.player.position()}ms',
+        )
         if not getattr(self, '_metadata_ready', False):
             file_name = Path(filepath).name
             message = "✓ VLC CUE 완료 — 메타데이터 분석 중..."
@@ -2163,6 +2171,7 @@ class VideoPanel(QWidget):
         timeout_sec = 2.0
         target_ms = max(0, int(target_ms))
         file_name = Path(filepath).name
+        record_state_event('cue', 'cue prepare', file=file_name, target=f'{target_ms}ms', seq=load_seq)
 
         def _force_cue_position(label='cue'):
             if seq != self._cue_ready_seq or not self._load_is_current(load_seq, filepath):
@@ -2221,6 +2230,14 @@ class VideoPanel(QWidget):
                     log.warning(f'VLC cue fallback without duration: {file_name}')
                 else:
                     log.debug(f'VLC cue fallback with probe duration: {file_name} elapsed={elapsed:.2f}s')
+                record_state_event(
+                    'cue',
+                    'cue readiness reached',
+                    file=file_name,
+                    elapsed=f'{elapsed:.2f}s',
+                    media_len=f'{media_len}ms',
+                    fallback=fallback_ready,
+                )
                 self._empty_proxy.hide()
                 self._video_item.show()
                 QTimer.singleShot(120, _finish_cue)
@@ -2402,17 +2419,27 @@ class VideoPanel(QWidget):
                     f'async metadata probe blocked: {file_name} '
                     f'ffprobe={elapsed:.3f}s | {title} | {detail}'
                 )
+                record_state_event('metadata', 'probe blocked', file=file_name, ffprobe=f'{elapsed:.3f}s', reason=title)
                 return
             if warnings:
                 log.warning(f'async metadata probe warning: {file_name} | {"; ".join(warnings)}')
             apply_t0 = time.monotonic()
             self._apply_probe_metadata(filepath, info, warnings, emit_loaded=True)
             apply_elapsed = time.monotonic() - apply_t0
+            total_elapsed = time.monotonic() - load_t0
             log.info(
                 f'async metadata ready: {file_name} '
                 f'ffprobe={elapsed:.3f}s apply={apply_elapsed:.3f}s '
-                f'total={time.monotonic() - load_t0:.3f}s '
+                f'total={total_elapsed:.3f}s '
                 f'pre_steps={" ".join(timings)}'
+            )
+            record_state_event(
+                'metadata',
+                'probe ready',
+                file=file_name,
+                ffprobe=f'{elapsed:.3f}s',
+                apply=f'{apply_elapsed:.3f}s',
+                total=f'{total_elapsed:.3f}s',
             )
             if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
                 self._reset_audio_recovery()
@@ -2429,11 +2456,13 @@ class VideoPanel(QWidget):
             self.ai_lbl.setText('⚠ 메타데이터 분석 실패')
             self.status_changed.emit(f'  ⚠ 메타데이터 분석 실패 — {file_name}')
             log.error(f'async metadata probe error: {file_name} ffprobe={elapsed:.3f}s | {err}')
+            record_state_event('metadata', 'probe error', file=file_name, ffprobe=f'{elapsed:.3f}s', error=err)
 
         thread.probed.connect(_done)
         thread.error.connect(_error)
         thread.start()
         log.info(f'async metadata probe started: {file_name}')
+        record_state_event('metadata', 'probe started', file=file_name, seq=load_seq)
 
     def load_file(self, filepath):
         if self._same_path(filepath, self.cur_file):
@@ -2530,6 +2559,13 @@ class VideoPanel(QWidget):
                     f'total_before_cue={time.monotonic() - load_t0:.3f}s '
                     f'steps={" ".join(timings)}'
                 )
+                record_state_event(
+                    'file',
+                    'vlc source set',
+                    file=Path(filepath).name,
+                    seq=load_seq,
+                    total=f'{time.monotonic() - load_t0:.3f}s',
+                )
                 self._prepare_vlc_cue(filepath, 0, load_seq=load_seq)
                 self._start_metadata_probe(filepath, load_t0, list(timings), load_seq=load_seq)
             except Exception as e:
@@ -2538,6 +2574,7 @@ class VideoPanel(QWidget):
                 self.ai_lbl.setText(f'⚠ {friendly_error_title("vlc_load", e, filepath)}')
                 self._set_loading_state(False)
                 log.error(f'VLC load failed: {Path(filepath).name} | {e}')
+                record_state_event('file', 'vlc source error', file=Path(filepath).name, error=e)
             return
 
         # 메타데이터 probe
