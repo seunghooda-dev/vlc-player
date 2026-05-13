@@ -900,13 +900,19 @@ class VideoPanel(QWidget):
         self.tc_rem  = QLabel('——:——:——;——')
         self.tc_in_l = QLabel('——:——:——;——')
         self.tc_out_l= QLabel('——:——:——;——')
+        tc_side_colors = {
+            'DUR': '#4B8DFF',  # dark fluorescent blue
+            'REM': '#D85B9F',  # dark fluorescent pink
+            'IN': C['teal'],
+            'OUT': C['orange'],
+        }
         for row,(k,v,c) in enumerate([
-            ('DUR',  self.tc_dur,   C['text1']),
-            ('REM',  self.tc_rem,   C['text1']),
-            ('IN',   self.tc_in_l,  C['teal']),
-            ('OUT',  self.tc_out_l, C['orange']),
+            ('DUR',  self.tc_dur,   tc_side_colors['DUR']),
+            ('REM',  self.tc_rem,   tc_side_colors['REM']),
+            ('IN',   self.tc_in_l,  tc_side_colors['IN']),
+            ('OUT',  self.tc_out_l, tc_side_colors['OUT']),
         ]):
-            kl = mk_label(k, C['text3'], 'Consolas', 10, bold=True); kl.setFixedWidth(32)
+            kl = mk_label(k, c if k in ('DUR', 'REM') else C['text3'], 'Consolas', 10, bold=True); kl.setFixedWidth(32)
             v.setFixedWidth(112)
             v.setStyleSheet(f"color:{c};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:13px;background:transparent;")
             v.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
