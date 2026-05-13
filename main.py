@@ -233,18 +233,22 @@ class MainWindow(QMainWindow):
         splitter.setOpaqueResize(True)
         splitter.setCollapsible(0, False)
         splitter.setCollapsible(1, False)
-        splitter.setHandleWidth(10)
+        splitter.setHandleWidth(8)
         splitter.setStyleSheet(
             "QSplitter::handle{"
             "background:qlineargradient(x1:0,y1:0,x2:1,y2:0,"
-            "stop:0 #07090D,stop:0.45 #151B26,stop:0.55 #263247,stop:1 #07090D);"
-            f"border-left:1px solid {C['border']};border-right:1px solid {C['border']};"
-            "margin:0 1px;"
+            "stop:0 rgba(0,0,0,0),stop:0.42 rgba(0,0,0,0),"
+            "stop:0.43 #263247,stop:0.57 #263247,"
+            "stop:0.58 rgba(0,0,0,0),stop:1 rgba(0,0,0,0));"
+            "border:none;"
+            "margin:0;"
             "}"
             "QSplitter::handle:hover{"
             "background:qlineargradient(x1:0,y1:0,x2:1,y2:0,"
-            f"stop:0 #101722,stop:0.45 {C['blue']},stop:0.55 {C['teal']},stop:1 #101722);"
-            f"border-left:1px solid {C['blue']};border-right:1px solid {C['teal']};"
+            "stop:0 rgba(0,0,0,0),stop:0.34 rgba(0,0,0,0),"
+            f"stop:0.35 {C['blue']},stop:0.65 {C['teal']},"
+            "stop:0.66 rgba(0,0,0,0),stop:1 rgba(0,0,0,0));"
+            "border:none;"
             "}"
         )
         splitter.setStretchFactor(0, 7)

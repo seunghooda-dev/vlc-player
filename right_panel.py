@@ -129,7 +129,7 @@ class RightPanel(QWidget):
         tbl.addWidget(self.btn_recent)
         tbl.addStretch()
 
-        # 정렬 버튼
+        # 파일 목록은 내부 기본 정렬만 유지하고, 상단은 실행 버튼 위주로 단순화
         self._sort_key = 'name'   # 'name' | 'added' | 'size'
         self._sort_asc = True
         _sort_btn_style = (
@@ -141,30 +141,6 @@ class RightPanel(QWidget):
             f"QPushButton:hover{{background:#222734;color:{C['text0']};border-color:{C['blue']};}}"
         )
         self._sort_btns = {}
-        for key, label, tip in [
-            ('name',  '이름', '파일명 순 정렬'),
-            ('size',  '크기', '파일 크기 순 정렬'),
-            ('added', '추가', '추가된 순서'),
-        ]:
-            b = QPushButton(label)
-            b.setCheckable(True)
-            b.setChecked(key == 'name')
-            b.setFixedHeight(24)
-            b.setToolTip(tip)
-            b.setStyleSheet(_sort_btn_style)
-            b.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # Space 버블링 차단
-            def _on_sort(checked, k=key):
-                if self._sort_key == k:
-                    self._sort_asc = not self._sort_asc  # 같은 키 → 방향 전환
-                else:
-                    self._sort_key = k
-                    self._sort_asc = True
-                for kk, bb in self._sort_btns.items():
-                    bb.setChecked(kk == self._sort_key)
-                self.refresh_explorer()
-            b.clicked.connect(_on_sort)
-            self._sort_btns[key] = b
-            tbl.addWidget(b)
 
         self.btn_batch = QPushButton("일괄")
         self.btn_batch.setFixedHeight(24)
@@ -199,15 +175,6 @@ class RightPanel(QWidget):
             lambda _=None: self._save_file_tab_settings()
         )
         tbl.addWidget(self.chk_auto_report)
-
-        self.btn_export = QPushButton("리포트")
-        self.btn_export.setFixedHeight(24)
-        self.btn_export.setToolTip("파일 목록 QC 결과를 CSV/TXT 리포트로 저장")
-        self.btn_export.setStyleSheet(_sort_btn_style)
-        self.btn_export.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.btn_export.setEnabled(False)
-        self.btn_export.clicked.connect(self._export_qc_report)
-        tbl.addWidget(self.btn_export)
 
         l.addWidget(tb)
 
