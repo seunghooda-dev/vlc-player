@@ -369,7 +369,7 @@ class VlcPlayerAdapter(QObject):
         self._audio_apply_attempts = 0
         self._op_seq = 0
         self._timer = QTimer(self)
-        self._timer.setInterval(16)
+        self._timer.setInterval(33)
         self._timer.timeout.connect(self._tick)
 
     def _next_op(self):
@@ -583,6 +583,8 @@ class VideoPanel(QWidget):
         self.fps=29.97; self.df=False; self.tc_offset=0.0; self.duration=0.0
         self._tc_offset_frames = 0
         self._display_frame = 0
+        self._last_display_dur_frames = None
+        self._last_slider_value = None
         self._clock_anchor_frame = 0
         self._clock_anchor_time = 0.0
         self._frame_clock_active = False
@@ -622,10 +624,11 @@ class VideoPanel(QWidget):
         self._audio_recovery_limit_logged = False
         self._transport_guard_until = 0.0
         self._transport_guard_action = ''
+        self._last_meter_raise_at = 0.0
         self.setAcceptDrops(True)
         self._frame_display_timer = QTimer(self)
         self._frame_display_timer.setTimerType(Qt.TimerType.PreciseTimer)
-        self._frame_display_timer.setInterval(8)
+        self._frame_display_timer.setInterval(16)
         self._frame_display_timer.timeout.connect(self._tick_frame_display)
         self._build_ui()
 
@@ -1389,7 +1392,14 @@ class VideoPanel(QWidget):
         self.clip_list = QListWidget()   # 내부 호환용 (화면 미표시)
         self._files = []
 
-    def _raise_vlc_meters(self):
+    def _raise_vlc_meters(self, force=False):
+        if not force:
+            now = time.perf_counter()
+            if now - getattr(self, '_last_meter_raise_at', 0.0) < 0.25:
+                return
+            self._last_meter_raise_at = now
+        else:
+            self._last_meter_raise_at = time.perf_counter()
         self.video_overlay.raise_()
         for w in (self.vlc_side_left, self.vlc_side_right, self.vlc_loud_meter):
             w.show()
@@ -1443,19 +1453,42 @@ class VideoPanel(QWidget):
         offset = getattr(self, '_tc_offset_frames', 0) if include_offset else 0
         return frames_to_tc(frame, self._media_fps(), self._drop_frame_enabled(), offset)
 
+    def _frame_timer_interval_ms(self):
+        # 타임코드는 실제 프레임 변화보다 조금 빠르게만 폴링한다.
+        # 같은 프레임을 여러 번 다시 그리면 큰 TC 라벨에서 끊김이 생긴다.
+        fps = self._media_fps()
+        return max(8, min(33, int(round(1000 / max(1.0, fps * 2)))))
+
+    def _sync_frame_timer_interval(self):
+        interval = self._frame_timer_interval_ms()
+        if self._frame_display_timer.interval() != interval:
+            self._frame_display_timer.setInterval(interval)
+
     def _set_display_frame(self, frame, update_slider=True):
         dur_frames = self._duration_frames()
         if dur_frames > 0:
             frame = max(0, min(dur_frames, int(frame)))
         else:
             frame = max(0, int(frame))
+        dur_changed = dur_frames != getattr(self, '_last_display_dur_frames', None)
+        frame_changed = frame != self._display_frame
+        if not frame_changed and not dur_changed:
+            return
         self._display_frame = frame
-        self.tc_main.setText(self._frames_to_tc(frame, include_offset=self._tc_include_offset()))
+        self._last_display_dur_frames = dur_frames
+        main_tc = self._frames_to_tc(frame, include_offset=self._tc_include_offset())
+        if self.tc_main.text() != main_tc:
+            self.tc_main.setText(main_tc)
         rem_frames = max(0, dur_frames - frame)
-        self.tc_rem.setText(self._frames_to_tc(rem_frames, include_offset=False))
+        rem_tc = self._frames_to_tc(rem_frames, include_offset=False)
+        if self.tc_rem.text() != rem_tc:
+            self.tc_rem.setText(rem_tc)
         if update_slider and self.duration > 0 and not self._seeking:
             pos_sec = frame / self._media_fps()
-            self.slider.setValue(max(0, min(1000, int(pos_sec / self.duration * 1000))))
+            slider_value = max(0, min(1000, int(pos_sec / self.duration * 1000)))
+            if slider_value != getattr(self, '_last_slider_value', None):
+                self._last_slider_value = slider_value
+                self.slider.setValue(slider_value)
 
     def _set_display_position_ms(self, ms, update_slider=True):
         self._set_display_frame(self._ms_to_frame(ms), update_slider=update_slider)
@@ -1476,6 +1509,8 @@ class VideoPanel(QWidget):
         elapsed = max(0.0, time.perf_counter() - self._clock_anchor_time)
         rate = max(0.1, float(getattr(self, '_playback_rate', 1.0) or 1.0))
         frame = self._clock_anchor_frame + int(elapsed * self._media_fps() * rate)
+        if frame == self._display_frame:
+            return
         self._set_display_frame(frame)
 
     # ── 파일 열기 ────────────────────────────────────────
@@ -1744,6 +1779,8 @@ class VideoPanel(QWidget):
         self.fps=29.97; self.df=False; self.tc_offset=0.0
         self._tc_offset_frames = 0
         self._display_frame = 0
+        self._last_display_dur_frames = None
+        self._last_slider_value = None
         self._clock_anchor_frame = 0
         self._clock_anchor_time = 0.0
         self._frame_clock_active = False
@@ -2068,10 +2105,13 @@ class VideoPanel(QWidget):
         self.tc_offset = 0.0
         self._tc_offset_frames = 0
         self._display_frame = 0
+        self._last_display_dur_frames = None
+        self._last_slider_value = None
         self._clock_anchor_frame = 0
         self._clock_anchor_time = 0.0
         self._frame_clock_active = False
         self._frame_display_timer.stop()
+        self._sync_frame_timer_interval()
         self.duration = 0
         self._source_duration = 0
         self._using_preview = False
@@ -2104,10 +2144,13 @@ class VideoPanel(QWidget):
         self.tc_offset = info.get("tc_offset", 0.0)
         self._tc_offset_frames = self._parse_tc_offset_frames(info.get("timecode", ""))
         self._display_frame = 0
+        self._last_display_dur_frames = None
+        self._last_slider_value = None
         self._clock_anchor_frame = 0
         self._clock_anchor_time = 0.0
         self._frame_clock_active = False
         self._frame_display_timer.stop()
+        self._sync_frame_timer_interval()
         self.duration  = info.get("duration", 0)
         self._source_duration = self.duration
         self._using_preview = False
@@ -2788,10 +2831,13 @@ class VideoPanel(QWidget):
         self.tc_offset = info.get("tc_offset", 0.0)
         self._tc_offset_frames = self._parse_tc_offset_frames(info.get("timecode", ""))
         self._display_frame = 0
+        self._last_display_dur_frames = None
+        self._last_slider_value = None
         self._clock_anchor_frame = 0
         self._clock_anchor_time = 0.0
         self._frame_clock_active = False
         self._frame_display_timer.stop()
+        self._sync_frame_timer_interval()
         self.duration  = info.get("duration", 0)
         self._source_duration = self.duration
         self._using_preview = False
@@ -3627,7 +3673,7 @@ class VideoPanel(QWidget):
         self._apply_qc_markers()
 
     def _on_state(self, state):
-        self._raise_vlc_meters()
+        self._raise_vlc_meters(force=True)
         playing = state == QMediaPlayer.PlaybackState.PlayingState
         self.btn_play.setText("||" if playing else "▶")
         if self.cur_file:
@@ -3663,6 +3709,7 @@ class VideoPanel(QWidget):
                 self.status_changed.emit(f"  ▶ 재생 중 — {Path(self.cur_file).name} | 오디오 믹스 준비")
             self._reset_audio_recovery()
             self._frame_clock_active = True
+            self._sync_frame_timer_interval()
             self._sync_frame_clock(self.player.position())
             self._frame_display_timer.start()
             self._start_playback_progress_watch()
