@@ -25,12 +25,12 @@ from constants   import (
     format_bytes, record_state_event,
 )
 from db_models   import probe, sec_to_tc, tc_to_frames
-from threads     import AudioAnalyzeThread, BlackDetectThread
+from threads     import AudioAnalyzeThread, BlackDetectThread, FreezeDetectThread
 from meters      import mk_label
 
 FILE_ITEM_HTML_ROLE = Qt.ItemDataRole.UserRole.value + 10
 FILE_ITEM_PLAIN_ROLE = Qt.ItemDataRole.UserRole.value + 11
-FILE_FILTER_KEYS = ('all', 'done', 'issues', 'black', 'mute', 'error', 'normal')
+FILE_FILTER_KEYS = ('all', 'done', 'issues', 'black', 'mute', 'freeze', 'error', 'normal')
 
 
 class FileListItemDelegate(QStyledItemDelegate):
@@ -98,6 +98,8 @@ class RightPanel(QWidget):
                 'black_threshold': '32',
                 'mute_threshold': '-50',
                 'mute_duration': '1.0',
+                'freeze_noise': '-60',
+                'freeze_duration': '1.0',
             },
             'strict': {
                 'label': '엄격',
@@ -105,6 +107,8 @@ class RightPanel(QWidget):
                 'black_threshold': '24',
                 'mute_threshold': '-55',
                 'mute_duration': '1.0',
+                'freeze_noise': '-65',
+                'freeze_duration': '1.0',
             },
             'fast': {
                 'label': '빠른 검수',
@@ -112,6 +116,8 @@ class RightPanel(QWidget):
                 'black_threshold': '40',
                 'mute_threshold': '-45',
                 'mute_duration': '0.7',
+                'freeze_noise': '-55',
+                'freeze_duration': '1.0',
             },
         }
         layout = QVBoxLayout(self)
@@ -124,9 +130,10 @@ class RightPanel(QWidget):
         self.tabs.addTab(self._build_explorer(),  "📁 파일")
         self.tabs.addTab(self._build_black(),      "⬛ 블랙")
         self.tabs.addTab(self._build_audio(),      "🔇 오디오")
+        self.tabs.addTab(self._build_freeze(),     "⏸ 프리즈")
 
         # 탭 색상 커스텀
-        tab_colors = [C['blue'], C['yellow'], C['teal']]
+        tab_colors = [C['blue'], C['yellow'], C['teal'], C['purple']]
         for i,col in enumerate(tab_colors):
             self.tabs.tabBar().setTabTextColor(i, QColor(C['text2']))
 
@@ -239,6 +246,7 @@ class RightPanel(QWidget):
             ('issues', '문제', '블랙/무음/검사 오류가 있는 파일만 보기'),
             ('black', '블랙', '블랙 구간이 발견된 파일만 보기'),
             ('mute', '무음', '무음 구간이 발견된 파일만 보기'),
+            ('freeze', '프리즈', '정지 화면 구간이 발견된 파일만 보기'),
             ('error', '오류', '검사 오류가 있는 파일만 보기'),
             ('normal', '정상', '블랙/무음 모두 정상인 파일만 보기'),
         ]:
@@ -448,14 +456,19 @@ class RightPanel(QWidget):
             return "블랙 검사중", C['yellow']
         if analysis == "mute":
             return "뮤트 검사중", C['teal']
-        if f.get("black") == "error" or f.get("mute") == "error":
+        if analysis == "freeze":
+            return "프리즈 검사중", C['purple']
+        if f.get("black") == "error" or f.get("mute") == "error" or f.get("freeze") == "error":
             return "검사 오류", C['red']
-        if f.get("black") == "found" and f.get("mute") == "found":
-            return "블랙/무음", C['red']
+        found = []
         if f.get("black") == "found":
-            return "블랙 있음", C['red']
+            found.append("블랙")
         if f.get("mute") == "found":
-            return "무음 있음", C['red']
+            found.append("무음")
+        if f.get("freeze") == "found":
+            found.append("프리즈")
+        if found:
+            return f"{'/'.join(found)} 있음", C['red']
         if f.get("black") == "ok" and f.get("mute") == "ok":
             return "정상", C['green']
         if f.get("playing"):
@@ -467,9 +480,11 @@ class RightPanel(QWidget):
     def _file_status_detail(self, f):
         black_count = int(f.get("black_count", 0) or 0)
         mute_count = int(f.get("mute_count", 0) or 0)
+        freeze_count = int(f.get("freeze_count", 0) or 0)
         black = self._qc_status_text(f.get("black"), "black")
         mute = self._qc_status_text(f.get("mute"), "mute")
-        return f"블랙 {black} {black_count} / 무음 {mute} {mute_count}"
+        freeze = self._qc_status_text(f.get("freeze"), "freeze")
+        return f"블랙 {black} {black_count} / 무음 {mute} {mute_count} / 프리즈 {freeze} {freeze_count}"
 
     def _qc_piece_html(self, label, state, count):
         text = self._qc_status_text(state, label)
@@ -485,9 +500,12 @@ class RightPanel(QWidget):
     def _file_status_detail_html(self, f):
         black_count = int(f.get("black_count", 0) or 0)
         mute_count = int(f.get("mute_count", 0) or 0)
+        freeze_count = int(f.get("freeze_count", 0) or 0)
         black = self._qc_piece_html("블랙", f.get("black"), black_count)
         mute = self._qc_piece_html("무음", f.get("mute"), mute_count)
-        return f"{black} <span style='color:{C['text2']};'>/</span> {mute}"
+        freeze = self._qc_piece_html("프리즈", f.get("freeze"), freeze_count)
+        divider = f" <span style='color:{C['text2']};'>/</span> "
+        return f"{black}{divider}{mute}{divider}{freeze}"
 
     def _breakable_name_html(self, name):
         safe = escape(str(name or ''), quote=False)
@@ -496,7 +514,11 @@ class RightPanel(QWidget):
         return safe
 
     def _file_item_html(self, f, prefix, badge, badge_color):
-        issue = str(f.get("black") or '').lower() in ('found', 'error') or str(f.get("mute") or '').lower() in ('found', 'error')
+        issue = (
+            str(f.get("black") or '').lower() in ('found', 'error')
+            or str(f.get("mute") or '').lower() in ('found', 'error')
+            or str(f.get("freeze") or '').lower() in ('found', 'error')
+        )
         badge_color = C['red'] if issue else badge_color
         name = self._breakable_name_html(f.get('name') or Path(f.get('filepath', '')).name)
         return (
@@ -515,18 +537,21 @@ class RightPanel(QWidget):
             return True
         black = str(f.get('black') or '').lower()
         mute = str(f.get('mute') or '').lower()
+        freeze = str(f.get('freeze') or '').lower()
         if key == 'done':
             return black in ('ok', 'found') and mute in ('ok', 'found')
         if key == 'issues':
-            return black in ('found', 'error') or mute in ('found', 'error')
+            return black in ('found', 'error') or mute in ('found', 'error') or freeze in ('found', 'error')
         if key == 'black':
             return black == 'found'
         if key == 'mute':
             return mute == 'found'
+        if key == 'freeze':
+            return freeze == 'found'
         if key == 'error':
-            return black == 'error' or mute == 'error'
+            return black == 'error' or mute == 'error' or freeze == 'error'
         if key == 'normal':
-            return black == 'ok' and mute == 'ok'
+            return black == 'ok' and mute == 'ok' and freeze not in ('found', 'error')
         return True
 
     def _filter_label(self):
@@ -536,6 +561,7 @@ class RightPanel(QWidget):
             'issues': '문제',
             'black': '블랙',
             'mute': '무음',
+            'freeze': '프리즈',
             'error': '오류',
             'normal': '정상',
         }.get(getattr(self, '_filter_key', 'all'), '전체')
@@ -546,6 +572,7 @@ class RightPanel(QWidget):
             'normal': 0,
             'black': 0,
             'mute': 0,
+            'freeze': 0,
             'both': 0,
             'error': 0,
             'pending': 0,
@@ -553,8 +580,11 @@ class RightPanel(QWidget):
         for f in files:
             black = str(f.get('black') or '').lower()
             mute = str(f.get('mute') or '').lower()
-            if black == 'error' or mute == 'error':
+            freeze = str(f.get('freeze') or '').lower()
+            if black == 'error' or mute == 'error' or freeze == 'error':
                 counts['error'] += 1
+            elif freeze == 'found':
+                counts['freeze'] += 1
             elif black == 'found' and mute == 'found':
                 counts['both'] += 1
             elif black == 'found':
@@ -592,6 +622,8 @@ class RightPanel(QWidget):
             "블랙 있음": 0,
             "무음 있음": 0,
             "블랙/무음": 0,
+            "프리즈 있음": 0,
+            "복합 문제": 0,
             "검사 오류": 0,
             "검사중": 0,
         }
@@ -601,10 +633,12 @@ class RightPanel(QWidget):
                 counts["검사중"] += 1
             elif badge in counts:
                 counts[badge] += 1
+            elif "있음" in badge:
+                counts["복합 문제"] += 1
             elif badge in ("CUE", "재생중"):
                 counts["미분석"] += 1
         parts = [f"파일 {len(files)}"]
-        for key in ("정상", "블랙 있음", "무음 있음", "블랙/무음", "검사 오류", "검사중", "미분석"):
+        for key in ("정상", "블랙 있음", "무음 있음", "프리즈 있음", "블랙/무음", "복합 문제", "검사 오류", "검사중", "미분석"):
             if counts.get(key):
                 parts.append(f"{key} {counts[key]}")
         return " | ".join(parts)
@@ -693,6 +727,8 @@ class RightPanel(QWidget):
             'black_threshold': _value('black_threshold', 'black_threshold', '32'),
             'mute_threshold': _value('spin_threshold', 'mute_threshold', '-50'),
             'mute_duration': _value('spin_duration', 'mute_duration', '1.0'),
+            'freeze_noise': _value('freeze_noise', 'freeze_noise', '-60'),
+            'freeze_duration': _value('freeze_duration', 'freeze_duration', '1.0'),
         }
 
     def _iter_report_files(self):
@@ -758,12 +794,17 @@ class RightPanel(QWidget):
                 '블랙기준_밝기': criteria['black_threshold'],
                 '무음기준_dB': criteria['mute_threshold'],
                 '무음기준_초': criteria['mute_duration'],
+                '프리즈기준_dB': criteria['freeze_noise'],
+                '프리즈기준_초': criteria['freeze_duration'],
                 '블랙상태': self._qc_status_text(f.get('black'), 'black'),
                 '블랙구간': str(int(f.get('black_count', 0) or 0)),
                 '블랙구간목록': self._ranges_report_text(f.get('black_ranges')),
                 '무음상태': self._qc_status_text(f.get('mute'), 'mute'),
                 '무음구간': str(int(f.get('mute_count', 0) or 0)),
                 '무음구간목록': self._ranges_report_text(f.get('mute_ranges')),
+                '프리즈상태': self._qc_status_text(f.get('freeze'), 'freeze'),
+                '프리즈구간': str(int(f.get('freeze_count', 0) or 0)),
+                '프리즈구간목록': self._ranges_report_text(f.get('freeze_ranges')),
                 'QC요약': f.get('qc_summary') or badge,
                 '갱신시각': str(f.get('qc_updated_at') or ''),
             })
@@ -783,13 +824,20 @@ class RightPanel(QWidget):
             lines.append(f"     정합성: {row.get('메타정합성') or '-'} / {row.get('메타확인사항') or '-'}")
             if row.get('소스타임코드'):
                 lines.append(f"     소스TC: {row['소스타임코드']}")
-            lines.append(f"     기준: 블랙 {row.get('블랙기준_화면비율')}%/{row.get('블랙기준_밝기')}  무음 {row.get('무음기준_dB')}dB/{row.get('무음기준_초')}s")
+            lines.append(
+                f"     기준: 블랙 {row.get('블랙기준_화면비율')}%/{row.get('블랙기준_밝기')}  "
+                f"무음 {row.get('무음기준_dB')}dB/{row.get('무음기준_초')}s  "
+                f"프리즈 {row.get('프리즈기준_dB')}dB/{row.get('프리즈기준_초')}s"
+            )
             lines.append(f"     블랙: {row['블랙상태']} {row['블랙구간']}구간")
             if row.get('블랙구간목록'):
                 lines.append(f"       - {row['블랙구간목록']}")
             lines.append(f"     무음: {row['무음상태']} {row['무음구간']}구간")
             if row.get('무음구간목록'):
                 lines.append(f"       - {row['무음구간목록']}")
+            lines.append(f"     프리즈: {row['프리즈상태']} {row['프리즈구간']}구간")
+            if row.get('프리즈구간목록'):
+                lines.append(f"       - {row['프리즈구간목록']}")
             lines.append(f"     크기: {row['크기']}")
             lines.append(f"     갱신: {row['갱신시각'] or '-'}")
             lines.append(f"     경로: {row['경로']}")
@@ -1080,11 +1128,19 @@ class RightPanel(QWidget):
 
     def _save_detection_settings(self):
         try:
+            def _text(attr, setting_key, default):
+                widget = getattr(self, attr, None)
+                try:
+                    return widget.text().strip() or default
+                except Exception:
+                    return str(self._settings.get(setting_key, default))
             self._settings = save_settings(
-                black_amount=self.black_amount.text().strip() or '98',
-                black_threshold=self.black_threshold.text().strip() or '32',
-                mute_threshold=self.spin_threshold.text().strip() or '-50',
-                mute_duration=self.spin_duration.text().strip() or '1.0',
+                black_amount=_text('black_amount', 'black_amount', '98'),
+                black_threshold=_text('black_threshold', 'black_threshold', '32'),
+                mute_threshold=_text('spin_threshold', 'mute_threshold', '-50'),
+                mute_duration=_text('spin_duration', 'mute_duration', '1.0'),
+                freeze_noise=_text('freeze_noise', 'freeze_noise', '-60'),
+                freeze_duration=_text('freeze_duration', 'freeze_duration', '1.0'),
             )
         except Exception as e:
             log.debug(f'detection settings save: {e}')
@@ -1111,6 +1167,10 @@ class RightPanel(QWidget):
                 self.spin_threshold.setText(preset['mute_threshold'])
             if hasattr(self, 'spin_duration'):
                 self.spin_duration.setText(preset['mute_duration'])
+            if hasattr(self, 'freeze_noise'):
+                self.freeze_noise.setText(preset['freeze_noise'])
+            if hasattr(self, 'freeze_duration'):
+                self.freeze_duration.setText(preset['freeze_duration'])
             if hasattr(self, 'black_preset') and self.black_preset.currentData() != key:
                 idx = self.black_preset.findData(key)
                 if idx >= 0:
@@ -1119,19 +1179,25 @@ class RightPanel(QWidget):
                 idx = self.audio_preset.findData(key)
                 if idx >= 0:
                     self.audio_preset.setCurrentIndex(idx)
+            if hasattr(self, 'freeze_preset') and self.freeze_preset.currentData() != key:
+                idx = self.freeze_preset.findData(key)
+                if idx >= 0:
+                    self.freeze_preset.setCurrentIndex(idx)
             self._save_detection_settings()
             label = preset.get('label', key)
             if hasattr(self, 'black_status'):
                 self.black_status.setText(f"  ✓ 프리셋 적용 — {label}")
             if hasattr(self, 'audio_status'):
                 self.audio_status.setText(f"  ✓ 프리셋 적용 — {label}")
+            if hasattr(self, 'freeze_status'):
+                self.freeze_status.setText(f"  ✓ 프리셋 적용 — {label}")
         except Exception as e:
             log.debug(f'analysis preset apply: {e}')
 
     def _analysis_thread_running(self):
         if getattr(self, '_batch_active', False):
             return True
-        for name in ('_black_thread', '_audio_thread'):
+        for name in ('_black_thread', '_audio_thread', '_freeze_thread'):
             thread = getattr(self, name, None)
             try:
                 if thread and thread.isRunning():
@@ -1219,6 +1285,14 @@ class RightPanel(QWidget):
                 self._on_batch_audio_error(msg, seq=seq)
                 return
             self._on_audio_error(msg, seq=seq)
+        elif kind == 'freeze':
+            thread = getattr(self, '_freeze_thread', None)
+            try:
+                if thread and thread.isRunning():
+                    thread.abort()
+            except Exception as e:
+                log.debug(f'freeze timeout abort: {e}')
+            self._on_freeze_error(msg, seq=seq)
 
     def cancel_active_analysis(self, reason='작업 취소', wait_ms=700):
         """Abort running analysis threads and invalidate their queued UI callbacks."""
@@ -1229,7 +1303,7 @@ class RightPanel(QWidget):
         self._analysis_seq_file = None
         self._stop_analysis_timeout()
 
-        for attr, label in (('_black_thread', '블랙 검출'), ('_audio_thread', '뮤트 검출')):
+        for attr, label in (('_black_thread', '블랙 검출'), ('_audio_thread', '뮤트 검출'), ('_freeze_thread', '프리즈 검출')):
             thread = getattr(self, attr, None)
             if not thread:
                 continue
@@ -1273,6 +1347,11 @@ class RightPanel(QWidget):
                 self.audio_status.setText(f"  ⏹ {reason} — 뮤트 검출 중단")
             except Exception:
                 pass
+        if active_kind == 'freeze' or had_work:
+            try:
+                self.freeze_status.setText(f"  ⏹ {reason} — 프리즈 검출 중단")
+            except Exception:
+                pass
         if had_work:
             try:
                 self.vp.ai_lbl.setText(f"⏹ {reason} — 분석 작업 중단")
@@ -1312,12 +1391,15 @@ class RightPanel(QWidget):
             self.btn_run_black.setEnabled(enabled and has_file)
         if hasattr(self, 'btn_run_audio'):
             self.btn_run_audio.setEnabled(enabled and has_file)
+        if hasattr(self, 'btn_run_freeze'):
+            self.btn_run_freeze.setEnabled(enabled and has_file)
 
     def _set_analysis_buttons_busy(self, kind=None, busy=False):
         has_file = bool(getattr(self.vp, 'cur_file', None))
         loading = bool(getattr(self.vp, '_loading', False))
         black = getattr(self, 'btn_run_black', None)
         audio = getattr(self, 'btn_run_audio', None)
+        freeze = getattr(self, 'btn_run_freeze', None)
         batch = getattr(self, 'btn_batch', None)
         export = getattr(self, 'btn_export', None)
         if black:
@@ -1326,6 +1408,9 @@ class RightPanel(QWidget):
         if audio:
             audio.setText("🔇  분석 중..." if busy and kind == 'audio' else "🔇  뮤트 검출")
             audio.setEnabled(False if busy else (has_file and not loading))
+        if freeze:
+            freeze.setText("⏸  분석 중..." if busy and kind == 'freeze' else "⏸  프리즈 검출")
+            freeze.setEnabled(False if busy else (has_file and not loading))
         if batch:
             batch.setText("진행중" if busy and kind == 'batch' else "일괄")
             batch.setEnabled(False if busy else (bool(getattr(self.vp, '_files', [])) and not loading))
@@ -1389,8 +1474,11 @@ class RightPanel(QWidget):
             try:
                 self.btn_run_black.setEnabled(True)
                 self.btn_run_audio.setEnabled(True)
+                self.btn_run_freeze.setEnabled(True)
                 self.vp.btn_black.setEnabled(True)
                 self.vp.btn_audio.setEnabled(True)
+                if hasattr(self.vp, 'btn_freeze'):
+                    self.vp.btn_freeze.setEnabled(True)
             except Exception as e:
                 log.debug(f'analysis buttons restore: {e}')
         try:
@@ -1658,11 +1746,11 @@ class RightPanel(QWidget):
                 log.warning(f'batch qc auto report failed: {e}')
         suffix = f" / 리포트 {Path(report).name}" if report else ""
         counts = self._batch_summary_counts(list(getattr(self.vp, '_files', []) or []))
-        issue_total = counts['black'] + counts['mute'] + counts['both'] + counts['error']
+        issue_total = counts['black'] + counts['mute'] + counts['freeze'] + counts['both'] + counts['error']
         summary = (
             f"일괄 검수 완료 | 총 {total} | 정상 {counts['normal']} | "
             f"블랙 {counts['black'] + counts['both']} | 무음 {counts['mute'] + counts['both']} | "
-            f"오류 {counts['error']} | 미분석 {counts['pending']} | {elapsed:.1f}초"
+            f"프리즈 {counts['freeze']} | 오류 {counts['error']} | 미분석 {counts['pending']} | {elapsed:.1f}초"
         )
         self._set_batch_summary_panel(summary + suffix, issues=issue_total > 0)
         self.exp_path.setText(f"✓ {summary}{suffix}")
@@ -1670,7 +1758,7 @@ class RightPanel(QWidget):
         log.info(
             f"batch qc finished files={total} elapsed={elapsed:.1f}s "
             f"normal={counts['normal']} black={counts['black']} mute={counts['mute']} "
-            f"both={counts['both']} error={counts['error']} pending={counts['pending']}"
+            f"freeze={counts['freeze']} both={counts['both']} error={counts['error']} pending={counts['pending']}"
         )
         record_state_event(
             'batch-qc',
@@ -1680,6 +1768,7 @@ class RightPanel(QWidget):
             normal=counts['normal'],
             black=counts['black'] + counts['both'],
             mute=counts['mute'] + counts['both'],
+            freeze=counts['freeze'],
             error=counts['error'],
             pending=counts['pending'],
             report=str(report or ''),
@@ -1756,6 +1845,8 @@ class RightPanel(QWidget):
             self.black_status.setText(f"  ⏳ {message}")
         elif kind == 'audio':
             self.audio_status.setText(f"  ⏳ {message}")
+        elif kind == 'freeze':
+            self.freeze_status.setText(f"  ⏳ {message}")
 
     def _issue_count_text(self, count):
         count = int(count or 0)
@@ -1779,6 +1870,13 @@ class RightPanel(QWidget):
         if compact:
             return f"✓ 뮤트 검출 완료 — {count_text}구간"
         return f"&nbsp;&nbsp;✓ 완료 — 뮤트 {count_text}구간{suffix}"
+
+    def _freeze_done_label(self, count, *, compact=False):
+        count = int(count or 0)
+        count_text = self._issue_count_text(count)
+        if compact:
+            return f"✓ 프리즈 검출 완료 — {count_text}구간"
+        return f"&nbsp;&nbsp;✓ 완료 — 프리즈 {count_text}구간"
 
     def _on_black_done(self, ranges, seq=None):
         if not self._analysis_matches('black', seq, getattr(self, '_black_file', None)):
@@ -1960,6 +2058,98 @@ class RightPanel(QWidget):
                 self.vp.ai_time_lbl.setText('')
         except Exception as e: log.warning(f'audio tab reset: {e}')
 
+    def _build_freeze(self):
+        w = QWidget()
+        l = QVBoxLayout(w); l.setContentsMargins(0,0,0,0); l.setSpacing(0)
+
+        tb = QWidget(); tb.setFixedHeight(46)
+        tb.setStyleSheet(f"background:{C['panel']};border-bottom:1px solid {C['border']};")
+        tbl = QHBoxLayout(tb); tbl.setContentsMargins(8,4,8,4); tbl.setSpacing(6)
+
+        _inp = (f"background:{C['input']};border:1px solid {C['border']};border-radius:5px;"
+                f"color:{C['purple']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:12px;padding:2px 6px;")
+
+        lbl_noise = QLabel("민감도")
+        lbl_noise.setStyleSheet(f"color:{C['text2']};font-size:11px;")
+        self.freeze_noise = QLineEdit(str(self._settings.get('freeze_noise', '-60')))
+        self.freeze_noise.setFixedWidth(48); self.freeze_noise.setFixedHeight(26)
+        self.freeze_noise.setStyleSheet(_inp)
+        self.freeze_noise.setToolTip("프레임 차이를 정지로 볼 임계값(dB). 기본 -60dB")
+
+        lbl_dur = QLabel("최소(초)")
+        lbl_dur.setStyleSheet(f"color:{C['text2']};font-size:11px;")
+        self.freeze_duration = QLineEdit(str(self._settings.get('freeze_duration', '1.0')))
+        self.freeze_duration.setFixedWidth(40); self.freeze_duration.setFixedHeight(26)
+        self.freeze_duration.setStyleSheet(_inp)
+        self.freeze_duration.setToolTip("프리즈로 확정할 최소 지속 시간. 기본 1초")
+
+        self.freeze_preset = QComboBox()
+        self.freeze_preset.setFixedHeight(26)
+        self.freeze_preset.setToolTip("블랙/뮤트/프리즈 분석 기준 프리셋")
+        for key, data in self._analysis_presets.items():
+            self.freeze_preset.addItem(data['label'], key)
+        self.freeze_preset.setStyleSheet(self._preset_combo_style())
+        self.freeze_preset.currentIndexChanged.connect(
+            lambda _: self._apply_analysis_preset(self.freeze_preset.currentData())
+        )
+
+        self.btn_run_freeze = QPushButton("⏸  프리즈 검출")
+        self.btn_run_freeze.setFixedHeight(30); self.btn_run_freeze.setEnabled(False)
+        self.btn_run_freeze.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_run_freeze.setStyleSheet(
+            f"QPushButton{{background:rgba(183,148,244,32);color:{C['purple']};"
+            f"border:1px solid rgba(183,148,244,105);border-radius:6px;"
+            f"font-size:11px;font-weight:600;padding:0 12px;}}"
+            f"QPushButton:hover{{background:rgba(183,148,244,48);border-color:{C['purple']};}}"
+            f"QPushButton:disabled{{background:#101218;color:#473a5f;border-color:#252033;}}"
+        )
+        self.btn_run_freeze.clicked.connect(self._run_freeze_detect)
+        self.freeze_noise.editingFinished.connect(self._save_detection_settings)
+        self.freeze_duration.editingFinished.connect(self._save_detection_settings)
+
+        lbl_pre = QLabel("프리셋")
+        lbl_pre.setStyleSheet(f"color:{C['text2']};font-size:11px;")
+        tbl.addWidget(lbl_pre); tbl.addWidget(self.freeze_preset)
+        tbl.addSpacing(6)
+        tbl.addWidget(lbl_noise); tbl.addWidget(self.freeze_noise)
+        tbl.addSpacing(6)
+        tbl.addWidget(lbl_dur); tbl.addWidget(self.freeze_duration)
+        tbl.addStretch(); tbl.addWidget(self.btn_run_freeze)
+        l.addWidget(tb)
+
+        self.freeze_status = QLabel("  파일을 로드하고 프리즈 검출 버튼을 누르세요")
+        self.freeze_status.setStyleSheet(
+            f"color:{C['text2']};font-size:11px;background:{C['panel2']};"
+            f"padding:5px 12px;border-bottom:1px solid {C['border']};")
+        l.addWidget(self.freeze_status)
+
+        hdr = QLabel("  프리즈 구간 — 클릭하면 해당 프레임으로 이동")
+        hdr.setStyleSheet(
+            f"color:{C['text2']};font-size:11px;font-weight:600;"
+            f"background:{C['panel']};padding:4px 12px;border-bottom:1px solid {C['border']};")
+        l.addWidget(hdr)
+
+        self.freeze_list = QListWidget()
+        self.freeze_list.setStyleSheet(
+            f"QListWidget{{background:{C['panel2']};color:{C['text1']};}}"
+            f"QListWidget::item{{padding:8px 14px;border-bottom:1px solid {C['border']};"
+            f"font-family:'Cascadia Mono','Consolas','D2Coding';font-size:11px;}}"
+            f"QListWidget::item:selected{{background:rgba(183,148,244,32);"
+            f"border-left:2px solid {C['purple']};}}"
+            f"QListWidget::item:hover{{background:rgba(255,255,255,7);}}")
+        self.freeze_list.itemClicked.connect(
+            lambda i: self.seek_requested.emit(i.data(Qt.ItemDataRole.UserRole) or 0))
+        l.addWidget(self.freeze_list, 1)
+        return w
+
+    def _reset_freeze_tab(self):
+        try:
+            self.btn_run_freeze.setEnabled(bool(self.vp.cur_file))
+            self.freeze_status.setText("  프레임 차이 -60dB / 1초 이상 정지 화면 기준")
+            self.freeze_list.clear()
+        except Exception as e:
+            log.warning(f'freeze tab reset: {e}')
+
     def _run_audio_analyze(self):
         if not self.vp.cur_file: return
         missing = format_missing_runtime_tools(['FFmpeg', 'FFprobe'])
@@ -2109,6 +2299,137 @@ class RightPanel(QWidget):
         self._finish_analysis_mode()
         log.error(f'AudioAnalyze UI error: {err}')
 
+    def _run_freeze_detect(self):
+        if not self.vp.cur_file:
+            return
+        missing = format_missing_runtime_tools(['FFmpeg'])
+        if missing:
+            self.tabs.setCurrentWidget(self.freeze_list.parentWidget())
+            title = missing.splitlines()[0]
+            self.freeze_status.setText(f"  ⚠ {title}")
+            self.vp.ai_lbl.setText(f"⚠ {title}")
+            log.warning(f'freeze detect blocked: {missing}')
+            return
+        if getattr(self, '_freeze_thread', None) and self._freeze_thread.isRunning():
+            self.tabs.setCurrentWidget(self.freeze_list.parentWidget())
+            self.freeze_status.setText("  ⏳ 프리즈 검출이 이미 진행 중입니다")
+            return
+        try:
+            noise = float(self.freeze_noise.text())
+            if noise > 0:
+                noise = -abs(noise)
+            duration = max(0.1, float(self.freeze_duration.text()))
+            self.freeze_noise.setText(f'{noise:g}')
+            self.freeze_duration.setText(f'{duration:g}')
+            self._save_detection_settings()
+        except ValueError:
+            self.freeze_status.setText("  ⚠ 민감도/최소지속시간을 숫자로 입력하세요")
+            return
+        if not self._begin_analysis_mode('freeze', '프리즈 검출'):
+            self.tabs.setCurrentWidget(self.freeze_list.parentWidget())
+            self.freeze_status.setText("  ⏳ 다른 분석이 진행 중입니다")
+            return
+
+        self.tabs.setCurrentWidget(self.freeze_list.parentWidget())
+        self.btn_run_freeze.setEnabled(False)
+        self.freeze_list.clear()
+        self.freeze_status.setText(f"  ⏳ 프리즈 프레임 검출 중... ({duration:.1f}초 이상)")
+        self._freeze_file = self.vp.cur_file
+        seq = self._next_analysis_seq('freeze', self._freeze_file)
+        if hasattr(self.vp, '_set_file_status'):
+            self.vp._set_file_status(self._freeze_file, analysis="freeze")
+        try:
+            if hasattr(self.vp, 'btn_freeze'):
+                self.vp.btn_freeze.setEnabled(False)
+            self.vp.prog_ai.show()
+            self.vp.ai_lbl.setText("⏸ 프리즈 프레임 검출 중...")
+            self._start_freeze_elapsed_timer()
+        except Exception as e:
+            log.debug(f'freeze ai state: {e}')
+
+        self._freeze_thread = FreezeDetectThread(
+            self.vp.cur_file,
+            self.vp.fps,
+            noise,
+            duration,
+            getattr(self.vp, 'df', None),
+            getattr(self.vp, '_tc_offset_frames', 0),
+        )
+        self._freeze_thread.progress.connect(
+            lambda m, s=seq: self._on_analysis_progress('freeze', s, m)
+        )
+        self._freeze_thread.finished.connect(lambda ranges, s=seq: self._on_freeze_done(ranges, seq=s))
+        self._freeze_thread.error.connect(lambda err, s=seq: self._on_freeze_error(err, seq=s))
+        self._freeze_thread.start()
+        self._start_analysis_timeout('freeze', '프리즈 검출', seq)
+
+    def _on_freeze_done(self, ranges, seq=None):
+        if not self._analysis_matches('freeze', seq, getattr(self, '_freeze_file', None)):
+            self._log_stale_analysis('freeze', seq, 'done')
+            return
+        self._stop_analysis_timeout()
+        self.btn_run_freeze.setEnabled(True)
+        if getattr(self, '_freeze_thread', None) and not self._freeze_thread.isRunning():
+            self._freeze_thread = None
+        if hasattr(self.vp, '_set_file_status'):
+            fp = getattr(self, '_freeze_file', self.vp.cur_file)
+            self.vp._set_file_status(
+                fp,
+                analysis=None,
+                freeze="found" if ranges else "ok",
+                freeze_count=len(ranges),
+                freeze_ranges=ranges,
+            )
+        self.freeze_list.clear()
+        if not ranges:
+            item = QListWidgetItem("  프리즈 구간 없음")
+            item.setForeground(QColor(C['text3']))
+            self.freeze_list.addItem(item)
+        else:
+            for idx, r in enumerate(ranges, 1):
+                frames = int(r.get('frames', 1))
+                dur_s = float(r.get('duration', 0))
+                label = (f"  #{idx:03d}  {r['tc_start']}  →  {r['tc_end']}"
+                         f"   ({frames}f / {dur_s:.3f}초)")
+                item = QListWidgetItem(label)
+                item.setData(Qt.ItemDataRole.UserRole, r['start'])
+                item.setForeground(QColor(C['purple']))
+                self.freeze_list.addItem(item)
+        self.freeze_status.setText(self._freeze_done_label(len(ranges)))
+        try:
+            if hasattr(self.vp, 'btn_freeze'):
+                self.vp.btn_freeze.setEnabled(True)
+            self.vp.prog_ai.hide()
+            self.vp.ai_lbl.setText(self._freeze_done_label(len(ranges), compact=True))
+            self._finish_freeze_elapsed_timer()
+        except Exception as e:
+            log.debug(f'freeze ai done state: {e}')
+        self._finish_analysis_mode()
+
+    def _on_freeze_error(self, err, seq=None):
+        if not self._analysis_matches('freeze', seq, getattr(self, '_freeze_file', None)):
+            self._log_stale_analysis('freeze', seq, 'error')
+            return
+        self._stop_analysis_timeout()
+        fp = getattr(self, '_freeze_file', self.vp.cur_file)
+        title = friendly_error_title('freeze', err, fp)
+        self.freeze_status.setText(f"  ⚠ {title}")
+        self.btn_run_freeze.setEnabled(True)
+        if getattr(self, '_freeze_thread', None) and not self._freeze_thread.isRunning():
+            self._freeze_thread = None
+        if hasattr(self.vp, '_set_file_status'):
+            self.vp._set_file_status(fp, analysis=None, freeze="error", freeze_count=0, freeze_ranges=[])
+        try:
+            if hasattr(self.vp, 'btn_freeze'):
+                self.vp.btn_freeze.setEnabled(True)
+            self.vp.prog_ai.hide()
+            self.vp.ai_lbl.setText(f"프리즈: {title}")
+            self._finish_freeze_elapsed_timer(prefix='FREEZE ERR')
+        except Exception as e:
+            log.debug(f'freeze ai error state: {e}')
+        self._finish_analysis_mode()
+        log.error(f'FreezeDetect UI error: {err}')
+
     def _format_elapsed(self, elapsed):
         elapsed = max(0, int(elapsed))
         h = elapsed // 3600
@@ -2184,6 +2505,39 @@ class RightPanel(QWidget):
         except Exception as e:
             log.debug(f'audio elapsed finish: {e}')
 
+    def _start_freeze_elapsed_timer(self):
+        self._freeze_elapsed_start = time.monotonic()
+        if not hasattr(self, '_freeze_elapsed_timer'):
+            self._freeze_elapsed_timer = QTimer(self)
+            self._freeze_elapsed_timer.setInterval(250)
+            self._freeze_elapsed_timer.timeout.connect(self._update_freeze_elapsed_timer)
+        self._update_freeze_elapsed_timer()
+        self._freeze_elapsed_timer.start()
+
+    def _update_freeze_elapsed_timer(self):
+        start = getattr(self, '_freeze_elapsed_start', None)
+        if start is None:
+            return
+        elapsed = time.monotonic() - start
+        try:
+            self.vp.ai_time_lbl.setText(f"FREEZE {self._format_elapsed(elapsed)}")
+            self.vp.ai_time_lbl.show()
+        except Exception as e:
+            log.debug(f'freeze elapsed update: {e}')
+
+    def _finish_freeze_elapsed_timer(self, prefix='FREEZE'):
+        start = getattr(self, '_freeze_elapsed_start', None)
+        if hasattr(self, '_freeze_elapsed_timer'):
+            self._freeze_elapsed_timer.stop()
+        if start is None:
+            return
+        elapsed = time.monotonic() - start
+        try:
+            self.vp.ai_time_lbl.setText(f"{prefix} {self._format_elapsed(elapsed)}")
+            self.vp.ai_time_lbl.show()
+        except Exception as e:
+            log.debug(f'freeze elapsed finish: {e}')
+
     def _start_batch_elapsed_timer(self):
         if not getattr(self, '_batch_started_at', None):
             self._batch_started_at = time.monotonic()
@@ -2224,6 +2578,7 @@ class RightPanel(QWidget):
         self._update_explorer(info, clip_id)
         self._reset_black_tab()
         self._reset_audio_tab()
+        self._reset_freeze_tab()
 
 # ══════════════════════════════════════════════════════════
 # 메인 윈도우

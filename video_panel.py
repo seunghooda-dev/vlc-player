@@ -42,14 +42,15 @@ class QCMarkerSlider(QSlider):
     """Progress slider with lightweight QC result overlays."""
     def __init__(self, orientation, parent=None):
         super().__init__(orientation, parent)
-        self._qc_markers = {"black": [], "mute": []}
+        self._qc_markers = {"black": [], "mute": [], "freeze": []}
         self._qc_duration = 0.0
         self.setMinimumHeight(18)
 
-    def set_qc_markers(self, black_ranges=None, mute_ranges=None, duration_sec=0.0):
+    def set_qc_markers(self, black_ranges=None, mute_ranges=None, freeze_ranges=None, duration_sec=0.0):
         self._qc_markers = {
             "black": list(black_ranges or []),
             "mute": list(mute_ranges or []),
+            "freeze": list(freeze_ranges or []),
         }
         try:
             self._qc_duration = max(0.0, float(duration_sec or 0.0))
@@ -63,14 +64,15 @@ class QCMarkerSlider(QSlider):
             return
         black = self._qc_markers.get("black") or []
         mute = self._qc_markers.get("mute") or []
-        if not black and not mute:
+        freeze = self._qc_markers.get("freeze") or []
+        if not black and not mute and not freeze:
             return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
         track_left = 7
         track_width = max(1, self.width() - track_left * 2)
-        marker_top = max(1, int(self.height() * 0.14))
-        marker_h = max(5, int(self.height() * 0.32))
+        marker_top = max(1, int(self.height() * 0.12))
+        marker_h = max(3, int((self.height() - marker_top * 2 - 2) / 3))
 
         def _draw_ranges(ranges, color, y):
             painter.setPen(Qt.PenStyle.NoPen)
@@ -91,6 +93,7 @@ class QCMarkerSlider(QSlider):
 
         _draw_ranges(black, QColor(255, 74, 103, 210), marker_top)
         _draw_ranges(mute, QColor(255, 170, 48, 210), marker_top + marker_h + 1)
+        _draw_ranges(freeze, QColor(183, 148, 244, 220), marker_top + (marker_h + 1) * 2)
         painter.end()
 
 
@@ -1278,6 +1281,7 @@ class VideoPanel(QWidget):
 
         self.btn_black = _ai_btn('⬛  블랙', '1프레임 이상 검정 화면 구간 검출')
         self.btn_audio = _ai_btn('🔇  뮤트', '1초 이상 무음 구간 수동 검출 + 피크 측정')
+        self.btn_freeze = _ai_btn('⏸  프리즈', '1초 이상 정지 화면 구간 수동 검출')
 
         self.prog_ai = QProgressBar()
         self.prog_ai.setFixedHeight(4); self.prog_ai.setRange(0,0); self.prog_ai.hide()
@@ -1293,7 +1297,8 @@ class VideoPanel(QWidget):
 
         self.btn_black.clicked.connect(self.start_black_detect)
         self.btn_audio.clicked.connect(self.start_audio_analyze)
-        ail.addWidget(self.btn_black); ail.addWidget(self.btn_audio)
+        self.btn_freeze.clicked.connect(self.start_freeze_detect)
+        ail.addWidget(self.btn_black); ail.addWidget(self.btn_audio); ail.addWidget(self.btn_freeze)
         ail.addSpacing(8)
         ail.addWidget(self.prog_ai)
         ail.addWidget(self.ai_lbl)
@@ -1605,10 +1610,13 @@ class VideoPanel(QWidget):
             "playing": False,
             "black": qc.get("black") or None,   # None | ok | found | error
             "mute": qc.get("mute") or None,     # None | ok | found | error
+            "freeze": qc.get("freeze") or None, # None | ok | found | error
             "black_count": int(qc.get("black_count", 0) or 0),
             "mute_count": int(qc.get("mute_count", 0) or 0),
+            "freeze_count": int(qc.get("freeze_count", 0) or 0),
             "black_ranges": list(qc.get("black_ranges") or []),
             "mute_ranges": list(qc.get("mute_ranges") or []),
+            "freeze_ranges": list(qc.get("freeze_ranges") or []),
             "qc_summary": qc.get("summary") or "미분석",
             "qc_updated_at": qc.get("updated_at"),
             "analysis": None,
@@ -1621,10 +1629,13 @@ class VideoPanel(QWidget):
                 item.setdefault("playing", False)
                 item.setdefault("black", None)
                 item.setdefault("mute", None)
+                item.setdefault("freeze", None)
                 item.setdefault("black_count", 0)
                 item.setdefault("mute_count", 0)
+                item.setdefault("freeze_count", 0)
                 item.setdefault("black_ranges", [])
                 item.setdefault("mute_ranges", [])
+                item.setdefault("freeze_ranges", [])
                 item.setdefault("qc_summary", "미분석")
                 item.setdefault("qc_updated_at", None)
                 item.setdefault("analysis", None)
@@ -1635,13 +1646,14 @@ class VideoPanel(QWidget):
         if not hasattr(self, "slider"):
             return
         if not self.cur_file:
-            self.slider.set_qc_markers([], [], 0.0)
+            self.slider.set_qc_markers([], [], [], 0.0)
             return
         entry = self._file_entry(self.cur_file)
         duration = self.duration or self._source_duration or 0.0
         self.slider.set_qc_markers(
             (entry or {}).get("black_ranges") or [],
             (entry or {}).get("mute_ranges") or [],
+            (entry or {}).get("freeze_ranges") or [],
             duration,
         )
 
@@ -1650,32 +1662,43 @@ class VideoPanel(QWidget):
         if not entry:
             return
         entry.update(changes)
-        qc_keys = {"black", "mute", "black_count", "mute_count", "black_ranges", "mute_ranges"}
+        qc_keys = {
+            "black", "mute", "freeze",
+            "black_count", "mute_count", "freeze_count",
+            "black_ranges", "mute_ranges", "freeze_ranges",
+        }
         if qc_keys.intersection(changes):
             try:
                 saved = update_clip_qc(
                     filepath,
                     black=changes.get("black") if "black" in changes else None,
                     mute=changes.get("mute") if "mute" in changes else None,
+                    freeze=changes.get("freeze") if "freeze" in changes else None,
                     black_count=changes.get("black_count") if "black_count" in changes else None,
                     mute_count=changes.get("mute_count") if "mute_count" in changes else None,
+                    freeze_count=changes.get("freeze_count") if "freeze_count" in changes else None,
                     black_ranges=changes.get("black_ranges") if "black_ranges" in changes else None,
                     mute_ranges=changes.get("mute_ranges") if "mute_ranges" in changes else None,
+                    freeze_ranges=changes.get("freeze_ranges") if "freeze_ranges" in changes else None,
                 )
                 if saved:
                     entry["black"] = saved.get("black") or None
                     entry["mute"] = saved.get("mute") or None
+                    entry["freeze"] = saved.get("freeze") or None
                     entry["black_count"] = int(saved.get("black_count", 0) or 0)
                     entry["mute_count"] = int(saved.get("mute_count", 0) or 0)
+                    entry["freeze_count"] = int(saved.get("freeze_count", 0) or 0)
                     entry["black_ranges"] = list(saved.get("black_ranges") or [])
                     entry["mute_ranges"] = list(saved.get("mute_ranges") or [])
+                    entry["freeze_ranges"] = list(saved.get("freeze_ranges") or [])
                     entry["qc_summary"] = saved.get("summary") or "미분석"
                     entry["qc_updated_at"] = saved.get("updated_at")
                     log.info(
                         "qc status saved "
                         f"file={Path(filepath).name} summary={entry['qc_summary']} "
                         f"black={entry['black']}({entry['black_count']}) "
-                        f"mute={entry['mute']}({entry['mute_count']})"
+                        f"mute={entry['mute']}({entry['mute_count']}) "
+                        f"freeze={entry['freeze']}({entry['freeze_count']})"
                     )
                     record_state_event(
                         "qc",
@@ -1684,6 +1707,7 @@ class VideoPanel(QWidget):
                         summary=entry["qc_summary"],
                         black=entry["black"],
                         mute=entry["mute"],
+                        freeze=entry["freeze"],
                     )
             except Exception as e:
                 log.warning(f"qc status save failed file={Path(filepath).name}: {e}")
@@ -1761,6 +1785,7 @@ class VideoPanel(QWidget):
         # AI 버튼 비활성화
         self.btn_black.setEnabled(False)
         self.btn_audio.setEnabled(False)
+        self.btn_freeze.setEnabled(False)
         self.ai_lbl.setText("파일을 열면 AI 분석을 시작할 수 있습니다")
 
         # 클립 리스트 선택 해제
@@ -2068,6 +2093,7 @@ class VideoPanel(QWidget):
         self._res_text.setPlainText("")
         self.btn_black.setEnabled(False)
         self.btn_audio.setEnabled(False)
+        self.btn_freeze.setEnabled(False)
         self.ai_lbl.setText(f"⏳ 3/4 메타데이터 분석 중 — {Path(filepath).name}")
 
     def _apply_probe_metadata(self, filepath, info, warnings, emit_loaded=False):
@@ -2275,7 +2301,7 @@ class VideoPanel(QWidget):
             cb.setEnabled(enabled and stream_count > 0 and ch_no <= stream_count)
         has_file = bool(self.cur_file)
         metadata_ready = bool(getattr(self, '_metadata_ready', False))
-        for name in ('btn_black', 'btn_audio'):
+        for name in ('btn_black', 'btn_audio', 'btn_freeze'):
             btn = getattr(self, name, None)
             if btn:
                 btn.setEnabled(enabled and has_file and metadata_ready)
@@ -2820,6 +2846,7 @@ class VideoPanel(QWidget):
 
         self.btn_black.setEnabled(False)
         self.btn_audio.setEnabled(False)
+        self.btn_freeze.setEnabled(False)
         self.ai_lbl.setText(f"⚠ {warnings[0]}" if warnings else "AI 분석 준비됨")
 
         # 실시간 오디오 미터 시작 (채널 수 전달)
@@ -3833,6 +3860,23 @@ class VideoPanel(QWidget):
             except Exception as e:
                 log.warning(f'black detect forward failed: {e}')
         self.ai_lbl.setText("⚠ 오른쪽 블랙 탭을 사용할 수 없습니다")
+
+    def start_freeze_detect(self):
+        """AI바 프리즈 버튼 → 오른쪽 프리즈 탭 분석 실행"""
+        if not self.cur_file:
+            return
+        rp = getattr(self, '_right_panel', None)
+        if rp and hasattr(rp, '_run_freeze_detect'):
+            try:
+                if hasattr(rp, 'tabs'):
+                    freeze_page = rp.freeze_list.parentWidget() if hasattr(rp, 'freeze_list') else None
+                    if freeze_page:
+                        rp.tabs.setCurrentWidget(freeze_page)
+                rp._run_freeze_detect()
+                return
+            except Exception as e:
+                log.warning(f'freeze detect forward failed: {e}')
+        self.ai_lbl.setText("⚠ 오른쪽 프리즈 탭을 사용할 수 없습니다")
 
 # ══════════════════════════════════════════════════════════
 # 오른쪽: 탭 패널

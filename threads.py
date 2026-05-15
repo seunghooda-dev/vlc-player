@@ -1,6 +1,6 @@
 """
 threads.py — 백그라운드 스레드
-TranscodeThread, AudioAnalyzeThread, LoudnessAnalyzeThread, BlackDetectThread
+TranscodeThread, AudioAnalyzeThread, LoudnessAnalyzeThread, BlackDetectThread, FreezeDetectThread
 """
 
 __all__ = [
@@ -10,6 +10,7 @@ __all__ = [
     'AudioAnalyzeThread',
     'LoudnessAnalyzeThread',
     'BlackDetectThread',
+    'FreezeDetectThread',
 ]
 import sys, re, json, subprocess, threading as _th, hashlib, math, os, time
 from pathlib import Path
@@ -871,5 +872,137 @@ class BlackDetectThread(QThread):
 
         except Exception as e:
             log.error(f'BlackDetectThread 오류: {e}')
+            if not self._abort:
+                self.error.emit(str(e))
+
+
+class FreezeDetectThread(QThread):
+    """FFmpeg freezedetect로 정지 화면 구간을 수동 검출"""
+    progress = pyqtSignal(str)
+    finished = pyqtSignal(list)
+    error    = pyqtSignal(str)
+
+    def __init__(self, fp, fps, noise_db=-60.0, min_duration=1.0, df=None, tc_offset_frames=0):
+        super().__init__()
+        self.fp = fp
+        self.fps = fps or 29.97
+        self.noise_db = float(noise_db)
+        self.min_duration = float(min_duration)
+        self.df = df
+        self.tc_offset_frames = int(tc_offset_frames or 0)
+        self._abort = False
+        self._proc = None
+
+    def _tc_from_sec(self, sec):
+        return sec_to_tc(sec, self.fps, self.df, self.tc_offset_frames)
+
+    def _range_from_times(self, start, end, duration=None):
+        frame_dur = 1.0 / self.fps if self.fps > 0 else 0.04
+        start = max(0.0, float(start))
+        end = max(start + frame_dur, float(end))
+        if duration is None:
+            duration = end - start
+        duration = max(frame_dur, float(duration))
+        start_frame = max(0, int(round(start * self.fps)))
+        end_frame = max(start_frame, int(round(end * self.fps)))
+        frames = max(1, int(round(duration * self.fps)))
+        return {
+            'start': start,
+            'end': end,
+            'duration': duration,
+            'frames': frames,
+            'start_frame': start_frame,
+            'end_frame': end_frame,
+            'tc_start': self._tc_from_sec(start),
+            'tc_end': self._tc_from_sec(end),
+        }
+
+    def abort(self):
+        self._abort = True
+        if self._proc and self._proc.poll() is None:
+            terminate_child_process(self._proc, 'freeze detect ffmpeg')
+
+    def run(self):
+        try:
+            self.progress.emit('프리즈 프레임 검출 준비 중...')
+            start_re = re.compile(r'freezedetect\.freeze_start:\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))')
+            dur_re = re.compile(r'freezedetect\.freeze_duration:\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))')
+            end_re = re.compile(r'freezedetect\.freeze_end:\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))')
+            cmd = [
+                FFMPEG, '-hide_banner', '-nostats', '-loglevel', 'info',
+                '-i', self.fp, '-an',
+                '-vf', f'freezedetect=n={self.noise_db:g}dB:d={self.min_duration:g}',
+                '-f', 'null', '-'
+            ]
+            slot_label = 'freeze detect'
+            if not acquire_heavy_analysis_slot(slot_label):
+                raise RuntimeError('다른 분석 작업이 진행 중입니다. 잠시 후 다시 시도하세요.')
+            try:
+                self._proc = register_child_process(subprocess.Popen(
+                    cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                    encoding='utf-8', errors='replace',
+                    creationflags=0x08000000
+                ), 'freeze detect ffmpeg')
+
+                ranges = []
+                pending_start = None
+                pending_duration = None
+                hit_count = 0
+                assert self._proc.stderr is not None
+                for line in self._proc.stderr:
+                    if self._abort:
+                        self.abort()
+                        return
+                    m_start = start_re.search(line)
+                    if m_start:
+                        pending_start = float(m_start.group(1))
+                        pending_duration = None
+                        hit_count += 1
+                        if hit_count % 20 == 0:
+                            self.progress.emit(f'프리즈 후보 {hit_count}개 확인 중... 최근 {self._tc_from_sec(pending_start)}')
+                        continue
+                    m_dur = dur_re.search(line)
+                    if m_dur:
+                        pending_duration = float(m_dur.group(1))
+                        continue
+                    m_end = end_re.search(line)
+                    if m_end and pending_start is not None:
+                        end = float(m_end.group(1))
+                        duration = pending_duration if pending_duration is not None else end - pending_start
+                        ranges.append(self._range_from_times(pending_start, end, duration))
+                        self.progress.emit(f'프리즈 구간 {len(ranges)}개 검출 중... 최근 {self._tc_from_sec(pending_start)}')
+                        pending_start = None
+                        pending_duration = None
+
+                rc = self._proc.wait()
+                if self._abort:
+                    return
+                if rc != 0:
+                    self.error.emit(f'FFmpeg freezedetect 실패 (rc={rc})')
+                    return
+
+                if pending_start is not None:
+                    try:
+                        info = probe_media(self.fp)
+                        file_duration = float(info.get('duration', 0) or 0)
+                    except Exception:
+                        file_duration = 0.0
+                    if file_duration > pending_start:
+                        ranges.append(self._range_from_times(pending_start, file_duration))
+
+                self.progress.emit(f'완료: 프리즈 구간 {len(ranges)}개')
+                log.info(
+                    f'FreezeDetect 완료: {len(ranges)}구간, noise={self.noise_db:g}dB, '
+                    f'duration={self.min_duration:g}s'
+                )
+                self.finished.emit(ranges)
+            finally:
+                unregister_child_process(self._proc)
+                try:
+                    release_heavy_analysis_slot('freeze detect')
+                except Exception:
+                    pass
+        except Exception as e:
+            log.error(f'FreezeDetectThread 오류: {e}')
             if not self._abort:
                 self.error.emit(str(e))

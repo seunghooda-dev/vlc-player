@@ -64,10 +64,13 @@ class Clip(Base):
     scene_done   = Column(Boolean, default=False)
     qc_black_status = Column(String, default="")
     qc_mute_status  = Column(String, default="")
+    qc_freeze_status = Column(String, default="")
     qc_black_count  = Column(Integer, default=0)
     qc_mute_count   = Column(Integer, default=0)
+    qc_freeze_count = Column(Integer, default=0)
     qc_black_ranges = Column(Text, default="")
     qc_mute_ranges  = Column(Text, default="")
+    qc_freeze_ranges = Column(Text, default="")
     qc_summary      = Column(String, default="")
     qc_updated_at   = Column(DateTime)
     created_at   = Column(DateTime, default=datetime.now)
@@ -98,10 +101,13 @@ def _ensure_clip_qc_columns():
     columns = {
         "qc_black_status": "VARCHAR",
         "qc_mute_status": "VARCHAR",
+        "qc_freeze_status": "VARCHAR",
         "qc_black_count": "INTEGER DEFAULT 0",
         "qc_mute_count": "INTEGER DEFAULT 0",
+        "qc_freeze_count": "INTEGER DEFAULT 0",
         "qc_black_ranges": "TEXT",
         "qc_mute_ranges": "TEXT",
+        "qc_freeze_ranges": "TEXT",
         "qc_summary": "VARCHAR",
         "qc_updated_at": "DATETIME",
     }
@@ -332,17 +338,21 @@ def _normalize_qc_status(value):
     value = str(value or "").strip().lower()
     return value if value in ("ok", "found", "error") else ""
 
-def qc_summary_from_status(black_status="", mute_status=""):
+def qc_summary_from_status(black_status="", mute_status="", freeze_status=""):
     black_status = _normalize_qc_status(black_status)
     mute_status = _normalize_qc_status(mute_status)
-    if "error" in (black_status, mute_status):
+    freeze_status = _normalize_qc_status(freeze_status)
+    if "error" in (black_status, mute_status, freeze_status):
         return "검사 오류"
-    if black_status == "found" and mute_status == "found":
-        return "블랙/무음 있음"
+    found = []
     if black_status == "found":
-        return "블랙 있음"
+        found.append("블랙")
     if mute_status == "found":
-        return "무음 있음"
+        found.append("무음")
+    if freeze_status == "found":
+        found.append("프리즈")
+    if found:
+        return "/".join(found) + " 있음"
     if black_status == "ok" and mute_status == "ok":
         return "정상"
     return "미분석"
@@ -399,14 +409,18 @@ def load_qc_status(filepath):
             return {}
         black = _normalize_qc_status(getattr(clip, "qc_black_status", ""))
         mute = _normalize_qc_status(getattr(clip, "qc_mute_status", ""))
+        freeze = _normalize_qc_status(getattr(clip, "qc_freeze_status", ""))
         return {
             "black": black,
             "mute": mute,
+            "freeze": freeze,
             "black_count": int(getattr(clip, "qc_black_count", 0) or 0),
             "mute_count": int(getattr(clip, "qc_mute_count", 0) or 0),
+            "freeze_count": int(getattr(clip, "qc_freeze_count", 0) or 0),
             "black_ranges": _decode_qc_ranges(getattr(clip, "qc_black_ranges", "")),
             "mute_ranges": _decode_qc_ranges(getattr(clip, "qc_mute_ranges", "")),
-            "summary": getattr(clip, "qc_summary", "") or qc_summary_from_status(black, mute),
+            "freeze_ranges": _decode_qc_ranges(getattr(clip, "qc_freeze_ranges", "")),
+            "summary": getattr(clip, "qc_summary", "") or qc_summary_from_status(black, mute, freeze),
             "updated_at": getattr(clip, "qc_updated_at", None),
         }
 
@@ -414,10 +428,13 @@ def update_clip_qc(
     filepath,
     black=None,
     mute=None,
+    freeze=None,
     black_count=None,
     mute_count=None,
+    freeze_count=None,
     black_ranges=None,
     mute_ranges=None,
+    freeze_ranges=None,
 ):
     if not filepath:
         return {}
@@ -433,6 +450,8 @@ def update_clip_qc(
             clip.qc_black_status = _normalize_qc_status(black)
         if mute is not None:
             clip.qc_mute_status = _normalize_qc_status(mute)
+        if freeze is not None:
+            clip.qc_freeze_status = _normalize_qc_status(freeze)
         if black_count is not None:
             try:
                 clip.qc_black_count = max(0, int(black_count))
@@ -443,21 +462,31 @@ def update_clip_qc(
                 clip.qc_mute_count = max(0, int(mute_count))
             except Exception:
                 clip.qc_mute_count = 0
+        if freeze_count is not None:
+            try:
+                clip.qc_freeze_count = max(0, int(freeze_count))
+            except Exception:
+                clip.qc_freeze_count = 0
         if black_ranges is not None:
             clip.qc_black_ranges = _encode_qc_ranges(black_ranges)
         if mute_ranges is not None:
             clip.qc_mute_ranges = _encode_qc_ranges(mute_ranges)
-        clip.qc_summary = qc_summary_from_status(clip.qc_black_status, clip.qc_mute_status)
+        if freeze_ranges is not None:
+            clip.qc_freeze_ranges = _encode_qc_ranges(freeze_ranges)
+        clip.qc_summary = qc_summary_from_status(clip.qc_black_status, clip.qc_mute_status, clip.qc_freeze_status)
         clip.qc_updated_at = now
         clip.updated_at = now
         s.commit()
         return {
             "black": clip.qc_black_status,
             "mute": clip.qc_mute_status,
+            "freeze": clip.qc_freeze_status,
             "black_count": int(clip.qc_black_count or 0),
             "mute_count": int(clip.qc_mute_count or 0),
+            "freeze_count": int(clip.qc_freeze_count or 0),
             "black_ranges": _decode_qc_ranges(getattr(clip, "qc_black_ranges", "")),
             "mute_ranges": _decode_qc_ranges(getattr(clip, "qc_mute_ranges", "")),
+            "freeze_ranges": _decode_qc_ranges(getattr(clip, "qc_freeze_ranges", "")),
             "summary": clip.qc_summary,
             "updated_at": clip.qc_updated_at,
         }
