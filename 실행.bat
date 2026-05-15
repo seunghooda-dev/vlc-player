@@ -20,8 +20,14 @@ if errorlevel 1 (
     echo.
 )
 
+if exist "dist\MXF QC Player\MXF QC Player.exe" (
+    echo Launching dist\MXF QC Player\MXF QC Player.exe
+    start "" "dist\MXF QC Player\MXF QC Player.exe"
+    exit /b 0
+)
+
 if exist "dist\MXF QC Player.exe" (
-    echo Launching dist\MXF QC Player.exe
+    echo Launching legacy dist\MXF QC Player.exe
     start "" "dist\MXF QC Player.exe"
     exit /b 0
 )
