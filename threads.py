@@ -23,6 +23,18 @@ from constants import (
 )
 from db_models import sec_to_tc, frames_to_tc, probe as probe_media
 
+_CREATE_NO_WINDOW = 0x08000000
+_BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
+
+def _hidden_flags():
+    return _CREATE_NO_WINDOW if os.name == 'nt' else 0
+
+def _analysis_flags():
+    # Heavy FFmpeg scans should not steal priority from the Qt/VLC UI thread.
+    if os.name == 'nt':
+        return _CREATE_NO_WINDOW | _BELOW_NORMAL_PRIORITY_CLASS
+    return 0
+
 class ProbeThread(QThread):
     probed = pyqtSignal(dict, float)  # info, elapsed seconds
     error = pyqtSignal(str, float)
@@ -69,7 +81,7 @@ class RuntimeWarmupThread(QThread):
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 timeout=5,
-                creationflags=0x08000000 if os.name == 'nt' else 0,
+                creationflags=_hidden_flags(),
             )
             return {'ok': proc.returncode == 0, 'elapsed': time.monotonic() - started}
         except Exception as e:
@@ -188,7 +200,7 @@ class TranscodeThread(QThread):
         try:
             self._proc = register_child_process(subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                creationflags=0x08000000
+                creationflags=_hidden_flags()
             ), 'transcode ffmpeg')
             # stderr를 별도 스레드에서 읽음 → 버퍼 블록 방지 (버그 3번 해결)
             self._stderr_buf = []
@@ -315,7 +327,7 @@ class AudioAnalyzeThread(QThread):
     def _run_ffmpeg_capture(self, cmd, timeout=300):
         self._proc = register_child_process(subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            creationflags=0x08000000, encoding='utf-8', errors='replace'), 'audio analyze ffmpeg')
+            creationflags=_analysis_flags(), encoding='utf-8', errors='replace'), 'audio analyze ffmpeg')
         try:
             waited = 0
             while self._proc.poll() is None:
@@ -384,9 +396,9 @@ class AudioAnalyzeThread(QThread):
         bytes_per_window = window_frames * ch_count * 2
         raw_fc = f'{base_fc};[aud]aresample={sample_rate}[aout]'
         cmd = [
-            FFMPEG, '-hide_banner', '-nostats', '-loglevel', 'error',
+            FFMPEG, '-hide_banner', '-nostdin', '-nostats', '-loglevel', 'error',
             '-threads', '0',
-            '-i', self.fp, '-vn',
+            '-i', self.fp, '-vn', '-sn', '-dn',
             '-filter_complex', raw_fc,
             '-map', '[aout]',
             '-f', 's16le',
@@ -401,7 +413,7 @@ class AudioAnalyzeThread(QThread):
         try:
             self._proc = register_child_process(subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                creationflags=0x08000000), 'audio index ffmpeg')
+                creationflags=_analysis_flags()), 'audio index ffmpeg')
 
             levels = []
             buf = bytearray()
@@ -495,8 +507,14 @@ class AudioAnalyzeThread(QThread):
 
             # ── 1단계: 채널 수 확인 (ffprobe) ──
             pr = subprocess.run(
-                [FFPROBE,'-v','quiet','-print_format','json','-show_streams', self.fp],
-                capture_output=True, text=True, timeout=30, creationflags=0x08000000)
+                [
+                    FFPROBE, '-v', 'quiet',
+                    '-select_streams', 'a',
+                    '-print_format', 'json',
+                    '-show_entries', 'stream=codec_type,channels',
+                    self.fp,
+                ],
+                capture_output=True, text=True, timeout=30, creationflags=_hidden_flags())
             audio_streams = []
             try:
                 for st in _json.loads(pr.stdout).get('streams',[]):
@@ -662,7 +680,7 @@ class LoudnessAnalyzeThread(QThread):
             cmd = [
                 FFMPEG, '-hide_banner', '-nostdin', '-nostats', '-loglevel', 'info',
                 '-threads', '1',
-                '-i', self.fp, '-vn',
+                '-i', self.fp, '-vn', '-sn', '-dn',
                 '-filter_complex', fc,
                 '-map', '[loud]',
                 '-f', 'null', '-',
@@ -677,7 +695,7 @@ class LoudnessAnalyzeThread(QThread):
                     stderr=subprocess.PIPE,
                     encoding='utf-8',
                     errors='replace',
-                    creationflags=0x08000000
+                    creationflags=_analysis_flags()
                 ), 'loudness analyze ffmpeg')
 
                 assert self._proc.stderr is not None
@@ -793,8 +811,10 @@ class BlackDetectThread(QThread):
             frame_gap = 1.0 / self.fps if self.fps > 0 else 0.04
             black_re = _re.compile(r'frame:(\d+)\s+pblack:(\d+)\s+pts:\S+\s+t:([\d.]+)')
             cmd = [
-                FFMPEG, '-hide_banner', '-nostats', '-loglevel', 'info',
-                '-i', self.fp, '-an',
+                FFMPEG, '-hide_banner', '-nostdin', '-nostats', '-loglevel', 'info',
+                '-threads', '0',
+                '-i', self.fp,
+                '-map', '0:v:0', '-an', '-sn', '-dn',
                 '-vf', f'blackframe=amount={self.amount}:threshold={self.threshold}',
                 '-f', 'null', '-'
             ]
@@ -805,7 +825,7 @@ class BlackDetectThread(QThread):
                 self._proc = register_child_process(subprocess.Popen(
                     cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                     encoding='utf-8', errors='replace',
-                    creationflags=0x08000000
+                    creationflags=_analysis_flags()
                 ), 'black detect ffmpeg')
 
                 ranges = []
@@ -929,8 +949,10 @@ class FreezeDetectThread(QThread):
             dur_re = re.compile(r'freezedetect\.freeze_duration:\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))')
             end_re = re.compile(r'freezedetect\.freeze_end:\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))')
             cmd = [
-                FFMPEG, '-hide_banner', '-nostats', '-loglevel', 'info',
-                '-i', self.fp, '-an',
+                FFMPEG, '-hide_banner', '-nostdin', '-nostats', '-loglevel', 'info',
+                '-threads', '0',
+                '-i', self.fp,
+                '-map', '0:v:0', '-an', '-sn', '-dn',
                 '-vf', f'freezedetect=n={self.noise_db:g}dB:d={self.min_duration:g}',
                 '-f', 'null', '-'
             ]
@@ -941,7 +963,7 @@ class FreezeDetectThread(QThread):
                 self._proc = register_child_process(subprocess.Popen(
                     cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                     encoding='utf-8', errors='replace',
-                    creationflags=0x08000000
+                    creationflags=_analysis_flags()
                 ), 'freeze detect ffmpeg')
 
                 ranges = []

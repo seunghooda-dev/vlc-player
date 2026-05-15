@@ -78,6 +78,7 @@ class RightPanel(QWidget):
         self._analysis_timeout_kind = None
         self._analysis_timeout_label = ''
         self._analysis_timeout_seq = None
+        self._analysis_progress_last = {}
         self._batch_active = False
         self._batch_queue = []
         self._batch_total = 0
@@ -1220,6 +1221,11 @@ class RightPanel(QWidget):
         self._analysis_seq += 1
         self._analysis_seq_kind = kind
         self._analysis_seq_file = filepath
+        try:
+            self._analysis_progress_last.pop(kind, None)
+            self._analysis_progress_last.pop(f'batch:{kind}', None)
+        except Exception:
+            pass
         return self._analysis_seq
 
     def _analysis_matches(self, kind, seq, filepath=None):
@@ -1626,6 +1632,8 @@ class RightPanel(QWidget):
             return
         if not self._analysis_matches(kind, seq, self._batch_current):
             return
+        if not self._should_update_analysis_progress(f'batch:{kind}', message, min_interval=0.7):
+            return
         idx = self._batch_total - len(self._batch_queue)
         file_name = Path(self._batch_current or '').name
         label = '블랙' if kind == 'black' else '뮤트'
@@ -1841,12 +1849,26 @@ class RightPanel(QWidget):
     def _on_analysis_progress(self, kind, seq, message):
         if not self._analysis_matches(kind, seq):
             return
+        if not self._should_update_analysis_progress(kind, message):
+            return
         if kind == 'black':
             self.black_status.setText(f"  ⏳ {message}")
         elif kind == 'audio':
             self.audio_status.setText(f"  ⏳ {message}")
         elif kind == 'freeze':
             self.freeze_status.setText(f"  ⏳ {message}")
+
+    def _should_update_analysis_progress(self, key, message, min_interval=0.5):
+        now = time.monotonic()
+        state = getattr(self, '_analysis_progress_last', {})
+        last_time, last_message = state.get(key, (0.0, ''))
+        if message == last_message:
+            return False
+        if now - last_time < min_interval:
+            return False
+        state[key] = (now, message)
+        self._analysis_progress_last = state
+        return True
 
     def _issue_count_text(self, count):
         count = int(count or 0)
