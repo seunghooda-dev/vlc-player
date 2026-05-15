@@ -66,6 +66,8 @@ class Clip(Base):
     qc_mute_status  = Column(String, default="")
     qc_black_count  = Column(Integer, default=0)
     qc_mute_count   = Column(Integer, default=0)
+    qc_black_ranges = Column(Text, default="")
+    qc_mute_ranges  = Column(Text, default="")
     qc_summary      = Column(String, default="")
     qc_updated_at   = Column(DateTime)
     created_at   = Column(DateTime, default=datetime.now)
@@ -98,6 +100,8 @@ def _ensure_clip_qc_columns():
         "qc_mute_status": "VARCHAR",
         "qc_black_count": "INTEGER DEFAULT 0",
         "qc_mute_count": "INTEGER DEFAULT 0",
+        "qc_black_ranges": "TEXT",
+        "qc_mute_ranges": "TEXT",
         "qc_summary": "VARCHAR",
         "qc_updated_at": "DATETIME",
     }
@@ -343,6 +347,48 @@ def qc_summary_from_status(black_status="", mute_status=""):
         return "정상"
     return "미분석"
 
+def _sanitize_qc_ranges(ranges, limit=2000):
+    cleaned = []
+    if not ranges:
+        return cleaned
+    for item in ranges:
+        if not isinstance(item, dict):
+            continue
+        row = {}
+        for key in ("start", "end", "duration"):
+            if key in item and item.get(key) is not None:
+                try:
+                    row[key] = round(float(item.get(key)), 3)
+                except Exception:
+                    pass
+        for key in ("frames",):
+            if key in item and item.get(key) is not None:
+                try:
+                    row[key] = max(0, int(item.get(key)))
+                except Exception:
+                    pass
+        for key in ("tc_start", "tc_end"):
+            value = str(item.get(key) or "").strip()
+            if value:
+                row[key] = value[:32]
+        if row:
+            cleaned.append(row)
+        if len(cleaned) >= limit:
+            break
+    return cleaned
+
+def _encode_qc_ranges(ranges):
+    try:
+        return json.dumps(_sanitize_qc_ranges(ranges), ensure_ascii=False, separators=(",", ":"))
+    except Exception:
+        return "[]"
+
+def _decode_qc_ranges(value):
+    try:
+        return _sanitize_qc_ranges(json.loads(value or "[]"))
+    except Exception:
+        return []
+
 def load_qc_status(filepath):
     if not filepath:
         return {}
@@ -358,11 +404,21 @@ def load_qc_status(filepath):
             "mute": mute,
             "black_count": int(getattr(clip, "qc_black_count", 0) or 0),
             "mute_count": int(getattr(clip, "qc_mute_count", 0) or 0),
+            "black_ranges": _decode_qc_ranges(getattr(clip, "qc_black_ranges", "")),
+            "mute_ranges": _decode_qc_ranges(getattr(clip, "qc_mute_ranges", "")),
             "summary": getattr(clip, "qc_summary", "") or qc_summary_from_status(black, mute),
             "updated_at": getattr(clip, "qc_updated_at", None),
         }
 
-def update_clip_qc(filepath, black=None, mute=None, black_count=None, mute_count=None):
+def update_clip_qc(
+    filepath,
+    black=None,
+    mute=None,
+    black_count=None,
+    mute_count=None,
+    black_ranges=None,
+    mute_ranges=None,
+):
     if not filepath:
         return {}
     cid = _clip_id_for_path(filepath)
@@ -387,6 +443,10 @@ def update_clip_qc(filepath, black=None, mute=None, black_count=None, mute_count
                 clip.qc_mute_count = max(0, int(mute_count))
             except Exception:
                 clip.qc_mute_count = 0
+        if black_ranges is not None:
+            clip.qc_black_ranges = _encode_qc_ranges(black_ranges)
+        if mute_ranges is not None:
+            clip.qc_mute_ranges = _encode_qc_ranges(mute_ranges)
         clip.qc_summary = qc_summary_from_status(clip.qc_black_status, clip.qc_mute_status)
         clip.qc_updated_at = now
         clip.updated_at = now
@@ -396,6 +456,8 @@ def update_clip_qc(filepath, black=None, mute=None, black_count=None, mute_count
             "mute": clip.qc_mute_status,
             "black_count": int(clip.qc_black_count or 0),
             "mute_count": int(clip.qc_mute_count or 0),
+            "black_ranges": _decode_qc_ranges(getattr(clip, "qc_black_ranges", "")),
+            "mute_ranges": _decode_qc_ranges(getattr(clip, "qc_mute_ranges", "")),
             "summary": clip.qc_summary,
             "updated_at": clip.qc_updated_at,
         }

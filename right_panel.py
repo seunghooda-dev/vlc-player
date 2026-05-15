@@ -30,6 +30,7 @@ from meters      import mk_label
 
 FILE_ITEM_HTML_ROLE = Qt.ItemDataRole.UserRole.value + 10
 FILE_ITEM_PLAIN_ROLE = Qt.ItemDataRole.UserRole.value + 11
+FILE_FILTER_KEYS = ('all', 'done', 'issues', 'black', 'mute', 'error', 'normal')
 
 
 class FileListItemDelegate(QStyledItemDelegate):
@@ -88,7 +89,7 @@ class RightPanel(QWidget):
         self._analysis_timeout_timer.timeout.connect(self._on_analysis_timeout)
         self._settings = load_settings()
         self._filter_key = str(self._settings.get('file_filter', 'all') or 'all')
-        if self._filter_key not in ('all', 'done', 'issues'):
+        if self._filter_key not in FILE_FILTER_KEYS:
             self._filter_key = 'all'
         self._analysis_presets = {
             'broadcast': {
@@ -236,6 +237,10 @@ class RightPanel(QWidget):
             ('all', '전체', '모든 파일 보기'),
             ('done', '완료', '블랙/뮤트 검수가 완료된 파일만 보기'),
             ('issues', '문제', '블랙/무음/검사 오류가 있는 파일만 보기'),
+            ('black', '블랙', '블랙 구간이 발견된 파일만 보기'),
+            ('mute', '무음', '무음 구간이 발견된 파일만 보기'),
+            ('error', '오류', '검사 오류가 있는 파일만 보기'),
+            ('normal', '정상', '블랙/무음 모두 정상인 파일만 보기'),
         ]:
             b = QPushButton(label)
             b.setCheckable(True)
@@ -249,6 +254,17 @@ class RightPanel(QWidget):
             fbl.addWidget(b)
         fbl.addStretch()
         l.addWidget(filter_bar)
+
+        self.batch_summary = QLabel("")
+        self.batch_summary.setWordWrap(True)
+        self.batch_summary.hide()
+        self.batch_summary.setStyleSheet(
+            "background:#0B111A;"
+            f"color:{C['text1']};border-bottom:1px solid {C['border']};"
+            f"font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';"
+            "font-size:11px;font-weight:700;padding:7px 10px;"
+        )
+        l.addWidget(self.batch_summary)
 
         # 파일 목록
         self.exp_list = QListWidget()
@@ -297,7 +313,8 @@ class RightPanel(QWidget):
         self.meta_labels = {}
         for row,(k,key) in enumerate([("파일명","filename"),("포맷","format_short"),("코덱","codec"),
                                        ("해상도","res"),("FPS","fps"),("채널","channels"),
-                                       ("길이","duration"),("타임코드","timecode"),("크기","size")]):
+                                       ("길이","duration"),("타임코드","timecode"),("크기","size"),
+                                       ("정합성","meta_qc")]):
             kl=mk_label(k,C['text3'],"Consolas",11); kl.setFixedWidth(81)
             vl=mk_label("—",C['text0'],"Consolas",11)
             vl.setWordWrap(True)
@@ -327,7 +344,7 @@ class RightPanel(QWidget):
             log.debug(f'file tab settings save: {e}')
 
     def _set_file_filter(self, key):
-        if key not in ('all', 'done', 'issues'):
+        if key not in FILE_FILTER_KEYS:
             key = 'all'
         self._filter_key = key
         for kk, btn in getattr(self, '_filter_btns', {}).items():
@@ -502,6 +519,14 @@ class RightPanel(QWidget):
             return black in ('ok', 'found') and mute in ('ok', 'found')
         if key == 'issues':
             return black in ('found', 'error') or mute in ('found', 'error')
+        if key == 'black':
+            return black == 'found'
+        if key == 'mute':
+            return mute == 'found'
+        if key == 'error':
+            return black == 'error' or mute == 'error'
+        if key == 'normal':
+            return black == 'ok' and mute == 'ok'
         return True
 
     def _filter_label(self):
@@ -509,7 +534,56 @@ class RightPanel(QWidget):
             'all': '전체',
             'done': '완료',
             'issues': '문제',
+            'black': '블랙',
+            'mute': '무음',
+            'error': '오류',
+            'normal': '정상',
         }.get(getattr(self, '_filter_key', 'all'), '전체')
+
+    def _batch_summary_counts(self, files):
+        counts = {
+            'total': len(files),
+            'normal': 0,
+            'black': 0,
+            'mute': 0,
+            'both': 0,
+            'error': 0,
+            'pending': 0,
+        }
+        for f in files:
+            black = str(f.get('black') or '').lower()
+            mute = str(f.get('mute') or '').lower()
+            if black == 'error' or mute == 'error':
+                counts['error'] += 1
+            elif black == 'found' and mute == 'found':
+                counts['both'] += 1
+            elif black == 'found':
+                counts['black'] += 1
+            elif mute == 'found':
+                counts['mute'] += 1
+            elif black == 'ok' and mute == 'ok':
+                counts['normal'] += 1
+            else:
+                counts['pending'] += 1
+        return counts
+
+    def _set_batch_summary_panel(self, text='', issues=False):
+        if not hasattr(self, 'batch_summary'):
+            return
+        if not text:
+            self.batch_summary.hide()
+            self.batch_summary.setText('')
+            return
+        color = C['red'] if issues else C['green']
+        self.batch_summary.setText(text)
+        self.batch_summary.setStyleSheet(
+            "background:#0B111A;"
+            f"color:{C['text0']};border-left:3px solid {color};"
+            f"border-bottom:1px solid {C['border']};"
+            f"font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';"
+            "font-size:11px;font-weight:700;padding:7px 10px;"
+        )
+        self.batch_summary.show()
 
     def _status_summary_text(self, files):
         counts = {
@@ -535,6 +609,92 @@ class RightPanel(QWidget):
                 parts.append(f"{key} {counts[key]}")
         return " | ".join(parts)
 
+    def _metadata_qc_summary(self, info, filepath=''):
+        issues = []
+        p = Path(filepath or info.get('filepath', '') or '')
+        ext = (p.suffix.lower() if str(p) else '').lstrip('.')
+        if filepath and not p.exists():
+            issues.append('파일 접근 불가')
+        if ext and ext != 'mxf':
+            issues.append('MXF 아님')
+        try:
+            width = int(info.get('width', 0) or 0)
+            height = int(info.get('height', 0) or 0)
+        except Exception:
+            width = height = 0
+        if not width or not height:
+            issues.append('해상도 정보 없음')
+        elif (width, height) != (1920, 1080):
+            issues.append(f'HD 1920x1080 아님({width}x{height})')
+        try:
+            fps = float(info.get('fps', 0) or 0)
+        except Exception:
+            fps = 0.0
+        if not fps:
+            issues.append('FPS 정보 없음')
+        elif not (abs(fps - 29.97) < 0.08 or abs(fps - 59.94) < 0.12):
+            issues.append(f'방송 DF 기준 FPS 확인({fps:.3f})')
+        elif not bool(info.get('df')):
+            issues.append('DF 타임코드 아님')
+        try:
+            duration = float(info.get('duration', 0) or 0)
+        except Exception:
+            duration = 0.0
+        if duration <= 0:
+            issues.append('길이 정보 없음')
+        try:
+            channels = int(info.get('channels', 0) or 0)
+        except Exception:
+            channels = 0
+        try:
+            streams = int(info.get('audio_stream_count', 0) or 0)
+        except Exception:
+            streams = 0
+        if channels < 2 and streams < 2:
+            issues.append('오디오 1/2CH 확인 필요')
+        elif max(channels, streams) > 8:
+            issues.append('오디오 8CH 초과')
+        if not str(info.get('codec', '') or '').strip():
+            issues.append('비디오 코덱 정보 없음')
+        if not str(info.get('timecode', '') or '').strip():
+            issues.append('소스 TC 없음')
+        status = '정상' if not issues else '확인 필요'
+        return status, issues
+
+    def _ranges_report_text(self, ranges, limit=20):
+        ranges = list(ranges or [])
+        if not ranges:
+            return ''
+        parts = []
+        for r in ranges[:limit]:
+            start = r.get('tc_start') or f"{float(r.get('start', 0) or 0):.3f}s"
+            end = r.get('tc_end') or f"{float(r.get('end', 0) or 0):.3f}s"
+            dur = r.get('duration')
+            suffix = ''
+            if dur is not None:
+                try:
+                    suffix = f"({float(dur):.3f}s)"
+                except Exception:
+                    suffix = ''
+            parts.append(f"{start}>{end}{suffix}")
+        if len(ranges) > limit:
+            parts.append(f"...+{len(ranges) - limit}")
+        return ' | '.join(parts)
+
+    def _qc_criteria(self):
+        def _value(attr, setting_key, default):
+            widget = getattr(self, attr, None)
+            try:
+                return str(widget.text()).strip()
+            except Exception:
+                return str(self._settings.get(setting_key, default))
+        return {
+            'black_amount': _value('black_amount', 'black_amount', '98'),
+            'black_threshold': _value('black_threshold', 'black_threshold', '32'),
+            'mute_threshold': _value('spin_threshold', 'mute_threshold', '-50'),
+            'mute_duration': _value('spin_duration', 'mute_duration', '1.0'),
+        }
+
     def _iter_report_files(self):
         files = list(getattr(self.vp, '_files', []) or [])
         sort_key = getattr(self, '_sort_key', 'name')
@@ -549,6 +709,7 @@ class RightPanel(QWidget):
 
     def _qc_report_rows(self):
         rows = []
+        criteria = self._qc_criteria()
         for f in self._iter_report_files():
             fp = f.get('filepath', '')
             p = Path(fp)
@@ -569,11 +730,14 @@ class RightPanel(QWidget):
             duration = float(info.get('duration', 0) or 0)
             width = int(info.get('width', 0) or 0)
             height = int(info.get('height', 0) or 0)
+            meta_status, meta_issues = self._metadata_qc_summary(info, fp)
             rows.append({
+                '앱버전': 'MXF QC Player V.1.0',
                 '검수시각': datetime.now().isoformat(timespec='seconds'),
                 'QC상태': badge,
                 '파일명': f.get('name') or p.name,
                 '경로': fp,
+                '파일존재': 'Y' if p.exists() else 'N',
                 '확장자': f.get('ext') or p.suffix.upper().lstrip('.'),
                 '포맷': info.get('format_short', ''),
                 '코덱': info.get('codec', ''),
@@ -588,10 +752,18 @@ class RightPanel(QWidget):
                 '비트레이트': str(info.get('bit_rate', '') or ''),
                 '크기': format_bytes(size) if size else '-',
                 '크기_bytes': str(size or ''),
+                '메타정합성': meta_status,
+                '메타확인사항': ' / '.join(meta_issues),
+                '블랙기준_화면비율': criteria['black_amount'],
+                '블랙기준_밝기': criteria['black_threshold'],
+                '무음기준_dB': criteria['mute_threshold'],
+                '무음기준_초': criteria['mute_duration'],
                 '블랙상태': self._qc_status_text(f.get('black'), 'black'),
                 '블랙구간': str(int(f.get('black_count', 0) or 0)),
+                '블랙구간목록': self._ranges_report_text(f.get('black_ranges')),
                 '무음상태': self._qc_status_text(f.get('mute'), 'mute'),
                 '무음구간': str(int(f.get('mute_count', 0) or 0)),
+                '무음구간목록': self._ranges_report_text(f.get('mute_ranges')),
                 'QC요약': f.get('qc_summary') or badge,
                 '갱신시각': str(f.get('qc_updated_at') or ''),
             })
@@ -608,10 +780,16 @@ class RightPanel(QWidget):
             lines.append(f"{idx:03d}. {row['파일명']}")
             lines.append(f"     상태: {row['QC상태']} / {row['QC요약']}")
             lines.append(f"     미디어: {row.get('해상도') or '-'} / {row.get('FPS') or '-'}fps / {row.get('오디오채널') or '-'}CH / {row.get('길이_TC') or '-'}")
+            lines.append(f"     정합성: {row.get('메타정합성') or '-'} / {row.get('메타확인사항') or '-'}")
             if row.get('소스타임코드'):
                 lines.append(f"     소스TC: {row['소스타임코드']}")
+            lines.append(f"     기준: 블랙 {row.get('블랙기준_화면비율')}%/{row.get('블랙기준_밝기')}  무음 {row.get('무음기준_dB')}dB/{row.get('무음기준_초')}s")
             lines.append(f"     블랙: {row['블랙상태']} {row['블랙구간']}구간")
+            if row.get('블랙구간목록'):
+                lines.append(f"       - {row['블랙구간목록']}")
             lines.append(f"     무음: {row['무음상태']} {row['무음구간']}구간")
+            if row.get('무음구간목록'):
+                lines.append(f"       - {row['무음구간목록']}")
             lines.append(f"     크기: {row['크기']}")
             lines.append(f"     갱신: {row['갱신시각'] or '-'}")
             lines.append(f"     경로: {row['경로']}")
@@ -799,6 +977,15 @@ class RightPanel(QWidget):
         self.meta_labels["timecode"].setText(info.get("timecode","—") or "—")
         sz = info.get("size",0)
         self.meta_labels["size"].setText(f"{sz/1024/1024:.1f} MB" if sz else "—")
+        meta_status, meta_issues = self._metadata_qc_summary(info, info.get("filepath", "") or self.vp.cur_file or "")
+        meta_text = meta_status if not meta_issues else f"{meta_status}: {', '.join(meta_issues[:2])}"
+        if len(meta_issues) > 2:
+            meta_text += f" 외 {len(meta_issues) - 2}"
+        self.meta_labels["meta_qc"].setText(meta_text)
+        meta_color = C['green'] if meta_status == '정상' else C['yellow']
+        self.meta_labels["meta_qc"].setStyleSheet(
+            f"color:{meta_color};font-family:'Consolas','D2Coding';font-size:11px;background:transparent;"
+        )
 
     def _build_black(self):
         w = QWidget()
@@ -1295,6 +1482,7 @@ class RightPanel(QWidget):
         self._batch_current_info = {}
         self._batch_started_at = time.monotonic()
         self.tabs.setCurrentIndex(0)
+        self._set_batch_summary_panel("")
         self._start_batch_elapsed_timer()
         log.info(f'batch qc started files={self._batch_total}')
         record_state_event('batch-qc', 'started', files=self._batch_total)
@@ -1312,7 +1500,16 @@ class RightPanel(QWidget):
         file_name = Path(fp).name
         if not Path(fp).exists():
             if hasattr(self.vp, '_set_file_status'):
-                self.vp._set_file_status(fp, analysis=None, black='error', black_count=0, mute='error', mute_count=0)
+                self.vp._set_file_status(
+                    fp,
+                    analysis=None,
+                    black='error',
+                    black_count=0,
+                    black_ranges=[],
+                    mute='error',
+                    mute_count=0,
+                    mute_ranges=[],
+                )
             log.warning(f'batch qc skipped missing file: {fp}')
             QTimer.singleShot(50, self._start_next_batch_file)
             return
@@ -1361,7 +1558,13 @@ class RightPanel(QWidget):
         if getattr(self, '_black_thread', None) and not self._black_thread.isRunning():
             self._black_thread = None
         if hasattr(self.vp, '_set_file_status'):
-            self.vp._set_file_status(fp, analysis='mute', black='found' if ranges else 'ok', black_count=len(ranges))
+            self.vp._set_file_status(
+                fp,
+                analysis='mute',
+                black='found' if ranges else 'ok',
+                black_count=len(ranges),
+                black_ranges=ranges,
+            )
         log.info(f'batch qc black done file={Path(fp).name} ranges={len(ranges)}')
         self._start_batch_audio()
 
@@ -1376,7 +1579,7 @@ class RightPanel(QWidget):
         if getattr(self, '_black_thread', None) and not self._black_thread.isRunning():
             self._black_thread = None
         if hasattr(self.vp, '_set_file_status'):
-            self.vp._set_file_status(fp, analysis='mute', black='error', black_count=0)
+            self.vp._set_file_status(fp, analysis='mute', black='error', black_count=0, black_ranges=[])
         log.error(f'batch qc black error file={Path(fp or "").name}: {err}')
         self._start_batch_audio()
 
@@ -1411,7 +1614,13 @@ class RightPanel(QWidget):
             self._audio_thread = None
         mutes = result.get('mutes', []) if isinstance(result, dict) else []
         if hasattr(self.vp, '_set_file_status'):
-            self.vp._set_file_status(fp, analysis=None, mute='found' if mutes else 'ok', mute_count=len(mutes))
+            self.vp._set_file_status(
+                fp,
+                analysis=None,
+                mute='found' if mutes else 'ok',
+                mute_count=len(mutes),
+                mute_ranges=mutes,
+            )
         log.info(f'batch qc audio done file={Path(fp).name} mutes={len(mutes)}')
         QTimer.singleShot(80, self._start_next_batch_file)
 
@@ -1426,7 +1635,7 @@ class RightPanel(QWidget):
         if getattr(self, '_audio_thread', None) and not self._audio_thread.isRunning():
             self._audio_thread = None
         if hasattr(self.vp, '_set_file_status'):
-            self.vp._set_file_status(fp, analysis=None, mute='error', mute_count=0)
+            self.vp._set_file_status(fp, analysis=None, mute='error', mute_count=0, mute_ranges=[])
         log.error(f'batch qc audio error file={Path(fp or "").name}: {err}')
         QTimer.singleShot(80, self._start_next_batch_file)
 
@@ -1448,10 +1657,33 @@ class RightPanel(QWidget):
             except Exception as e:
                 log.warning(f'batch qc auto report failed: {e}')
         suffix = f" / 리포트 {Path(report).name}" if report else ""
-        self.exp_path.setText(f"✓ 일괄 검수 완료 — {total}개 파일 / {elapsed:.1f}초{suffix}")
+        counts = self._batch_summary_counts(list(getattr(self.vp, '_files', []) or []))
+        issue_total = counts['black'] + counts['mute'] + counts['both'] + counts['error']
+        summary = (
+            f"일괄 검수 완료 | 총 {total} | 정상 {counts['normal']} | "
+            f"블랙 {counts['black'] + counts['both']} | 무음 {counts['mute'] + counts['both']} | "
+            f"오류 {counts['error']} | 미분석 {counts['pending']} | {elapsed:.1f}초"
+        )
+        self._set_batch_summary_panel(summary + suffix, issues=issue_total > 0)
+        self.exp_path.setText(f"✓ {summary}{suffix}")
         self.vp.ai_lbl.setText(f"✓ 일괄 검수 완료 — {total}개 파일{suffix}")
-        log.info(f'batch qc finished files={total} elapsed={elapsed:.1f}s')
-        record_state_event('batch-qc', 'finished', files=total, elapsed=f'{elapsed:.1f}s', report=str(report or ''))
+        log.info(
+            f"batch qc finished files={total} elapsed={elapsed:.1f}s "
+            f"normal={counts['normal']} black={counts['black']} mute={counts['mute']} "
+            f"both={counts['both']} error={counts['error']} pending={counts['pending']}"
+        )
+        record_state_event(
+            'batch-qc',
+            'finished',
+            files=total,
+            elapsed=f'{elapsed:.1f}s',
+            normal=counts['normal'],
+            black=counts['black'] + counts['both'],
+            mute=counts['mute'] + counts['both'],
+            error=counts['error'],
+            pending=counts['pending'],
+            report=str(report or ''),
+        )
 
     def _run_black_detect(self):
         if not self.vp.cur_file:
@@ -1563,6 +1795,7 @@ class RightPanel(QWidget):
                 analysis=None,
                 black="found" if ranges else "ok",
                 black_count=len(ranges),
+                black_ranges=ranges,
             )
         try:
             self.vp.btn_black.setEnabled(True)
@@ -1601,7 +1834,7 @@ class RightPanel(QWidget):
         if getattr(self, '_black_thread', None) and not self._black_thread.isRunning():
             self._black_thread = None
         if hasattr(self.vp, '_set_file_status'):
-            self.vp._set_file_status(fp, analysis=None, black="error", black_count=0)
+            self.vp._set_file_status(fp, analysis=None, black="error", black_count=0, black_ranges=[])
         try:
             self.vp.btn_black.setEnabled(True)
             self.vp.prog_ai.hide()
@@ -1807,6 +2040,7 @@ class RightPanel(QWidget):
                 analysis=None,
                 mute="found" if mutes else "ok",
                 mute_count=len(mutes),
+                mute_ranges=mutes,
             )
         peaks    = result.get('peaks', {})
         rms_vals = result.get('rms', {})
@@ -1864,7 +2098,7 @@ class RightPanel(QWidget):
         if getattr(self, '_audio_thread', None) and not self._audio_thread.isRunning():
             self._audio_thread = None
         if hasattr(self.vp, '_set_file_status'):
-            self.vp._set_file_status(fp, analysis=None, mute="error", mute_count=0)
+            self.vp._set_file_status(fp, analysis=None, mute="error", mute_count=0, mute_ranges=[])
         try:
             self.vp.btn_audio.setEnabled(True)
             self.vp.prog_ai.hide()

@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import (
     Qt, QTimer, QUrl, pyqtSignal, QSize, QSizeF, QRectF, QObject
 )
-from PyQt6.QtGui   import QColor, QFont, QDragEnterEvent, QDropEvent
+from PyQt6.QtGui   import QColor, QFont, QDragEnterEvent, QDropEvent, QPainter
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtMultimediaWidgets import QGraphicsVideoItem
 
@@ -36,6 +36,62 @@ from db_models  import (
 )
 from threads    import ProbeThread, TranscodeThread, LoudnessAnalyzeThread
 from meters     import SideMeter, LoudnessMeter, MeterController, mk_btn, mk_label, separator
+
+
+class QCMarkerSlider(QSlider):
+    """Progress slider with lightweight QC result overlays."""
+    def __init__(self, orientation, parent=None):
+        super().__init__(orientation, parent)
+        self._qc_markers = {"black": [], "mute": []}
+        self._qc_duration = 0.0
+        self.setMinimumHeight(18)
+
+    def set_qc_markers(self, black_ranges=None, mute_ranges=None, duration_sec=0.0):
+        self._qc_markers = {
+            "black": list(black_ranges or []),
+            "mute": list(mute_ranges or []),
+        }
+        try:
+            self._qc_duration = max(0.0, float(duration_sec or 0.0))
+        except Exception:
+            self._qc_duration = 0.0
+        self.update()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self.orientation() != Qt.Orientation.Horizontal or self._qc_duration <= 0:
+            return
+        black = self._qc_markers.get("black") or []
+        mute = self._qc_markers.get("mute") or []
+        if not black and not mute:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        track_left = 7
+        track_width = max(1, self.width() - track_left * 2)
+        marker_top = max(1, int(self.height() * 0.14))
+        marker_h = max(5, int(self.height() * 0.32))
+
+        def _draw_ranges(ranges, color, y):
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(color))
+            for r in ranges:
+                try:
+                    start = max(0.0, float(r.get("start", 0.0)))
+                    end = float(r.get("end", start))
+                except Exception:
+                    continue
+                if end < start:
+                    end = start
+                start = min(start, self._qc_duration)
+                end = min(max(end, start + 0.001), self._qc_duration)
+                x1 = track_left + int((start / self._qc_duration) * track_width)
+                x2 = track_left + int((end / self._qc_duration) * track_width)
+                painter.drawRect(x1, y, max(3, x2 - x1), marker_h)
+
+        _draw_ranges(black, QColor(255, 74, 103, 210), marker_top)
+        _draw_ranges(mute, QColor(255, 170, 48, 210), marker_top + marker_h + 1)
+        painter.end()
 
 
 class VlcAudioAdapter:
@@ -927,7 +983,7 @@ class VideoPanel(QWidget):
         pw = QWidget(); pw.setFixedHeight(18)
         pw.setStyleSheet("background:#090b10;")
         pbl = QHBoxLayout(pw); pbl.setContentsMargins(0,0,0,0)
-        self.slider = QSlider(Qt.Orientation.Horizontal)
+        self.slider = QCMarkerSlider(Qt.Orientation.Horizontal)
         self.slider.setRange(0,1000)
         self.slider.setStyleSheet(
             "QSlider::groove:horizontal{height:3px;background:#202634;border-radius:2px;}"
@@ -1551,6 +1607,8 @@ class VideoPanel(QWidget):
             "mute": qc.get("mute") or None,     # None | ok | found | error
             "black_count": int(qc.get("black_count", 0) or 0),
             "mute_count": int(qc.get("mute_count", 0) or 0),
+            "black_ranges": list(qc.get("black_ranges") or []),
+            "mute_ranges": list(qc.get("mute_ranges") or []),
             "qc_summary": qc.get("summary") or "미분석",
             "qc_updated_at": qc.get("updated_at"),
             "analysis": None,
@@ -1565,18 +1623,34 @@ class VideoPanel(QWidget):
                 item.setdefault("mute", None)
                 item.setdefault("black_count", 0)
                 item.setdefault("mute_count", 0)
+                item.setdefault("black_ranges", [])
+                item.setdefault("mute_ranges", [])
                 item.setdefault("qc_summary", "미분석")
                 item.setdefault("qc_updated_at", None)
                 item.setdefault("analysis", None)
                 return item
         return None
 
+    def _apply_qc_markers(self):
+        if not hasattr(self, "slider"):
+            return
+        if not self.cur_file:
+            self.slider.set_qc_markers([], [], 0.0)
+            return
+        entry = self._file_entry(self.cur_file)
+        duration = self.duration or self._source_duration or 0.0
+        self.slider.set_qc_markers(
+            (entry or {}).get("black_ranges") or [],
+            (entry or {}).get("mute_ranges") or [],
+            duration,
+        )
+
     def _set_file_status(self, filepath, **changes):
         entry = self._file_entry(filepath)
         if not entry:
             return
         entry.update(changes)
-        qc_keys = {"black", "mute", "black_count", "mute_count"}
+        qc_keys = {"black", "mute", "black_count", "mute_count", "black_ranges", "mute_ranges"}
         if qc_keys.intersection(changes):
             try:
                 saved = update_clip_qc(
@@ -1585,12 +1659,16 @@ class VideoPanel(QWidget):
                     mute=changes.get("mute") if "mute" in changes else None,
                     black_count=changes.get("black_count") if "black_count" in changes else None,
                     mute_count=changes.get("mute_count") if "mute_count" in changes else None,
+                    black_ranges=changes.get("black_ranges") if "black_ranges" in changes else None,
+                    mute_ranges=changes.get("mute_ranges") if "mute_ranges" in changes else None,
                 )
                 if saved:
                     entry["black"] = saved.get("black") or None
                     entry["mute"] = saved.get("mute") or None
                     entry["black_count"] = int(saved.get("black_count", 0) or 0)
                     entry["mute_count"] = int(saved.get("mute_count", 0) or 0)
+                    entry["black_ranges"] = list(saved.get("black_ranges") or [])
+                    entry["mute_ranges"] = list(saved.get("mute_ranges") or [])
                     entry["qc_summary"] = saved.get("summary") or "미분석"
                     entry["qc_updated_at"] = saved.get("updated_at")
                     log.info(
@@ -1611,6 +1689,8 @@ class VideoPanel(QWidget):
                 log.warning(f"qc status save failed file={Path(filepath).name}: {e}")
         if hasattr(self, '_right_panel'):
             self._right_panel.refresh_explorer()
+        if filepath and self._same_path(filepath, self.cur_file):
+            self._apply_qc_markers()
 
     def _set_all_files_not_playing(self):
         changed = False
@@ -1663,6 +1743,7 @@ class VideoPanel(QWidget):
 
         # 슬라이더 초기화
         self.slider.setValue(0)
+        self._apply_qc_markers()
 
         # 재생버튼 초기화
         self.btn_play.setText("▶")
@@ -1983,6 +2064,7 @@ class VideoPanel(QWidget):
             cb.setEnabled(False)
         self._selected_chs = [1, 2]
         self.tc_dur.setText(self._frames_to_tc(0, include_offset=False))
+        self._apply_qc_markers()
         self._res_text.setPlainText("")
         self.btn_black.setEnabled(False)
         self.btn_audio.setEnabled(False)
@@ -2038,6 +2120,7 @@ class VideoPanel(QWidget):
             default_selected = [1]
         self._selected_chs = default_selected or [1, 2]
         self.tc_dur.setText(self._frames_to_tc(self._duration_frames(), include_offset=False))
+        self._apply_qc_markers()
         vw = info.get('width',0); vh_px = info.get('height',0)
         self._res_text.setPlainText(f"{vw}\u00d7{vh_px}" if vw and vh_px else "")
 
@@ -3514,6 +3597,7 @@ class VideoPanel(QWidget):
         else:
             self.duration = media_duration or self._source_duration
         self.tc_dur.setText(self._frames_to_tc(self._duration_frames(), include_offset=False))
+        self._apply_qc_markers()
 
     def _on_state(self, state):
         self._raise_vlc_meters()
