@@ -367,7 +367,10 @@ class VlcPlayerAdapter(QObject):
         QTimer.singleShot(1200, lambda s=seq: self._apply_audio_channel(s))
 
     def pause(self):
-        self._player.pause()
+        try:
+            self._player.set_pause(1)
+        except Exception:
+            self._player.pause()
         self._state = QMediaPlayer.PlaybackState.PausedState
         self.playbackStateChanged.emit(self._state)
 
@@ -385,24 +388,23 @@ class VlcPlayerAdapter(QObject):
             log.debug(f'vlc preroll play: {e}')
             return
 
-        def _freeze():
+        def _freeze(label='freeze'):
             if not self._is_current_op(seq):
                 return
             try:
                 self._player.set_time(target)
-                self._player.pause()
+                self._player.set_pause(1)
             except Exception as e:
-                log.debug(f'vlc preroll freeze: {e}')
+                log.debug(f'vlc preroll {label}: {e}')
             self._state = QMediaPlayer.PlaybackState.PausedState
             self.positionChanged.emit(target)
             self.playbackStateChanged.emit(self._state)
             self._emit_duration(seq)
 
-        QTimer.singleShot(160, _freeze)
-        QTimer.singleShot(
-            420,
-            lambda s=seq: self.setPosition(target) if self._is_current_op(s) else None
-        )
+        QTimer.singleShot(120, lambda: _freeze('freeze-1'))
+        QTimer.singleShot(260, lambda: _freeze('freeze-2'))
+        QTimer.singleShot(520, lambda: _freeze('freeze-3'))
+        QTimer.singleShot(860, lambda: _freeze('freeze-4'))
 
     def stop(self):
         self._next_op()
