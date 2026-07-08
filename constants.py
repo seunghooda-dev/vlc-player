@@ -2017,7 +2017,9 @@ def unregister_child_process(proc):
     try:
         with _CHILD_PROC_LOCK:
             row = _CHILD_PROCS.pop(int(proc.pid), None)
-        label = row[1] if row else 'process'
+        if not row:
+            return
+        label = row[1]
         record_state_event('child-process', 'end', pid=getattr(proc, 'pid', '-'), label=label)
     except Exception:
         pass
