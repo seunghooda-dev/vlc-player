@@ -379,15 +379,24 @@ def _file_stamp():
 
 def _rotate_migration_log():
     try:
-        if MIGRATION_LOG_PATH.exists() and MIGRATION_LOG_PATH.stat().st_size > MIGRATION_LOG_MAX_BYTES:
+        if (
+            MIGRATION_LOG_PATH.exists()
+            and not MIGRATION_LOG_PATH.is_symlink()
+            and MIGRATION_LOG_PATH.is_file()
+            and MIGRATION_LOG_PATH.stat().st_size > MIGRATION_LOG_MAX_BYTES
+        ):
             stamp = _file_stamp()
             rotated = LOG_DIR / f'migration.log.{stamp}'
             MIGRATION_LOG_PATH.replace(rotated)
-        backups = sorted(
-            LOG_DIR.glob('migration.log.*'),
-            key=lambda p: p.stat().st_mtime if p.exists() else 0,
-            reverse=True,
-        )
+        backups = []
+        for candidate in LOG_DIR.glob('migration.log.*'):
+            try:
+                if candidate.is_symlink() or not candidate.is_file():
+                    continue
+                backups.append(candidate)
+            except Exception:
+                continue
+        backups.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         for old in backups[MIGRATION_LOG_BACKUP_COUNT:]:
             try:
                 old.unlink()
@@ -2213,16 +2222,25 @@ def _rotate_large_log_file():
     try:
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         current = LOG_DIR / 'player.log'
-        if current.exists() and current.stat().st_size > _LOG_MAX_BYTES:
+        if (
+            current.exists()
+            and not current.is_symlink()
+            and current.is_file()
+            and current.stat().st_size > _LOG_MAX_BYTES
+        ):
             stamp = _file_stamp()
             rotated = LOG_DIR / f'player.log.{stamp}'
             current.replace(rotated)
             warnings.append(f'large log rotated: {rotated.name}')
-        backups = sorted(
-            LOG_DIR.glob('player.log.*'),
-            key=lambda p: p.stat().st_mtime if p.exists() else 0,
-            reverse=True
-        )
+        backups = []
+        for candidate in LOG_DIR.glob('player.log.*'):
+            try:
+                if candidate.is_symlink() or not candidate.is_file():
+                    continue
+                backups.append(candidate)
+            except Exception:
+                continue
+        backups.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         for old in backups[_LOG_BACKUP_COUNT:]:
             try:
                 old.unlink()
