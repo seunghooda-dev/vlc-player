@@ -2046,12 +2046,15 @@ def _short_process_command(args, limit=220):
 
 def runtime_child_process_status():
     rows = []
+    exited = []
     try:
         with _CHILD_PROC_LOCK:
             items = list(_CHILD_PROCS.items())
         for pid, (proc, label) in sorted(items, key=lambda item: item[0]):
             try:
                 rc = proc.poll()
+                if rc is not None:
+                    exited.append((int(pid), proc, label))
                 rows.append({
                     'pid': int(pid),
                     'label': label,
@@ -2068,6 +2071,13 @@ def runtime_child_process_status():
                     'command': '',
                     'error': str(e),
                 })
+        if exited:
+            with _CHILD_PROC_LOCK:
+                for pid, proc, label in exited:
+                    row = _CHILD_PROCS.get(pid)
+                    if row and row[0] is proc:
+                        _CHILD_PROCS.pop(pid, None)
+                        record_state_event('child-process', 'end', pid=pid, label=label)
     except Exception as e:
         return [{'pid': 0, 'label': 'child registry', 'state': 'error', 'returncode': None, 'command': '', 'error': str(e)}]
     return rows
