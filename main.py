@@ -1373,17 +1373,33 @@ def _cleanup_tmp_files():
             log.debug(f'cleanup unlink: {e}')
             return 0.0
 
+    def _tmp_file_record(path):
+        try:
+            target = Path(path).resolve()
+            if not _is_within(target, TMP_DIR):
+                return None
+            if target.is_symlink() or not target.is_file():
+                return None
+            st = target.stat()
+            return (float(st.st_mtime), st.st_size / 1024**2, target)
+        except Exception as e:
+            log.debug(f'cleanup stat skipped: {e}')
+            return None
+
     try:
         TMP_DIR.mkdir(parents=True, exist_ok=True)
         # BASE_DIR에 남아있는 구버전 tmp 파일도 TMP_DIR로 이동
         for old_f in BASE_DIR.glob('_tmp_*.mp4'):
             _safe_legacy_tmp_move(old_f)
         # TMP_DIR 현황. 하위 캐시(audio_index 등)까지 포함해 전체 tmp 용량을 제한한다.
-        tmp_files = sorted(
-            (p for p in TMP_DIR.rglob('*') if p.is_file() and not p.is_symlink()),
-            key=lambda p: p.stat().st_mtime
-        )
-        total_mb = sum(p.stat().st_size for p in tmp_files) / 1024**2
+        tmp_records = []
+        for p in TMP_DIR.rglob('*'):
+            rec = _tmp_file_record(p)
+            if rec:
+                tmp_records.append(rec)
+        tmp_records.sort(key=lambda row: row[0])
+        tmp_files = [p for _, _, p in tmp_records]
+        total_mb = sum(size_mb for _, size_mb, _ in tmp_records)
         log.info(f'TMP_DIR: {len(tmp_files)}개 파일, {total_mb:.1f}MB')
         # 2GB 초과 시 오래된 것부터 삭제
         while total_mb > 2048 and tmp_files:
