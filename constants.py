@@ -1141,8 +1141,11 @@ DEFAULT_SETTINGS = {
 _settings_cache = None
 _settings_lock = threading.RLock()
 
+def _settings_data_copy(data):
+    return json.loads(json.dumps(data))
+
 def _default_settings_copy():
-    return json.loads(json.dumps(DEFAULT_SETTINGS))
+    return _settings_data_copy(DEFAULT_SETTINGS)
 
 def _settings_log_warning(message):
     try:
@@ -1242,7 +1245,7 @@ def load_settings():
     global _settings_cache
     with _settings_lock:
         if _settings_cache is not None:
-            return dict(_settings_cache)
+            return _settings_data_copy(_settings_cache)
         data = _default_settings_copy()
         try:
             if SETTINGS_PATH.exists():
@@ -1258,21 +1261,21 @@ def load_settings():
                 _write_settings_atomic(data)
             except Exception as write_exc:
                 _settings_log_warning(f'settings.json reset failed: {write_exc}')
-        _settings_cache = data
-        return dict(_settings_cache)
+        _settings_cache = _settings_data_copy(data)
+        return _settings_data_copy(_settings_cache)
 
 def save_settings(**updates):
     global _settings_cache
     with _settings_lock:
         data = load_settings()
         data.update(updates)
-        _settings_cache = data
+        _settings_cache = _settings_data_copy(data)
         try:
             backup_file_snapshot(SETTINGS_PATH, 'settings-auto', min_interval_sec=300, keep=12)
-            _write_settings_atomic(data)
+            _write_settings_atomic(_settings_cache)
         except Exception as e:
             _settings_log_warning(f'settings.json save failed: {e}')
-        return dict(data)
+        return _settings_data_copy(_settings_cache)
 
 def _hidden_subprocess_flags():
     return 0x08000000 if os.name == 'nt' else 0
