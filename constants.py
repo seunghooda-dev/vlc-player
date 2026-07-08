@@ -1750,26 +1750,36 @@ def create_diagnostic_report(destination=None, runtime=None, max_log_lines=1500)
         'user_data_dir': str(USER_DATA_DIR),
         'report_path': str(out),
     }
-    with zipfile.ZipFile(out, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr('manifest.json', json.dumps(manifest, ensure_ascii=False, indent=2))
-        zf.writestr('environment.txt', format_runtime_environment(runtime))
-        zf.writestr('runtime.json', json.dumps(runtime, ensure_ascii=False, indent=2, default=str))
-        zf.writestr('db_status.txt', _diagnostic_db_status_text())
-        zf.writestr('child_processes.json', json.dumps(runtime_child_process_status(), ensure_ascii=False, indent=2))
-        zf.writestr('state_timeline.json', json.dumps(runtime_state_timeline(), ensure_ascii=False, indent=2))
-        zf.writestr('state_timeline.txt', format_state_timeline())
-        zf.writestr('recent_files.txt', _diagnostic_recent_files_text())
-        zf.writestr(
-            'reports/latest_broadcast_sample_report.txt',
-            _latest_report_text(('broadcast-sample*.txt',)),
-        )
-        zf.writestr('logs/player_tail.log', _recent_log_text(LOG_DIR / 'player.log', max_log_lines))
-        zf.writestr('logs/migration_tail.log', _recent_log_text(LOG_DIR / 'migration.log', 500))
+    tmp_out = out.with_name(f'.{out.name}.{os.getpid()}.{threading.get_ident()}.tmp')
+    try:
+        with zipfile.ZipFile(tmp_out, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr('manifest.json', json.dumps(manifest, ensure_ascii=False, indent=2))
+            zf.writestr('environment.txt', format_runtime_environment(runtime))
+            zf.writestr('runtime.json', json.dumps(runtime, ensure_ascii=False, indent=2, default=str))
+            zf.writestr('db_status.txt', _diagnostic_db_status_text())
+            zf.writestr('child_processes.json', json.dumps(runtime_child_process_status(), ensure_ascii=False, indent=2))
+            zf.writestr('state_timeline.json', json.dumps(runtime_state_timeline(), ensure_ascii=False, indent=2))
+            zf.writestr('state_timeline.txt', format_state_timeline())
+            zf.writestr('recent_files.txt', _diagnostic_recent_files_text())
+            zf.writestr(
+                'reports/latest_broadcast_sample_report.txt',
+                _latest_report_text(('broadcast-sample*.txt',)),
+            )
+            zf.writestr('logs/player_tail.log', _recent_log_text(LOG_DIR / 'player.log', max_log_lines))
+            zf.writestr('logs/migration_tail.log', _recent_log_text(LOG_DIR / 'migration.log', 500))
+            try:
+                if SETTINGS_PATH.exists():
+                    zf.writestr('settings.json', SETTINGS_PATH.read_text(encoding='utf-8', errors='replace'))
+            except Exception as e:
+                zf.writestr('settings_error.txt', str(e))
+        tmp_out.replace(out)
+    except Exception:
         try:
-            if SETTINGS_PATH.exists():
-                zf.writestr('settings.json', SETTINGS_PATH.read_text(encoding='utf-8', errors='replace'))
-        except Exception as e:
-            zf.writestr('settings_error.txt', str(e))
+            if tmp_out.exists():
+                tmp_out.unlink()
+        except Exception:
+            pass
+        raise
     return out
 
 def format_runtime_startup_alert(runtime=None):
