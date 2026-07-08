@@ -1198,11 +1198,15 @@ def _settings_log_warning(message):
 
 def _rotate_named_backups(prefix, keep=10):
     try:
-        backups = sorted(
-            BACKUP_DIR.glob(f'{prefix}-*'),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
+        backups = []
+        for candidate in BACKUP_DIR.glob(f'{prefix}-*'):
+            try:
+                if candidate.is_symlink() or not candidate.is_file():
+                    continue
+                backups.append(candidate)
+            except Exception:
+                continue
+        backups.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         for old in backups[int(keep):]:
             try:
                 old.unlink()
