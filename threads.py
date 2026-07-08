@@ -21,10 +21,15 @@ from constants import (
     register_child_process, unregister_child_process, terminate_child_process,
     acquire_heavy_analysis_slot, release_heavy_analysis_slot,
 )
-from db_models import sec_to_tc, frames_to_tc, probe as probe_media
+from db_models import (
+    sec_to_tc, frames_to_tc,
+    load_clip_metadata_hint,
+    probe as probe_media,
+)
 
 _CREATE_NO_WINDOW = 0x08000000
 _BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
+_WARMUP_RECENT_PROBE_MAX_BYTES = 2 * 1024 * 1024 * 1024
 
 def _hidden_flags():
     return _CREATE_NO_WINDOW if os.name == 'nt' else 0
@@ -99,6 +104,7 @@ class RuntimeWarmupThread(QThread):
                 state = self._run_version(name, command)
                 if state is not None:
                     result['tools'][name] = state
+            skipped_recent = None
             for fp in self.recent_files[:3]:
                 if self._abort:
                     return
@@ -107,11 +113,33 @@ class RuntimeWarmupThread(QThread):
                     if not p.exists() or p.suffix.lower() not in VIDEO_EXTS:
                         continue
                     probe_started = time.monotonic()
+                    hint = load_clip_metadata_hint(str(p))
+                    if hint:
+                        result['recent_probe'] = {
+                            'file': p.name,
+                            'ok': True,
+                            'elapsed': time.monotonic() - probe_started,
+                            'source': 'db-hint',
+                        }
+                        break
+                    try:
+                        file_size = int(p.stat().st_size)
+                    except Exception:
+                        file_size = 0
+                    if file_size > _WARMUP_RECENT_PROBE_MAX_BYTES:
+                        skipped_recent = {
+                            'file': p.name,
+                            'ok': False,
+                            'elapsed': time.monotonic() - probe_started,
+                            'source': 'skipped-large',
+                        }
+                        continue
                     info = probe_media(str(p))
                     result['recent_probe'] = {
                         'file': p.name,
                         'ok': bool(info),
                         'elapsed': time.monotonic() - probe_started,
+                        'source': 'ffprobe',
                     }
                     break
                 except Exception as e:
@@ -122,6 +150,8 @@ class RuntimeWarmupThread(QThread):
                         'error': str(e),
                     }
                     break
+            if result.get('recent_probe') is None and skipped_recent:
+                result['recent_probe'] = skipped_recent
         finally:
             result['elapsed'] = time.monotonic() - started
             if not self._abort:

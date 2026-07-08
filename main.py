@@ -297,7 +297,9 @@ class MainWindow(QMainWindow):
             if recent:
                 recent_summary = (
                     f" recent={recent.get('file', '?')} "
-                    f"ok={recent.get('ok')} {recent.get('elapsed', 0):.3f}s"
+                    f"ok={recent.get('ok')} "
+                    f"source={recent.get('source', 'unknown')} "
+                    f"{recent.get('elapsed', 0):.3f}s"
                 )
             log.info(
                 f"runtime warmup complete: total={result.get('elapsed', 0):.3f}s "
@@ -1329,29 +1331,67 @@ def _setup_global_exception_handler():
 
 def _cleanup_tmp_files():
     """시작 시 TMP_DIR 전체 정리 + 용량 체크"""
+    def _is_within(child, root):
+        try:
+            child = Path(child).resolve()
+            root = Path(root).resolve()
+            return child == root or root in child.parents
+        except Exception:
+            return False
+
+    def _safe_legacy_tmp_move(path):
+        try:
+            src = Path(path)
+            if not src.is_file() or src.is_symlink():
+                return
+            if not _is_within(src, BASE_DIR):
+                log.warning(f'구버전 tmp 이동 건너뜀: BASE_DIR 밖 경로 {src}')
+                return
+            if not src.name.startswith('_tmp_') or src.suffix.lower() != '.mp4':
+                return
+            target = TMP_DIR / src.name
+            if target.exists():
+                log.debug(f'구버전 tmp 이동 건너뜀: 대상 존재 {target.name}')
+                return
+            src.rename(target)
+            log.info(f'구버전 tmp 이동: {src.name} → tmp/')
+        except Exception as e:
+            log.debug(f'tmp 이동 실패: {e}')
+
+    def _safe_tmp_unlink(path):
+        try:
+            target = Path(path).resolve()
+            if not _is_within(target, TMP_DIR):
+                log.warning(f'tmp 정리 건너뜀: TMP_DIR 밖 경로 {target}')
+                return 0.0
+            if target.is_symlink() or not target.is_file():
+                return 0.0
+            size_mb = target.stat().st_size / 1024**2
+            target.unlink(missing_ok=True)
+            return size_mb
+        except Exception as e:
+            log.debug(f'cleanup unlink: {e}')
+            return 0.0
+
     try:
-        TMP_DIR.mkdir(exist_ok=True)
+        TMP_DIR.mkdir(parents=True, exist_ok=True)
         # BASE_DIR에 남아있는 구버전 tmp 파일도 TMP_DIR로 이동
         for old_f in BASE_DIR.glob('_tmp_*.mp4'):
-            try:
-                new_f = TMP_DIR / old_f.name.lstrip('_tmp_')
-                old_f.rename(TMP_DIR / old_f.name)
-                log.info(f'구버전 tmp 이동: {old_f.name} → tmp/')
-            except Exception as e: log.debug(f'tmp 이동 실패: {e}')
+            _safe_legacy_tmp_move(old_f)
         # TMP_DIR 현황
-        tmp_files = sorted(TMP_DIR.glob('*.mp4'),
-                           key=lambda p: p.stat().st_mtime)
+        tmp_files = sorted(
+            (p for p in TMP_DIR.glob('*.mp4') if p.is_file() and not p.is_symlink()),
+            key=lambda p: p.stat().st_mtime
+        )
         total_mb = sum(p.stat().st_size for p in tmp_files) / 1024**2
         log.info(f'TMP_DIR: {len(tmp_files)}개 파일, {total_mb:.1f}MB')
         # 2GB 초과 시 오래된 것부터 삭제
         while total_mb > 2048 and tmp_files:
             victim = tmp_files.pop(0)
-            sz = victim.stat().st_size / 1024**2
-            try:
-                victim.unlink(missing_ok=True)
+            sz = _safe_tmp_unlink(victim)
+            if sz > 0:
                 total_mb -= sz
                 log.info(f'tmp 정리: {victim.name} ({sz:.1f}MB)')
-            except Exception as e: log.debug(f'cleanup unlink: {e}')
     except Exception as e: log.warning(f'cleanup_tmp 외곽: {e}')
 
 def _cleanup_old_generated_files():

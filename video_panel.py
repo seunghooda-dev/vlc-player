@@ -32,7 +32,7 @@ from constants  import (
 )
 from db_models  import (
     probe, save_clip, frames_to_tc, tc_to_frames,
-    load_qc_status, update_clip_qc,
+    load_qc_status, load_clip_metadata_hint, update_clip_qc,
 )
 from threads    import ProbeThread, TranscodeThread, LoudnessAnalyzeThread
 from meters     import SideMeter, LoudnessMeter, MeterController, mk_btn, mk_label, separator
@@ -1862,6 +1862,20 @@ class VideoPanel(QWidget):
 
     def _evict_tc_cache(self, max_files=10, max_gb=2.0):
         """tmp 캐시 정리 — 파일 수/용량 초과 시 오래된 것 삭제"""
+        def _safe_unlink_cache(path_text):
+            try:
+                target = Path(path_text).resolve()
+                root = TMP_DIR.resolve()
+                if root != target and root not in target.parents:
+                    log.warning(f'cache evict skipped outside TMP_DIR: {target}')
+                    return 0
+                size = target.stat().st_size if target.exists() else 0
+                target.unlink(missing_ok=True)
+                return size
+            except Exception as e:
+                log.warning(f'evict unlink {path_text}: {e}')
+                return 0
+
         # 유효한 파일만 남김
         valid = [(fp, tp) for fp, tp in self._tc_cache.items()
                  if tp and Path(tp).exists()]
@@ -1875,12 +1889,7 @@ class VideoPanel(QWidget):
             oldest_tp = self._tc_cache.pop(oldest_fp, None)
             if oldest_tp:
                 for p in [oldest_tp, oldest_tp.replace('.mp4','_preview.mp4')]:
-                    try: Path(p).unlink(missing_ok=True)
-                    except Exception as e: log.warning(f'evict unlink {p}: {e}')
-                try:
-                    sz = Path(oldest_tp).stat().st_size if Path(oldest_tp).exists() else 0
-                except Exception: sz = 0
-                total_bytes -= sz
+                    total_bytes -= _safe_unlink_cache(p)
         self._tc_cache_order = order
 
     def _cancel_preconvert_job(self, filepath=None):
@@ -2099,7 +2108,7 @@ class VideoPanel(QWidget):
             size = p.stat().st_size
         except Exception:
             size = 0
-        return {
+        info = {
             "filename": p.name,
             "filepath": filepath,
             "duration": 0,
@@ -2117,6 +2126,15 @@ class VideoPanel(QWidget):
             "tc_offset": 0.0,
             "provisional": True,
         }
+        hint = load_clip_metadata_hint(filepath)
+        if hint:
+            info.update(hint)
+            info["filename"] = p.name
+            info["filepath"] = filepath
+            info["size"] = size or info.get("size", 0)
+            info["provisional"] = True
+            log.debug(f"metadata hint applied before probe: {p.name}")
+        return info
 
     def _apply_provisional_metadata(self, filepath):
         p = Path(filepath)
@@ -2126,7 +2144,7 @@ class VideoPanel(QWidget):
         self._metadata_ready = False
         self._file_loaded_emitted = False
         self.fps = info.get("fps", 29.97)
-        self.df = True
+        self.df = bool(info.get("df", True))
         self.tc_offset = 0.0
         self._tc_offset_frames = 0
         self._display_frame = 0
@@ -2137,18 +2155,22 @@ class VideoPanel(QWidget):
         self._frame_clock_active = False
         self._frame_display_timer.stop()
         self._sync_frame_timer_interval()
-        self.duration = 0
-        self._source_duration = 0
+        self.duration = float(info.get("duration", 0) or 0)
+        self._source_duration = self.duration
         self._using_preview = False
         self.lbl_fmt.setText(info.get("format_short", "—"))
-        self.lbl_cod.setText("—")
-        self.lbl_res.setText("—")
-        self.lbl_fps.setText("29.97")
-        self.lbl_df.setText("DF")
+        self.lbl_cod.setText(info.get("codec", "") or "—")
+        h = int(info.get("height", 0) or 0)
+        w = int(info.get("width", 0) or 0)
+        res_str = ("4K" if w >= 3840 else "HD" if w >= 1920 else f"{h}p") if h else "—"
+        self.lbl_res.setText(res_str)
+        self.lbl_fps.setText(f"{float(self.fps or 29.97):.2f}")
+        self.lbl_df.setText("DF" if self._drop_frame_enabled() else "NDF")
         self.lbl_df.setStyleSheet(
             f"color:{C['teal']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:11px;"
         )
-        provisional_ch = 8 if p.suffix.lower() == ".mxf" else 2
+        hinted_ch = max(int(info.get("audio_stream_count", 0) or 0), int(info.get("channels", 0) or 0))
+        provisional_ch = max(1, min(8, hinted_ch)) if hinted_ch else (8 if p.suffix.lower() == ".mxf" else 2)
         self.lbl_ch.setText(f"{provisional_ch}CH")
         for cb, ch_no in self._ch_checks:
             cb.setChecked(ch_no in (1, 2))
@@ -2158,10 +2180,11 @@ class VideoPanel(QWidget):
         self.audio_mix.set_channels(self._selected_chs)
         # Metadata is intentionally delayed for playback responsiveness, but
         # meters should still appear immediately with a sensible provisional rail.
-        self.meter_ctrl.start_file(filepath, provisional_ch, self.player, (1, 2), 0)
-        self.tc_dur.setText(self._frames_to_tc(0, include_offset=False))
+        provisional_streams = int(info.get("audio_stream_count", 0) or 0)
+        self.meter_ctrl.start_file(filepath, provisional_ch, self.player, (1, 2), provisional_streams)
+        self.tc_dur.setText(self._frames_to_tc(self._duration_frames(), include_offset=False))
         self._apply_qc_markers()
-        self._res_text.setPlainText("")
+        self._res_text.setPlainText(f"{w}\u00d7{h}" if w and h else "")
         self.btn_black.setEnabled(False)
         self.btn_audio.setEnabled(False)
         self.btn_freeze.setEnabled(False)

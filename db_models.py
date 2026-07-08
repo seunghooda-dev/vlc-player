@@ -56,6 +56,7 @@ class Clip(Base):
     file_size    = Column(Integer)
     bit_rate     = Column(Integer)
     channels     = Column(Integer)
+    audio_stream_count = Column(Integer)
     timecode     = Column(String)
     memo         = Column(Text, default="")
     tag_in       = Column(String)
@@ -110,6 +111,7 @@ def _ensure_clip_qc_columns():
         "qc_freeze_ranges": "TEXT",
         "qc_summary": "VARCHAR",
         "qc_updated_at": "DATETIME",
+        "audio_stream_count": "INTEGER DEFAULT 0",
     }
     try:
         with engine.begin() as conn:
@@ -428,6 +430,53 @@ def load_qc_status(filepath):
             "updated_at": getattr(clip, "qc_updated_at", None),
         }
 
+def load_clip_metadata_hint(filepath):
+    if not filepath:
+        return {}
+    p = Path(filepath)
+    try:
+        current_size = int(p.stat().st_size)
+    except Exception:
+        current_size = 0
+    cid = _clip_id_for_path(filepath)
+    try:
+        with Session(engine) as s:
+            clip = s.get(Clip, cid)
+            if not clip:
+                return {}
+            stored_size = int(getattr(clip, "file_size", 0) or 0)
+            if stored_size and current_size and stored_size != current_size:
+                log.debug(f"metadata hint ignored size mismatch: {p.name}")
+                return {}
+            duration = float(getattr(clip, "duration", 0) or 0)
+            width = int(getattr(clip, "width", 0) or 0)
+            height = int(getattr(clip, "height", 0) or 0)
+            if duration <= 0 and not width and not height:
+                return {}
+            fps = float(getattr(clip, "fps", 0) or 29.97)
+            ext = p.suffix.upper().lstrip(".")
+            return {
+                "filename": getattr(clip, "filename", "") or p.name,
+                "filepath": str(filepath),
+                "duration": duration,
+                "size": stored_size or current_size,
+                "bit_rate": int(getattr(clip, "bit_rate", 0) or 0),
+                "fps": fps,
+                "width": width,
+                "height": height,
+                "codec": getattr(clip, "codec", "") or "",
+                "channels": int(getattr(clip, "channels", 0) or 0),
+                "audio_stream_count": int(getattr(clip, "audio_stream_count", 0) or 0),
+                "timecode": getattr(clip, "timecode", "") or "",
+                "format_short": getattr(clip, "format_short", "") or ("XDCAM" if ext == "MXF" else ext),
+                "df": is_df_fps(fps),
+                "tc_offset": 0.0,
+                "metadata_hint": True,
+            }
+    except Exception as e:
+        log.debug(f"metadata hint load failed: {p.name if filepath else '?'} | {e}")
+        return {}
+
 def update_clip_qc(
     filepath,
     black=None,
@@ -514,6 +563,7 @@ def save_clip(info):
         clip.file_size = info.get("size",0)
         clip.bit_rate = info.get("bit_rate",0)
         clip.channels = info.get("channels",0)
+        clip.audio_stream_count = info.get("audio_stream_count",0)
         clip.timecode = info.get("timecode","")
         clip.updated_at = now
         s.commit()
