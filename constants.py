@@ -895,6 +895,8 @@ def _cache_entry_info(path):
         dirs = 1
         for child in path.rglob('*'):
             try:
+                if child.is_symlink():
+                    continue
                 child_resolved = _safe_cache_child(child)
                 if child_resolved.is_file():
                     stat = child_resolved.stat()
@@ -974,8 +976,12 @@ def format_cache_summary(summary=None, max_entries=30):
         lines.append('캐시 항목이 없습니다.')
     else:
         for item in entries[:max_entries]:
-            kind = 'DIR ' if item.get('is_dir') else 'FILE'
-            file_info = f"{item.get('files', 0)} files" if item.get('is_dir') else '1 file'
+            if item.get('is_symlink'):
+                kind = 'LINK'
+                file_info = 'skipped'
+            else:
+                kind = 'DIR ' if item.get('is_dir') else 'FILE'
+                file_info = f"{item.get('files', 0)} files" if item.get('is_dir') else '1 file'
             lines.append(f"{kind}  {format_bytes(item.get('bytes', 0)):>10}  {file_info:<10}  {item.get('name')}")
         if len(entries) > max_entries:
             lines.append(f"... {len(entries) - max_entries}개 더 있음")
