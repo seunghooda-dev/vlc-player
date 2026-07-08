@@ -279,9 +279,13 @@ def probe(filepath):
                 "-show_streams",
                 filepath,
             ],
-            capture_output=True, text=True, timeout=15)
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15)
         if r.returncode != 0: return {}
-        d = json.loads(r.stdout); fmt = d.get("format",{})
+        d = json.loads(r.stdout or "{}"); fmt = d.get("format",{})
         info = {"filename":Path(filepath).name,"filepath":filepath,
                 "duration":float(fmt.get("duration",0)),"size":int(fmt.get("size",0)),
                 "bit_rate":int(fmt.get("bit_rate",0) or 0),

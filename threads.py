@@ -246,11 +246,15 @@ class TranscodeThread(QThread):
             import json as _j
             pr = subprocess.run(
                 [FFPROBE,"-v","quiet","-print_format","json","-show_streams",self.fp],
-                capture_output=True, text=True, timeout=15
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=15
             )
             audio_streams = []
             if pr.returncode == 0:
-                for s in _j.loads(pr.stdout).get("streams",[]):
+                for s in _j.loads(pr.stdout or "{}").get("streams",[]):
                     if s.get("codec_type") == "audio":
                         audio_streams.append(s.get("channels", 1))
 
@@ -280,10 +284,14 @@ class TranscodeThread(QThread):
                 pr2 = subprocess.run(
                     [FFPROBE,'-v','quiet','-print_format','json',
                      '-show_format', self.fp],
-                    capture_output=True, text=True, timeout=10)
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=10)
                 if pr2.returncode == 0:
                     total_sec = float(
-                        _j2.loads(pr2.stdout).get('format',{}).get('duration',0))
+                        _j2.loads(pr2.stdout or "{}").get('format',{}).get('duration',0))
             except Exception as e:
                 log.debug(f'duration probe: {e}')
             self.progress.emit(0)
@@ -514,10 +522,15 @@ class AudioAnalyzeThread(QThread):
                     '-show_entries', 'stream=codec_type,channels',
                     self.fp,
                 ],
-                capture_output=True, text=True, timeout=30, creationflags=_hidden_flags())
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=30,
+                creationflags=_hidden_flags())
             audio_streams = []
             try:
-                for st in _json.loads(pr.stdout).get('streams',[]):
+                for st in _json.loads(pr.stdout or "{}").get('streams',[]):
                     if st.get('codec_type') == 'audio':
                         audio_streams.append(int(st.get('channels', 1) or 1))
             except Exception as e: log.debug(f'audio ch parse: {e}')

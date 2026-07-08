@@ -549,7 +549,7 @@ _RUNTIME_TOOL_META = {
     },
     'FFprobe': {
         'command': lambda: FFPROBE,
-        'role': 'MXF 메타데이터, 길이, 해상도, 오디오 채널 확인',
+        'role': 'MXF/MP4 메타데이터, 길이, 해상도, 오디오 채널 확인',
         'hint': r'ffprobe.exe를 앱 폴더의 tools\ 안에 넣거나 Windows PATH에 등록하세요.',
     },
     'FFplay': {
@@ -559,7 +559,7 @@ _RUNTIME_TOOL_META = {
     },
     'VLC': {
         'command': lambda: VLC_DIR,
-        'role': 'MXF 원본 영상 재생',
+        'role': 'MXF/MP4 원본 영상 재생',
         'hint': r'VLC를 설치하거나 libvlc.dll이 포함된 VLC 폴더를 앱 폴더\VLC 또는 C:\Program Files\VideoLAN\VLC에 두세요.',
     },
 }
@@ -1586,7 +1586,7 @@ def format_runtime_environment(runtime=None):
     lines.append('')
     lines.append('기능 영향')
     lines.append('-' * 42)
-    lines.append('- VLC 누락: MXF 영상 재생 불가')
+    lines.append('- VLC 누락: 원본 영상 재생 불가')
     lines.append('- FFmpeg 누락: 오디오 미터, 블랙/뮤트 검출, 채널 믹스 제한')
     lines.append('- FFprobe 누락: 파일 길이/해상도/채널 정보 확인 제한')
     lines.append('- FFplay 누락: 체크박스 기반 오디오 출력 제한')
@@ -2244,9 +2244,13 @@ def probe(filepath):
         r = subprocess.run(
             [FFPROBE, "-v","quiet","-print_format","json",
              "-show_format","-show_streams", filepath],
-            capture_output=True, text=True, timeout=15)
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15)
         if r.returncode != 0: return {}
-        d   = json.loads(r.stdout)
+        d   = json.loads(r.stdout or "{}")
         fmt = d.get("format", {})
         info = {
             "filename"    : Path(filepath).name,

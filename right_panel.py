@@ -650,8 +650,8 @@ class RightPanel(QWidget):
         ext = (p.suffix.lower() if str(p) else '').lstrip('.')
         if filepath and not p.exists():
             issues.append('파일 접근 불가')
-        if ext and ext != 'mxf':
-            issues.append('MXF 아님')
+        if ext and f'.{ext}' not in VIDEO_EXTS:
+            issues.append('지원 형식 아님')
         try:
             width = int(info.get('width', 0) or 0)
             height = int(info.get('height', 0) or 0)
@@ -865,7 +865,7 @@ class RightPanel(QWidget):
     def _export_qc_report(self):
         rows = self._qc_report_rows()
         if not rows:
-            QMessageBox.information(self, 'QC 리포트', '파일 목록에 리포트로 저장할 MXF가 없습니다.')
+            QMessageBox.information(self, 'QC 리포트', '파일 목록에 리포트로 저장할 영상 파일이 없습니다.')
             return
         try:
             REPORT_DIR.mkdir(parents=True, exist_ok=True)
@@ -1548,7 +1548,7 @@ class RightPanel(QWidget):
     def _run_batch_qc(self):
         files = [f for f in getattr(self.vp, '_files', []) if f.get('filepath')]
         if not files:
-            QMessageBox.information(self, '일괄 검수', '파일 목록에 검수할 MXF가 없습니다.')
+            QMessageBox.information(self, '일괄 검수', '파일 목록에 검수할 영상 파일이 없습니다.')
             return
         missing = format_missing_runtime_tools(['FFmpeg', 'FFprobe'])
         if missing:

@@ -37,6 +37,8 @@ from db_models  import (
 from threads    import ProbeThread, TranscodeThread, LoudnessAnalyzeThread
 from meters     import SideMeter, LoudnessMeter, MeterController, mk_btn, mk_label, separator
 
+DIRECT_VLC_EXTS = {'.mxf', '.mp4'}
+
 
 class QCMarkerSlider(QSlider):
     """Progress slider with lightweight QC result overlays."""
@@ -109,7 +111,7 @@ class VlcAudioAdapter:
 
 
 class AudioMixPlayer(QObject):
-    """FFmpeg mixes checked MXF mono channels; ffplay outputs the audio only."""
+    """FFmpeg mixes checked audio channels; ffplay outputs the audio only."""
     def __init__(self):
         super().__init__()
         self.filepath = None
@@ -117,19 +119,22 @@ class AudioMixPlayer(QObject):
         self.volume = 0.8
         self.rate = 1.0
         self.audio_stream_count = 0
-        self.channel_count = 2
+        self.channel_count = 0
+        self.audio_layout_known = False
         self._ffmpeg = None
         self._ffplay = None
         self._playing = False
+        self._active_layout_known = False
         self.last_error = ''
         # FFmpeg/ffplay has a small startup/buffer delay after VLC video starts.
         # Seeking the external audio slightly ahead keeps MXF playback closer.
-        self.start_lead_sec = 0.20
+        self.start_lead_sec = 0.12
 
     def set_file(self, filepath, audio_stream_count=0, channel_count=2):
         self.filepath = filepath
         self.audio_stream_count = int(audio_stream_count or 0)
-        self.channel_count = max(1, int(channel_count or 2))
+        self.channel_count = max(0, int(channel_count or 0))
+        self.audio_layout_known = self.audio_stream_count > 0 or self.channel_count > 0
 
     def set_channels(self, channels):
         cleaned = []
@@ -162,6 +167,7 @@ class AudioMixPlayer(QObject):
             terminate_child_process(proc, label, timeout=0.18)
         self._ffplay = None
         self._ffmpeg = None
+        self._active_layout_known = False
         if was_active:
             elapsed = time.monotonic() - started
             if elapsed > 0.45:
@@ -194,6 +200,8 @@ class AudioMixPlayer(QObject):
             'volume_percent': int(round(float(self.volume or 0.0) * 100)),
             'audio_stream_count': int(self.audio_stream_count or 0),
             'channel_count': int(self.channel_count or 0),
+            'layout_known': bool(self.audio_layout_known),
+            'active_layout_known': bool(self._active_layout_known),
             'last_error': self.last_error,
         })
         return status
@@ -207,7 +215,9 @@ class AudioMixPlayer(QObject):
             f"ffmpeg={status.get('ffmpeg')} pid={status.get('ffmpeg_pid') or '-'} "
             f"ffplay={status.get('ffplay')} pid={status.get('ffplay_pid') or '-'} "
             f"ch={status.get('channels') or '-'} rate={status.get('rate')} "
-            f"volume={status.get('volume_percent')}% file={file_name}"
+            f"volume={status.get('volume_percent')}% "
+            f"layout={status.get('layout_known')}/{status.get('active_layout_known')} "
+            f"file={file_name}"
         )
         if status.get('last_error'):
             log.warning(f"{prefix} last error: {status.get('last_error')}")
@@ -219,6 +229,9 @@ class AudioMixPlayer(QObject):
             and status['ffmpeg'] == 'running'
             and status['ffplay'] == 'running'
         )
+
+    def active_layout_known(self):
+        return bool(self.is_running() and self._active_layout_known)
 
     def restart(self, pos_sec=0.0, lead_sec=None):
         self.stop()
@@ -235,15 +248,12 @@ class AudioMixPlayer(QObject):
             self.last_error = missing
             log.warning(f'audio mix blocked: {missing}')
             return False
-        fc = self._build_filter()
         lead = self.start_lead_sec if lead_sec is None else max(0.0, float(lead_sec))
         start_sec = max(0.0, float(pos_sec) + lead)
         ffmpeg_cmd = [
             FFMPEG, '-hide_banner', '-loglevel', 'error',
             '-ss', f'{start_sec:.3f}',
             '-i', self.filepath,
-            '-filter_complex', fc,
-            '-map', '[aout]',
             '-vn',
             '-f', 's16le',
             '-acodec', 'pcm_s16le',
@@ -251,6 +261,14 @@ class AudioMixPlayer(QObject):
             '-ac', '2',
             'pipe:1',
         ]
+        if self.audio_layout_known:
+            fc = self._build_filter()
+            ffmpeg_cmd[8:8] = ['-filter_complex', fc, '-map', '[aout]']
+        else:
+            # Full metadata can be delayed or fail on some MXF files.
+            # For play-start sync, output the first available audio stream first;
+            # accurate checked-channel routing is restored once metadata arrives.
+            ffmpeg_cmd[8:8] = ['-map', '0:a:0?']
         ffplay_cmd = [
             FFPLAY,
             '-nodisp',
@@ -285,10 +303,12 @@ class AudioMixPlayer(QObject):
             if self._ffmpeg.stdout:
                 self._ffmpeg.stdout.close()
             self._playing = True
+            self._active_layout_known = bool(self.audio_layout_known)
             log.info(
                 'audio mix started '
                 f'ffmpeg={self._ffmpeg.pid} ffplay={self._ffplay.pid} '
-                f'ch={self.channels} start={start_sec:.3f}s rate={self.rate:.3f}'
+                f'ch={self.channels} start={start_sec:.3f}s rate={self.rate:.3f} '
+                f'layout_known={self.audio_layout_known}'
             )
             record_state_event(
                 'audio-mix',
@@ -601,6 +621,8 @@ class VideoPanel(QWidget):
         self._tc_thread=None
         self._probe_thread = None
         self._probe_seq = 0
+        self._metadata_probe_timer_seq = 0
+        self._pending_metadata_probe = None
         self._load_seq = 0
         self._metadata_ready = False
         self._cue_ready = False
@@ -740,7 +762,7 @@ class VideoPanel(QWidget):
         self._scene.addItem(self._video_item)
 
         # 빈화면 라벨 (비디오 없을 때)
-        self.empty_label = QLabel("▶\n\nMXF 파일을 열어주세요\n\n⏏ 파일을 드래그하거나 CUE 버튼을 누르세요")
+        self.empty_label = QLabel("▶\n\nMXF / MP4 파일을 열어주세요\n\n⏏ 파일을 드래그하거나 CUE 버튼을 누르세요")
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty_label.setStyleSheet(
             f"color:{C['text2']};font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';"
@@ -1177,7 +1199,7 @@ class VideoPanel(QWidget):
             self.player.audio_set_volume(0)
             self.audio_mix.set_volume(v / 100.0)
             if self.cur_file and self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
-                self._schedule_audio_mix(delay_ms=120, restart=True)
+                self._schedule_audio_mix(delay_ms=350, restart=True, lead_sec=0.0)
             self.vol_pct.setText(f'{v}%')
             self._settings = save_settings(volume=int(v))
         self.vol_slider.valueChanged.connect(_on_vol)
@@ -1816,7 +1838,7 @@ class VideoPanel(QWidget):
 
         # 화면 초기화
         self._video_item.hide()
-        self.empty_label.setText("▶\n\nMXF 파일을 열어주세요\n\n파일 추가 버튼 또는 파일 드래그로 불러오세요")
+        self.empty_label.setText("▶\n\nMXF / MP4 파일을 열어주세요\n\n파일 추가 버튼 또는 파일 드래그로 불러오세요")
         self._empty_proxy.show()
 
         # AI 버튼 비활성화
@@ -1878,9 +1900,9 @@ class VideoPanel(QWidget):
                 log.debug(f'preconvert cancel: {e}')
 
     def _preconvert(self, filepath):
-        # VLC 원본 재생으로 전환한 뒤에는 MXF 사전 변환이 첫 재생 안정성을 해친다.
-        if Path(filepath).suffix.lower() == '.mxf':
-            log.info(f'skip preconvert for VLC MXF playback: {Path(filepath).name}')
+        # VLC 원본 재생 경로에서는 사전 변환이 첫 재생 반응성을 해친다.
+        if Path(filepath).suffix.lower() in DIRECT_VLC_EXTS:
+            log.info(f'skip preconvert for VLC direct playback: {Path(filepath).name}')
             return
         # 비-MXF 호환 경로에서만 백그라운드 변환 캐시를 사용한다.
 
@@ -1938,7 +1960,7 @@ class VideoPanel(QWidget):
                 new_files.append(f)
         self._refresh_clip_list()
         if new_files:
-            self.ai_lbl.setText("✓ 파일 추가 완료 — CUE 또는 더블클릭으로 원본 MXF를 바로 재생합니다")
+            self.ai_lbl.setText("✓ 파일 추가 완료 — CUE 또는 더블클릭으로 원본 파일을 바로 재생합니다")
         # Explorer 목록 즉시 갱신
         if hasattr(self, '_right_panel'):
             self._right_panel.refresh_explorer()
@@ -2036,6 +2058,8 @@ class VideoPanel(QWidget):
 
     def _retire_probe(self):
         self._probe_seq += 1
+        self._metadata_probe_timer_seq += 1
+        self._pending_metadata_probe = None
         if not self._probe_thread:
             return
         t = self._probe_thread
@@ -2095,6 +2119,7 @@ class VideoPanel(QWidget):
         }
 
     def _apply_provisional_metadata(self, filepath):
+        p = Path(filepath)
         info = self._provisional_info(filepath)
         self.cur_info = info
         self.cur_id = None
@@ -2123,11 +2148,17 @@ class VideoPanel(QWidget):
         self.lbl_df.setStyleSheet(
             f"color:{C['teal']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:11px;"
         )
-        self.lbl_ch.setText("SCAN")
+        provisional_ch = 8 if p.suffix.lower() == ".mxf" else 2
+        self.lbl_ch.setText(f"{provisional_ch}CH")
         for cb, ch_no in self._ch_checks:
             cb.setChecked(ch_no in (1, 2))
-            cb.setEnabled(False)
+            cb.setEnabled(ch_no <= provisional_ch)
         self._selected_chs = [1, 2]
+        self.audio_mix.set_file(filepath, 0, 0)
+        self.audio_mix.set_channels(self._selected_chs)
+        # Metadata is intentionally delayed for playback responsiveness, but
+        # meters should still appear immediately with a sensible provisional rail.
+        self.meter_ctrl.start_file(filepath, provisional_ch, self.player, (1, 2), 0)
         self.tc_dur.setText(self._frames_to_tc(0, include_offset=False))
         self._apply_qc_markers()
         self._res_text.setPlainText("")
@@ -2137,6 +2168,10 @@ class VideoPanel(QWidget):
         self.ai_lbl.setText(f"⏳ 3/4 메타데이터 분석 중 — {Path(filepath).name}")
 
     def _apply_probe_metadata(self, filepath, info, warnings, emit_loaded=False):
+        try:
+            previous_selected = self._get_selected_audio_channels()
+        except Exception:
+            previous_selected = list(getattr(self, '_selected_chs', []) or [])
         self.cur_info = info
         self._metadata_ready = True
         self.fps       = info.get("fps", 29.97)
@@ -2177,11 +2212,13 @@ class VideoPanel(QWidget):
             if enabled and first_enabled is None:
                 first_enabled = cb
         default_channels = [1, 2]
+        valid_previous = [ch for ch in previous_selected if 1 <= int(ch) <= stream_count]
+        preferred_channels = valid_previous or default_channels
         for cb, _ in self._ch_checks:
             cb.setChecked(False)
         default_selected = []
         for cb, ch_no in self._ch_checks:
-            if ch_no <= stream_count and ch_no in default_channels:
+            if ch_no <= stream_count and ch_no in preferred_channels:
                 cb.setChecked(True)
                 default_selected.append(ch_no)
         if not default_selected and first_enabled:
@@ -2367,10 +2404,12 @@ class VideoPanel(QWidget):
         )
         if not getattr(self, '_metadata_ready', False):
             file_name = Path(filepath).name
-            message = "✓ 2/4 VLC CUE 완료 — 3/4 메타데이터 분석 중..."
-            status_message = f"  ▌CUE  {file_name}  |  2/4 VLC 준비됨 — 3/4 메타데이터 분석 중"
-            self._set_loading_state(True, message)
+            message = "✓ CUE 완료 — PLAY 우선, 메타데이터는 백그라운드 분석"
+            status_message = f"  ▌CUE  {file_name}  |  PLAY 가능 — 메타데이터 백그라운드 분석 예정"
+            self._set_loading_state(False)
+            self.ai_lbl.setText(message)
             self.status_changed.emit(status_message)
+            self._start_pending_metadata_probe_after_cue(delay_ms=1200)
             return
         self._set_loading_state(False)
         self.ai_lbl.setText(message)
@@ -2381,7 +2420,7 @@ class VideoPanel(QWidget):
         self._cue_ready_seq += 1
         seq = self._cue_ready_seq
         start = time.monotonic()
-        timeout_sec = 2.0
+        timeout_sec = 1.4
         target_ms = max(0, int(target_ms))
         file_name = Path(filepath).name
         record_state_event('cue', 'cue prepare', file=file_name, target=f'{target_ms}ms', seq=load_seq)
@@ -2419,7 +2458,7 @@ class VideoPanel(QWidget):
                     f"  ▌CUE  {file_name}  |  4/4 재생 준비 완료  —  ▶ 재생버튼을 누르세요",
                 )
 
-            QTimer.singleShot(140, _complete_after_settle)
+            QTimer.singleShot(80, _complete_after_settle)
 
         def _poll():
             if seq != self._cue_ready_seq or not self._load_is_current(load_seq, filepath):
@@ -2434,8 +2473,8 @@ class VideoPanel(QWidget):
             # MXF는 preroll 전에는 get_length()가 0으로 남는 경우가 많다.
             # probe duration이 있으면 프리롤/seek 타이머가 지나간 뒤 CUE 완료로 본다.
             has_duration_hint = bool(media_len and media_len > 0) or bool(self.duration and self.duration > 0)
-            ready = elapsed >= 0.72 and has_duration_hint
-            fallback_ready = elapsed >= 1.15
+            ready = elapsed >= 0.45 and has_duration_hint
+            fallback_ready = elapsed >= 0.90
             if ready or fallback_ready:
                 if media_len and media_len > 0:
                     log.debug(f'VLC cue ready: {file_name} length={media_len}ms elapsed={elapsed:.2f}s')
@@ -2453,11 +2492,11 @@ class VideoPanel(QWidget):
                 )
                 self._empty_proxy.hide()
                 self._video_item.show()
-                QTimer.singleShot(120, _finish_cue)
+                QTimer.singleShot(70, _finish_cue)
                 return
 
             if elapsed < timeout_sec:
-                QTimer.singleShot(80, _poll)
+                QTimer.singleShot(50, _poll)
                 return
 
             if not has_duration_hint:
@@ -2466,7 +2505,7 @@ class VideoPanel(QWidget):
                 log.debug(f'VLC cue readiness timeout fallback: {file_name}')
             self._empty_proxy.hide()
             self._video_item.show()
-            QTimer.singleShot(120, _finish_cue)
+            QTimer.singleShot(70, _finish_cue)
 
         def _start_preroll():
             if seq != self._cue_ready_seq or not self._load_is_current(load_seq, filepath):
@@ -2477,9 +2516,9 @@ class VideoPanel(QWidget):
                 self._show_cue_first_frame(target_ms)
             except Exception as e:
                 log.debug(f'vlc cue preroll: {e}')
-            QTimer.singleShot(80, _poll)
+            QTimer.singleShot(50, _poll)
 
-        QTimer.singleShot(80, _start_preroll)
+        QTimer.singleShot(50, _start_preroll)
 
     def _stop_all(self):
         timing_t0 = time.monotonic()
@@ -2559,7 +2598,7 @@ class VideoPanel(QWidget):
         if not path.is_file():
             return False, '파일이 아닙니다', '폴더나 특수 경로는 열 수 없습니다.'
         if path.suffix.lower() not in VIDEO_EXTS:
-            return False, '지원하지 않는 파일 형식입니다', 'MXF 같은 지원 영상 파일을 선택하세요.'
+            return False, '지원하지 않는 파일 형식입니다', 'MXF/MP4 같은 지원 영상 파일을 선택하세요.'
         try:
             size = path.stat().st_size
         except PermissionError:
@@ -2567,7 +2606,7 @@ class VideoPanel(QWidget):
         except OSError as e:
             return False, '파일 정보를 읽을 수 없습니다', f'{e}\n{self._path_access_hint(filepath)}'
         if size <= 0:
-            return False, '빈 파일입니다', '파일 크기가 0바이트입니다. 정상 MXF 파일인지 확인하세요.'
+            return False, '빈 파일입니다', '파일 크기가 0바이트입니다. 정상 영상 파일인지 확인하세요.'
         try:
             with path.open('rb') as fh:
                 fh.read(4096)
@@ -2607,6 +2646,23 @@ class VideoPanel(QWidget):
             warnings.append('길이 정보 확인 실패 — 탐색/REM 표시가 제한될 수 있습니다')
         return True, '', '', warnings
 
+    def _metadata_audio_restart_required(self, info, was_fallback_audio):
+        if not was_fallback_audio:
+            return True
+        try:
+            audio_streams = int(info.get('audio_stream_count', 0) or 0)
+            channels = int(info.get('channels', 0) or 0)
+        except Exception:
+            return True
+        selected = self._get_selected_audio_channels()
+        if not selected:
+            return False
+        simple_first_stream = audio_streams <= 1 and channels <= 2
+        default_pair_only = all(ch in (1, 2) for ch in selected)
+        if simple_first_stream and default_pair_only:
+            return False
+        return True
+
     def _start_metadata_probe(self, filepath, load_t0, timings, load_seq=None):
         self._probe_seq += 1
         seq = self._probe_seq
@@ -2639,6 +2695,7 @@ class VideoPanel(QWidget):
             if warnings:
                 log.warning(f'async metadata probe warning: {file_name} | {"; ".join(warnings)}')
             apply_t0 = time.monotonic()
+            was_fallback_audio = self.audio_mix.is_running() and not self.audio_mix.active_layout_known()
             self._apply_probe_metadata(filepath, info, warnings, emit_loaded=True)
             apply_elapsed = time.monotonic() - apply_t0
             total_elapsed = time.monotonic() - load_t0
@@ -2658,7 +2715,11 @@ class VideoPanel(QWidget):
             )
             if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
                 self._reset_audio_recovery()
-                self._schedule_audio_mix(delay_ms=80, restart=True, lead_sec=0.0)
+                if self._metadata_audio_restart_required(info, was_fallback_audio):
+                    self._schedule_audio_mix(delay_ms=80, restart=True, lead_sec=0.0)
+                else:
+                    log.info(f'audio mix kept after metadata: {file_name} fallback stream already matches selected channels')
+                    record_state_event('audio-mix', 'kept after metadata', file=file_name)
 
         def _error(err, elapsed, t=thread):
             if _stale():
@@ -2678,6 +2739,35 @@ class VideoPanel(QWidget):
         thread.start()
         log.info(f'async metadata probe started: {file_name}')
         record_state_event('metadata', 'probe started', file=file_name, seq=load_seq)
+
+    def _schedule_metadata_probe(self, filepath, load_t0, timings, load_seq=None, delay_ms=650):
+        self._metadata_probe_timer_seq += 1
+        timer_seq = self._metadata_probe_timer_seq
+        file_name = Path(filepath).name
+
+        def _run():
+            if timer_seq != self._metadata_probe_timer_seq:
+                return
+            if not self._load_is_current(load_seq, filepath):
+                log.debug(f'stale delayed metadata probe skipped: {file_name}')
+                return
+            if getattr(self, '_metadata_ready', False):
+                return
+            self._pending_metadata_probe = None
+            self.status_changed.emit(f'  ⏳ 메타데이터 백그라운드 분석 중 — {file_name}')
+            self._start_metadata_probe(filepath, load_t0, list(timings), load_seq=load_seq)
+
+        QTimer.singleShot(max(0, int(delay_ms)), _run)
+
+    def _start_pending_metadata_probe_after_cue(self, delay_ms=650):
+        pending = getattr(self, '_pending_metadata_probe', None)
+        if not pending:
+            return
+        filepath, load_t0, timings, load_seq = pending
+        if not self._load_is_current(load_seq, filepath):
+            self._pending_metadata_probe = None
+            return
+        self._schedule_metadata_probe(filepath, load_t0, timings, load_seq=load_seq, delay_ms=delay_ms)
 
     def load_file(self, filepath):
         if self._same_path(filepath, self.cur_file):
@@ -2759,11 +2849,11 @@ class VideoPanel(QWidget):
                 break
         mark_step('list_select')
 
-        if Path(filepath).suffix.lower() == '.mxf':
+        if Path(filepath).suffix.lower() in DIRECT_VLC_EXTS:
             self._apply_provisional_metadata(filepath)
             mark_step('provisional_ui')
             self._set_loading_state(True, f"⏳ 2/4 VLC CUE 준비 중 — {Path(filepath).name}")
-            self.empty_label.setText('⏳  2/4 VLC로 MXF 원본 로딩 중...')
+            self.empty_label.setText('⏳  2/4 VLC로 원본 로딩 중...')
             self._empty_proxy.show(); self._video_item.hide()
             try:
                 vlc_set_t0 = time.monotonic()
@@ -2783,8 +2873,8 @@ class VideoPanel(QWidget):
                     seq=load_seq,
                     total=f'{time.monotonic() - load_t0:.3f}s',
                 )
+                self._pending_metadata_probe = (filepath, load_t0, list(timings), load_seq)
                 self._prepare_vlc_cue(filepath, 0, load_seq=load_seq)
-                self._start_metadata_probe(filepath, load_t0, list(timings), load_seq=load_seq)
             except Exception as e:
                 msg = friendly_error_text('vlc_load', e, filepath)
                 self.empty_label.setText(f'⚠ {msg}')
@@ -2910,8 +3000,8 @@ class VideoPanel(QWidget):
         self._start_loudness_analysis(filepath)
         mark_step('meter_loudness_start')
 
-        if Path(filepath).suffix.lower() == '.mxf':
-            self.empty_label.setText('⏳  2/4 VLC로 MXF 원본 로딩 중...')
+        if Path(filepath).suffix.lower() in DIRECT_VLC_EXTS:
+            self.empty_label.setText('⏳  2/4 VLC로 원본 로딩 중...')
             self._empty_proxy.show(); self._video_item.hide()
             try:
                 vlc_set_t0 = time.monotonic()
@@ -2959,7 +3049,7 @@ class VideoPanel(QWidget):
             # 캐시 없음 → 변환 시작
             ext = Path(filepath).suffix.lower()
             msg = '⏳  파일 변환 중...' if ext in ('.mp4','.mov','.m4v','.mkv','.avi','.mts','.m2ts') \
-                  else "⏳  MXF 변환 중...\n잠시만 기다려주세요"
+                  else "⏳  영상 변환 중...\n잠시만 기다려주세요"
             self.empty_label.setText(msg)
             self._empty_proxy.show(); self._video_item.hide()
             self._tc_thread = TranscodeThread(filepath, self._get_selected_ch_pairs())
@@ -3098,12 +3188,6 @@ class VideoPanel(QWidget):
                 cb.setChecked(ch_no in (1, 2) and cb.isEnabled())
             selected = self._get_selected_audio_channels()
         self._selected_chs = selected
-        if hasattr(self, 'meter_ctrl'):
-            if self.cur_file:
-                ch_count = self.cur_info.get('channels', 2)
-                self.meter_ctrl.start_file(
-                    self.cur_file, ch_count, self.player, (1, 2),
-                    self.cur_info.get('audio_stream_count', 0))
         if self.cur_file:
             self.player.audio_set_volume(0)
             self.audio_mix.set_channels(selected)
@@ -3112,6 +3196,7 @@ class VideoPanel(QWidget):
                 self._schedule_audio_mix(delay_ms=120, restart=True)
             label = "/".join(str(ch) for ch in selected)
             self.ai_lbl.setText(f"✓ CH {label} 믹스 출력  |  LKFS 기준은 1/2CH")
+            record_state_event('audio-mix', 'channel selection changed', file=Path(self.cur_file).name, channels=selected)
 
     def _apply_audio_channel(self):
         return
@@ -3136,9 +3221,6 @@ class VideoPanel(QWidget):
     def _start_audio_mix(self, pos_ms=None, lead_sec=None):
         if not self.cur_file:
             return
-        if not getattr(self, '_metadata_ready', False):
-            log.debug(f'audio mix delayed until metadata ready: {Path(self.cur_file).name}')
-            return
         if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
             return
         pos = self.player.position() if pos_ms is None else int(pos_ms)
@@ -3161,9 +3243,6 @@ class VideoPanel(QWidget):
 
     def _restart_audio_mix(self, pos_ms=None, lead_sec=None):
         if not self.cur_file:
-            return
-        if not getattr(self, '_metadata_ready', False):
-            log.debug(f'audio mix restart delayed until metadata ready: {Path(self.cur_file).name}')
             return
         if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
             return
@@ -3285,6 +3364,10 @@ class VideoPanel(QWidget):
         selected = self._get_selected_audio_channels()
         if not selected:
             return False
+        if not getattr(self, '_metadata_ready', False):
+            # MXF playback must keep video/audio together even while metadata
+            # is still probing. A fallback first-audio-stream output is expected.
+            return True
         try:
             audio_streams = int(self.cur_info.get('audio_stream_count', 0) or 0)
             channels = int(self.cur_info.get('channels', 0) or 0)
@@ -3522,8 +3605,11 @@ class VideoPanel(QWidget):
             self.status_changed.emit('  ⏳ CUE 준비 중입니다 — 잠시만 기다려주세요')
             return False
         if self.cur_file and not getattr(self, '_metadata_ready', False):
-            self.status_changed.emit('  ⏳ 메타데이터 확인 전입니다 — 잠시만 기다려주세요')
-            return False
+            if action == 'play_pause' and getattr(self, '_cue_ready', False):
+                pass
+            else:
+                self.status_changed.emit('  ⏳ 메타데이터 확인 전입니다 — 잠시만 기다려주세요')
+                return False
         now = time.monotonic()
         if now < self._transport_guard_until:
             log.debug(f'transport ignored action={action} prev={self._transport_guard_action}')
@@ -3579,7 +3665,7 @@ class VideoPanel(QWidget):
             self._cue_ready = False
             self._file_loaded_emitted = False
             self._set_loading_state(False)
-            self.empty_label.setText("▶\n\nMXF 파일을 열어주세요\n\n파일 추가 버튼 또는 파일 드래그로 불러오세요")
+            self.empty_label.setText("▶\n\nMXF / MP4 파일을 열어주세요\n\n파일 추가 버튼 또는 파일 드래그로 불러오세요")
             self._empty_proxy.show()
             self._video_item.hide()
             self._refresh_clip_list()
@@ -3718,9 +3804,9 @@ class VideoPanel(QWidget):
             self._led_timer.start()
             self.player.audio_set_volume(0)
             if getattr(self, '_first_audio_start_after_cue', False):
-                self._schedule_gated_audio_mix()
+                self._schedule_audio_mix(delay_ms=20)
             else:
-                self._schedule_audio_mix(delay_ms=60)
+                self._schedule_audio_mix(delay_ms=40)
             self._arm_play_start_watchdog('state')
         else:
             if self.cur_file:
