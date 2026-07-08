@@ -866,6 +866,18 @@ def _safe_cache_child(path):
     return resolved
 
 def _cache_entry_info(path):
+    original = Path(path)
+    if original.is_symlink():
+        return {
+            'name': original.name,
+            'path': str(original),
+            'is_dir': False,
+            'is_symlink': True,
+            'files': 0,
+            'dirs': 0,
+            'bytes': 0,
+            'modified': 0.0,
+        }
     path = _safe_cache_child(path)
     files = 0
     dirs = 0
@@ -901,6 +913,7 @@ def _cache_entry_info(path):
         'name': path.name,
         'path': str(path),
         'is_dir': path.is_dir(),
+        'is_symlink': False,
         'files': files,
         'dirs': dirs,
         'bytes': bytes_total,
@@ -981,9 +994,13 @@ def cleanup_runtime_cache():
     deleted_files = 0
     deleted_dirs = 0
     failed = []
+    skipped = []
     for item in before.get('entries', []):
         path = Path(item.get('path', ''))
         try:
+            if item.get('is_symlink') or path.is_symlink():
+                skipped.append(str(path))
+                continue
             target = _safe_cache_child(path)
             target.relative_to(root)
             if target.is_dir():
@@ -1006,6 +1023,7 @@ def cleanup_runtime_cache():
         'deleted_files': deleted_files,
         'deleted_dirs': deleted_dirs,
         'failed': failed,
+        'skipped': skipped,
     }
 
 def _safe_generated_root(path):
