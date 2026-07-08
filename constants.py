@@ -374,10 +374,13 @@ _ensure_runtime_dir(TMP_DIR)
 _ensure_runtime_dir(BACKUP_DIR)
 _ensure_runtime_dir(REPORT_DIR)
 
+def _file_stamp():
+    return datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+
 def _rotate_migration_log():
     try:
         if MIGRATION_LOG_PATH.exists() and MIGRATION_LOG_PATH.stat().st_size > MIGRATION_LOG_MAX_BYTES:
-            stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            stamp = _file_stamp()
             rotated = LOG_DIR / f'migration.log.{stamp}'
             MIGRATION_LOG_PATH.replace(rotated)
         backups = sorted(
@@ -1191,7 +1194,7 @@ def backup_file_snapshot(path, prefix, min_interval_sec=300, keep=10):
                 last = 0.0
         if min_interval_sec and now - last < float(min_interval_sec):
             return None
-        stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        stamp = _file_stamp()
         backup = BACKUP_DIR / f'{prefix}-{stamp}{path.suffix}'
         shutil.copy2(path, backup)
         try:
@@ -1207,7 +1210,7 @@ def backup_file_snapshot(path, prefix, min_interval_sec=300, keep=10):
 def _backup_corrupt_settings(exc):
     if not SETTINGS_PATH.exists():
         return None
-    stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    stamp = _file_stamp()
     backup = SETTINGS_PATH.with_name(f'{SETTINGS_PATH.stem}.corrupt-{stamp}{SETTINGS_PATH.suffix}')
     try:
         shutil.copy2(SETTINGS_PATH, backup)
@@ -1733,7 +1736,7 @@ def _diagnostic_db_status_text():
 def create_diagnostic_report(destination=None, runtime=None, max_log_lines=1500):
     """Create a compact zip report for field troubleshooting."""
     runtime = runtime or check_runtime_environment()
-    stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    stamp = _file_stamp()
     if destination:
         out = Path(destination)
         if out.suffix.lower() != '.zip':
@@ -2175,7 +2178,7 @@ def _rotate_large_log_file():
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         current = LOG_DIR / 'player.log'
         if current.exists() and current.stat().st_size > _LOG_MAX_BYTES:
-            stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            stamp = _file_stamp()
             rotated = LOG_DIR / f'player.log.{stamp}'
             current.replace(rotated)
             warnings.append(f'large log rotated: {rotated.name}')
