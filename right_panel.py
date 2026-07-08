@@ -3,6 +3,7 @@ right_panel.py — 오른쪽 탭 패널
 RightPanel: 파일 탐색기, 블랙 검출, 오디오 분석
 """
 import csv
+import os
 import sys
 import time
 from html import escape
@@ -814,7 +815,7 @@ class RightPanel(QWidget):
     def _write_qc_report_txt(self, path, rows):
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        tmp = target.with_name(f'.{target.name}.{int(time.time() * 1000)}.tmp')
+        tmp = target.with_name(f'.{target.name}.{time.time_ns()}.tmp')
         lines = []
         lines.append('MXF QC Player V.1.0 - QC 결과 리포트')
         lines.append('=' * 64)
@@ -847,7 +848,14 @@ class RightPanel(QWidget):
             lines.append(f"     경로: {row['경로']}")
             lines.append('')
         try:
-            tmp.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+            with tmp.open('w', encoding='utf-8') as fh:
+                fh.write('\n'.join(lines))
+                fh.write('\n')
+                fh.flush()
+                try:
+                    os.fsync(fh.fileno())
+                except Exception:
+                    pass
             tmp.replace(target)
         except Exception:
             try:
@@ -860,13 +868,17 @@ class RightPanel(QWidget):
     def _write_qc_report_csv(self, path, rows):
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        tmp = target.with_name(f'.{target.name}.{int(time.time() * 1000)}.tmp')
+        tmp = target.with_name(f'.{target.name}.{time.time_ns()}.tmp')
         try:
             with tmp.open('w', encoding='utf-8-sig', newline='') as fh:
                 writer = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
                 writer.writeheader()
                 writer.writerows(rows)
                 fh.flush()
+                try:
+                    os.fsync(fh.fileno())
+                except Exception:
+                    pass
             tmp.replace(target)
         except Exception:
             try:
