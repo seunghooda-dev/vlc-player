@@ -1029,6 +1029,8 @@ def _entry_newest_timestamp(path):
         try:
             for child in path.rglob('*'):
                 try:
+                    if child.is_symlink():
+                        continue
                     st = child.stat()
                     newest = max(newest, float(getattr(st, 'st_ctime', 0.0) or 0.0), float(st.st_mtime or 0.0))
                 except Exception:
@@ -1046,6 +1048,8 @@ def _entry_size(path):
         if path.is_dir():
             for child in path.rglob('*'):
                 try:
+                    if child.is_symlink():
+                        continue
                     if child.is_file():
                         total += int(child.stat().st_size)
                 except Exception:
@@ -1090,6 +1094,10 @@ def cleanup_old_generated_files(days=AUTO_CLEANUP_DAYS):
 
         for candidate in candidates:
             try:
+                original_candidate = Path(candidate)
+                if original_candidate.is_symlink():
+                    skipped.append(str(original_candidate))
+                    continue
                 target = _safe_generated_root(candidate)
                 target.relative_to(root)
                 if target == root:
