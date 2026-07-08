@@ -54,6 +54,7 @@ class Clip(Base):
     fps          = Column(Float)
     duration     = Column(Float)
     file_size    = Column(Integer)
+    file_mtime_ns = Column(Integer)
     bit_rate     = Column(Integer)
     channels     = Column(Integer)
     audio_stream_count = Column(Integer)
@@ -112,6 +113,7 @@ def _ensure_clip_qc_columns():
         "qc_summary": "VARCHAR",
         "qc_updated_at": "DATETIME",
         "audio_stream_count": "INTEGER DEFAULT 0",
+        "file_mtime_ns": "INTEGER DEFAULT 0",
     }
     try:
         with engine.begin() as conn:
@@ -435,9 +437,12 @@ def load_clip_metadata_hint(filepath):
         return {}
     p = Path(filepath)
     try:
-        current_size = int(p.stat().st_size)
+        stat = p.stat()
+        current_size = int(stat.st_size)
+        current_mtime_ns = int(getattr(stat, "st_mtime_ns", 0) or 0)
     except Exception:
         current_size = 0
+        current_mtime_ns = 0
     cid = _clip_id_for_path(filepath)
     try:
         with Session(engine) as s:
@@ -447,6 +452,10 @@ def load_clip_metadata_hint(filepath):
             stored_size = int(getattr(clip, "file_size", 0) or 0)
             if stored_size and current_size and stored_size != current_size:
                 log.debug(f"metadata hint ignored size mismatch: {p.name}")
+                return {}
+            stored_mtime_ns = int(getattr(clip, "file_mtime_ns", 0) or 0)
+            if stored_mtime_ns and current_mtime_ns and stored_mtime_ns != current_mtime_ns:
+                log.debug(f"metadata hint ignored modified-time mismatch: {p.name}")
                 return {}
             duration = float(getattr(clip, "duration", 0) or 0)
             width = int(getattr(clip, "width", 0) or 0)
@@ -460,6 +469,7 @@ def load_clip_metadata_hint(filepath):
                 "filepath": str(filepath),
                 "duration": duration,
                 "size": stored_size or current_size,
+                "mtime_ns": stored_mtime_ns or current_mtime_ns,
                 "bit_rate": int(getattr(clip, "bit_rate", 0) or 0),
                 "fps": fps,
                 "width": width,
@@ -547,6 +557,14 @@ def update_clip_qc(
 def save_clip(info):
     cid = _clip_id_for_path(info["filepath"])
     now = datetime.now()
+    mtime_ns = 0
+    try:
+        mtime_ns = int(Path(info["filepath"]).stat().st_mtime_ns)
+    except Exception:
+        try:
+            mtime_ns = int(info.get("mtime_ns", 0) or 0)
+        except Exception:
+            mtime_ns = 0
     with Session(engine) as s:
         clip = s.get(Clip, cid)
         if not clip:
@@ -561,6 +579,7 @@ def save_clip(info):
         clip.fps = info.get("fps",29.97)
         clip.duration = info.get("duration",0)
         clip.file_size = info.get("size",0)
+        clip.file_mtime_ns = mtime_ns
         clip.bit_rate = info.get("bit_rate",0)
         clip.channels = info.get("channels",0)
         clip.audio_stream_count = info.get("audio_stream_count",0)
