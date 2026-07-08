@@ -812,6 +812,9 @@ class RightPanel(QWidget):
         return rows
 
     def _write_qc_report_txt(self, path, rows):
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_name(f'.{target.name}.{int(time.time() * 1000)}.tmp')
         lines = []
         lines.append('MXF QC Player V.1.0 - QC 결과 리포트')
         lines.append('=' * 64)
@@ -843,13 +846,35 @@ class RightPanel(QWidget):
             lines.append(f"     갱신: {row['갱신시각'] or '-'}")
             lines.append(f"     경로: {row['경로']}")
             lines.append('')
-        Path(path).write_text('\n'.join(lines), encoding='utf-8')
+        try:
+            tmp.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+            tmp.replace(target)
+        except Exception:
+            try:
+                if tmp.exists():
+                    tmp.unlink()
+            except Exception:
+                pass
+            raise
 
     def _write_qc_report_csv(self, path, rows):
-        with Path(path).open('w', encoding='utf-8-sig', newline='') as fh:
-            writer = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
-            writer.writeheader()
-            writer.writerows(rows)
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_name(f'.{target.name}.{int(time.time() * 1000)}.tmp')
+        try:
+            with tmp.open('w', encoding='utf-8-sig', newline='') as fh:
+                writer = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
+                writer.writeheader()
+                writer.writerows(rows)
+                fh.flush()
+            tmp.replace(target)
+        except Exception:
+            try:
+                if tmp.exists():
+                    tmp.unlink()
+            except Exception:
+                pass
+            raise
 
     def _auto_save_qc_report(self, prefix='batch-qc'):
         rows = self._qc_report_rows()
