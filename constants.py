@@ -1894,6 +1894,13 @@ def release_heavy_analysis_slot(label=None):
         if not owner:
             return
         if label and owner != label:
+            record_state_event(
+                'analysis-limit',
+                'release skipped',
+                requested=label,
+                owner=owner,
+                elapsed=f'{max(0.0, time.monotonic() - _HEAVY_ANALYSIS_STARTED):.1f}s',
+            )
             return
         elapsed = max(0.0, time.monotonic() - _HEAVY_ANALYSIS_STARTED)
         record_state_event('analysis-limit', 'released', owner=owner, elapsed=f'{elapsed:.1f}s')
