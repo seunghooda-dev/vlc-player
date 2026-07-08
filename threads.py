@@ -421,10 +421,26 @@ class AudioAnalyzeThread(QThread):
             return None
 
     def _save_index_cache(self, path, data):
+        tmp_path = None
         try:
-            path.write_text(json.dumps(data, ensure_ascii=False), encoding='utf-8')
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path = path.with_name(f'{path.name}.{os.getpid()}.{_th.get_ident()}.tmp')
+            payload = json.dumps(data, ensure_ascii=False)
+            with tmp_path.open('w', encoding='utf-8') as fh:
+                fh.write(payload)
+                fh.flush()
+                try:
+                    os.fsync(fh.fileno())
+                except Exception:
+                    pass
+            tmp_path.replace(path)
         except Exception as e:
             log.debug(f'audio index cache save: {e}')
+            try:
+                if tmp_path and tmp_path.exists():
+                    tmp_path.unlink()
+            except Exception:
+                pass
 
     def _build_level_index(self, base_fc, ch_count, source_ch_count, basis):
         import numpy as _np
