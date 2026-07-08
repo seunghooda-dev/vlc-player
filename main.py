@@ -1378,9 +1378,9 @@ def _cleanup_tmp_files():
         # BASE_DIR에 남아있는 구버전 tmp 파일도 TMP_DIR로 이동
         for old_f in BASE_DIR.glob('_tmp_*.mp4'):
             _safe_legacy_tmp_move(old_f)
-        # TMP_DIR 현황
+        # TMP_DIR 현황. 하위 캐시(audio_index 등)까지 포함해 전체 tmp 용량을 제한한다.
         tmp_files = sorted(
-            (p for p in TMP_DIR.glob('*.mp4') if p.is_file() and not p.is_symlink()),
+            (p for p in TMP_DIR.rglob('*') if p.is_file() and not p.is_symlink()),
             key=lambda p: p.stat().st_mtime
         )
         total_mb = sum(p.stat().st_size for p in tmp_files) / 1024**2
