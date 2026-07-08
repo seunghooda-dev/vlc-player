@@ -290,8 +290,13 @@ def probe(filepath):
             timeout=15)
         if r.returncode != 0: return {}
         d = json.loads(r.stdout or "{}"); fmt = d.get("format",{})
+        try:
+            mtime_ns = int(Path(filepath).stat().st_mtime_ns)
+        except Exception:
+            mtime_ns = 0
         info = {"filename":Path(filepath).name,"filepath":filepath,
                 "duration":float(fmt.get("duration",0)),"size":int(fmt.get("size",0)),
+                "mtime_ns":mtime_ns,
                 "bit_rate":int(fmt.get("bit_rate",0) or 0),
                 "fps":29.97,"width":0,"height":0,"codec":"","channels":0,
                 "audio_stream_count":0,
