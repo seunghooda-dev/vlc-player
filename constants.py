@@ -1215,17 +1215,28 @@ def _backup_corrupt_settings(exc):
         return None
 
 def _write_settings_atomic(data):
-    tmp_path = SETTINGS_PATH.with_suffix(f'{SETTINGS_PATH.suffix}.tmp')
+    tmp_path = SETTINGS_PATH.with_name(
+        f'.{SETTINGS_PATH.name}.{os.getpid()}.{threading.get_ident()}.tmp'
+    )
     payload = json.dumps(data, ensure_ascii=False, indent=2)
-    with tmp_path.open('w', encoding='utf-8') as fh:
-        fh.write(payload)
-        fh.write('\n')
-        fh.flush()
+    try:
+        SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with tmp_path.open('w', encoding='utf-8') as fh:
+            fh.write(payload)
+            fh.write('\n')
+            fh.flush()
+            try:
+                os.fsync(fh.fileno())
+            except Exception:
+                pass
+        tmp_path.replace(SETTINGS_PATH)
+    except Exception:
         try:
-            os.fsync(fh.fileno())
+            if tmp_path.exists():
+                tmp_path.unlink()
         except Exception:
             pass
-    tmp_path.replace(SETTINGS_PATH)
+        raise
 
 def load_settings():
     global _settings_cache
