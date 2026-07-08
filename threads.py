@@ -411,14 +411,33 @@ class AudioAnalyzeThread(QThread):
                 return None
             data = json.loads(path.read_text(encoding='utf-8'))
             if data.get('version') != 2:
+                self._discard_index_cache(path, 'version mismatch')
                 return None
             levels = data.get('levels_db')
             if not isinstance(levels, list):
+                self._discard_index_cache(path, 'invalid levels')
                 return None
             return data
         except Exception as e:
             log.debug(f'audio index cache load: {e}')
+            self._discard_index_cache(path, 'load failed')
             return None
+
+    def _discard_index_cache(self, path, reason='invalid'):
+        try:
+            target = Path(path).resolve()
+            root = (TMP_DIR / 'audio_index').resolve()
+            try:
+                target.relative_to(root)
+            except ValueError:
+                log.warning(f'audio index cache discard skipped outside tmp: {target}')
+                return
+            if not target.is_file() or target.is_symlink():
+                return
+            target.unlink()
+            log.debug(f'audio index cache discarded ({reason}): {target.name}')
+        except Exception as e:
+            log.debug(f'audio index cache discard failed: {e}')
 
     def _save_index_cache(self, path, data):
         tmp_path = None
