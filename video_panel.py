@@ -1862,27 +1862,55 @@ class VideoPanel(QWidget):
 
     def _evict_tc_cache(self, max_files=10, max_gb=2.0):
         """tmp 캐시 정리 — 파일 수/용량 초과 시 오래된 것 삭제"""
+        def _is_within_tmp(path):
+            try:
+                target = Path(path).resolve()
+                root = TMP_DIR.resolve()
+                return target == root or root in target.parents
+            except Exception:
+                return False
+
+        def _cache_record(path_text):
+            try:
+                if not path_text:
+                    return None
+                target = Path(path_text).resolve()
+                if not _is_within_tmp(target):
+                    log.warning(f'cache record skipped outside TMP_DIR: {target}')
+                    return None
+                if target.is_symlink() or not target.is_file():
+                    return None
+                return (str(target), target.stat().st_size)
+            except Exception as e:
+                log.debug(f'cache record skipped: {e}')
+                return None
+
         def _safe_unlink_cache(path_text):
             try:
                 target = Path(path_text).resolve()
-                root = TMP_DIR.resolve()
-                if root != target and root not in target.parents:
+                if not _is_within_tmp(target):
                     log.warning(f'cache evict skipped outside TMP_DIR: {target}')
                     return 0
-                size = target.stat().st_size if target.exists() else 0
+                if target.is_symlink() or not target.is_file():
+                    return 0
+                size = target.stat().st_size
                 target.unlink(missing_ok=True)
                 return size
             except Exception as e:
-                log.warning(f'evict unlink {path_text}: {e}')
+                log.debug(f'evict unlink {path_text}: {e}')
                 return 0
 
         # 유효한 파일만 남김
-        valid = [(fp, tp) for fp, tp in self._tc_cache.items()
-                 if tp and Path(tp).exists()]
+        valid = []
+        for fp, tp in self._tc_cache.items():
+            rec = _cache_record(tp)
+            if rec:
+                valid.append((fp, rec[0], rec[1]))
         # 용량 계산
-        total_bytes = sum(Path(tp).stat().st_size for _, tp in valid)
+        total_bytes = sum(size for _, _, size in valid)
         # 파일 수 또는 용량 초과 시 오래된 것부터 제거
-        order = [fp for fp in self._tc_cache_order if fp in dict(valid)]
+        valid_by_fp = {fp: tp for fp, tp, _ in valid}
+        order = [fp for fp in self._tc_cache_order if fp in valid_by_fp]
         while (len(order) > max_files or
                total_bytes > max_gb * 1024**3) and order:
             oldest_fp = order.pop(0)
