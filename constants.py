@@ -1229,6 +1229,7 @@ def backup_file_snapshot(path, prefix, min_interval_sec=300, keep=10):
     if not path.exists() or not path.is_file():
         return None
     try:
+        BACKUP_DIR.mkdir(parents=True, exist_ok=True)
         now = time.time()
         marker = BACKUP_DIR / f'.{prefix}.last'
         last = 0.0
@@ -1242,10 +1243,23 @@ def backup_file_snapshot(path, prefix, min_interval_sec=300, keep=10):
         stamp = _file_stamp()
         backup = BACKUP_DIR / f'{prefix}-{stamp}{path.suffix}'
         shutil.copy2(path, backup)
+        marker_tmp = None
         try:
-            marker.write_text(str(now), encoding='utf-8')
+            marker_tmp = marker.with_name(f'.{marker.name}.{os.getpid()}.{threading.get_ident()}.tmp')
+            with marker_tmp.open('w', encoding='utf-8') as fh:
+                fh.write(str(now))
+                fh.flush()
+                try:
+                    os.fsync(fh.fileno())
+                except Exception:
+                    pass
+            marker_tmp.replace(marker)
         except Exception:
-            pass
+            try:
+                if marker_tmp and marker_tmp.exists():
+                    marker_tmp.unlink()
+            except Exception:
+                pass
         _rotate_named_backups(prefix, keep=keep)
         return backup
     except Exception as e:
