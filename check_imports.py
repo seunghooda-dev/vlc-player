@@ -125,6 +125,10 @@ def check_core_logic():
     class MissingFileProbe(Probe):
         _path_exists = staticmethod(lambda value: False)
 
+    class FilterProbe(Probe):
+        def __init__(self, key):
+            self._filter_key = key
+
     try:
         status, issues = RightPanel._metadata_qc_summary(Probe(), {}, 'C:/sample/bad.mxf')
         if status != '확인 필요' or issues != ['메타데이터 확인 실패']:
@@ -203,6 +207,20 @@ def check_core_logic():
             actual, _ = RightPanel._file_status_badge(Probe(), file_state)
             if actual != expected:
                 errors.append(f"  FAIL {label}: {actual} != {expected}")
+        filter_cases = [
+            ('normal', {'black': 'ok', 'mute': 'ok', 'freeze': ''}, True, 'normal includes black/mute normal'),
+            ('normal', {'black': 'ok', 'mute': 'ok', 'freeze': 'found'}, False, 'normal excludes freeze issue'),
+            ('done', {'black': 'found', 'mute': 'ok', 'freeze': ''}, True, 'done includes black/mute completed'),
+            ('done', {'black': 'ok', 'mute': '', 'freeze': ''}, False, 'done excludes mute pending'),
+            ('issues', {'black': 'ok', 'mute': 'error', 'freeze': ''}, True, 'issues includes error'),
+            ('issues', {'black': 'ok', 'mute': 'ok', 'freeze': ''}, False, 'issues excludes clean partial normal'),
+            ('freeze', {'black': 'ok', 'mute': 'ok', 'freeze': 'found'}, True, 'freeze filter includes freeze issue'),
+            ('error', {'black': 'ok', 'mute': 'error', 'freeze': 'found'}, True, 'error filter includes any error'),
+        ]
+        for key, file_state, expected, label in filter_cases:
+            actual = RightPanel._file_matches_filter(FilterProbe(key), file_state)
+            if actual is not expected:
+                errors.append(f"  FAIL filter {label}: {actual} != {expected}")
         qc_summary_cases = [
             (qc_summary_from_status('ok', 'ok', ''), '블랙/무음 정상', 'black/mute ok without freeze'),
             (qc_summary_from_status('ok', 'ok', 'ok'), '정상', 'black/mute/freeze ok'),
