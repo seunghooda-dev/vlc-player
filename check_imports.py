@@ -680,7 +680,7 @@ def check_core_logic():
             errors.append(f"  FAIL QC summary copy unanalyzed count should be hidden: {summary_text}")
         if '첫문제: 블랙 00:00:01;00' not in summary_text:
             errors.append(f"  FAIL QC summary copy first issue: {summary_text}")
-        if '메타: 메타 확인: DF 타임코드 아님, 소스 TC 없음 외 1' not in summary_text:
+        if '메타: DF 타임코드 아님, 소스 TC 없음 외 1' not in summary_text:
             errors.append(f"  FAIL QC summary copy metadata issue: {summary_text}")
         if '블랙구간: 00:00:01;00>00:00:02;00(1.000s)' not in summary_text:
             errors.append(f"  FAIL QC summary copy ranges: {summary_text}")

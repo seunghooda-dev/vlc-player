@@ -733,7 +733,7 @@ class RightPanel(QWidget):
         )
 
     @staticmethod
-    def _metadata_issue_text(record, limit=2):
+    def _metadata_issue_text(record, limit=2, include_label=True):
         record = record if isinstance(record, dict) else {}
         meta_status = str(record.get('meta_status') or '').strip()
         if not meta_status or meta_status == '정상':
@@ -747,11 +747,12 @@ class RightPanel(QWidget):
             except Exception:
                 issue_parts = []
         if not issue_parts:
-            return '메타 확인'
+            return '메타 확인' if include_label else '확인 필요'
         limit = max(1, _safe_int(limit, 2))
         shown = issue_parts[:limit]
         suffix = f" 외 {len(issue_parts) - limit}" if len(issue_parts) > limit else ''
-        return f"메타 확인: {', '.join(shown)}{suffix}"
+        text = f"{', '.join(shown)}{suffix}"
+        return f"메타 확인: {text}" if include_label else text
 
     def _file_meta_issue_hint_html(self, f):
         hint = self._metadata_issue_text(f)
@@ -1984,7 +1985,7 @@ class RightPanel(QWidget):
         first_issue = self._first_qc_issue_text(record)
         if first_issue:
             lines.append(f"첫문제: {first_issue}")
-        meta_issue = RightPanel._metadata_issue_text(record)
+        meta_issue = RightPanel._metadata_issue_text(record, include_label=False)
         if meta_issue:
             lines.append(f"메타: {meta_issue}")
         ranges = (
