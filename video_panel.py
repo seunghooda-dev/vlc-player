@@ -1515,6 +1515,18 @@ class VideoPanel(QWidget):
             return value
         return []
 
+    def _video_file_path(self, filepath):
+        try:
+            text = str(filepath or '').strip()
+            if not text:
+                return None
+            path = Path(text)
+            if path.exists() and path.is_file() and path.suffix.lower() in VIDEO_EXTS:
+                return path
+        except Exception:
+            pass
+        return None
+
     def _nominal_fps(self):
         return max(1, int(round(self._media_fps())))
 
@@ -1741,12 +1753,10 @@ class VideoPanel(QWidget):
 
     def _remember_recent_file(self, filepath, limit=12):
         try:
-            if not filepath:
+            p = self._video_file_path(filepath)
+            if not p:
                 return
             limit = max(1, self._safe_int_value(limit, 12))
-            p = Path(filepath)
-            if not p.exists() or p.suffix.lower() not in VIDEO_EXTS:
-                return
             fp = str(p)
             recent_files = []
             for item in self._settings_entries(self._settings.get('recent_files')):
@@ -1774,10 +1784,12 @@ class VideoPanel(QWidget):
             log.debug(f'recent file save: {e}')
 
     def _add_file_to_list(self, filepath):
-        if not filepath or not Path(filepath).exists():
+        p = self._video_file_path(filepath)
+        if not p:
             return False
-        existing_paths = {str(x.get("filepath", "")) for x in self._file_records()}
-        if str(filepath) not in existing_paths:
+        filepath = str(p)
+        already_exists = any(self._same_path(x.get("filepath"), filepath) for x in self._file_records())
+        if not already_exists:
             self._files.append(self._new_file_record(filepath))
             self._remember_recent_file(filepath)
             return True
@@ -1788,7 +1800,8 @@ class VideoPanel(QWidget):
         return [f for f in (getattr(self, '_files', []) or []) if isinstance(f, dict)]
 
     def _new_file_record(self, filepath):
-        p = Path(filepath)
+        p = self._video_file_path(filepath) or Path(filepath)
+        filepath = str(p)
         qc = load_qc_status(filepath)
         size = _path_size(p)
         return {
@@ -2150,9 +2163,11 @@ class VideoPanel(QWidget):
             self.status_changed.emit('  ⏳ 파일 로드 중입니다 — 완료 후 다시 선택하세요')
             log.info(f'recent file cue ignored while loading: {Path(filepath).name if filepath else "?"}')
             return
-        if not filepath or not Path(filepath).exists():
+        p = self._video_file_path(filepath)
+        if not p:
             self.status_changed.emit(f"  ⚠ 최근 파일을 찾을 수 없습니다: {filepath or '?'}")
             return
+        filepath = str(p)
         is_new = self._add_file_to_list(filepath)
         self._refresh_clip_list()
         if is_new:
@@ -2879,7 +2894,10 @@ class VideoPanel(QWidget):
     def _quick_file_preflight(self, filepath):
         if not filepath:
             return False, '파일을 찾을 수 없습니다', '파일 경로가 비어 있습니다.'
-        path = Path(filepath)
+        try:
+            path = Path(str(filepath).strip())
+        except Exception as e:
+            return False, '파일 경로가 올바르지 않습니다', str(e)
         if not path.exists():
             return False, '파일을 찾을 수 없습니다', self._path_access_hint(filepath)
         if not path.is_file():
