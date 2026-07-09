@@ -291,6 +291,7 @@ def check_core_logic():
         class MetadataRestoreProbe(Probe):
             _restore_metadata_qc_from_hint = RightPanel._restore_metadata_qc_from_hint
             _clear_stale_record_state = RightPanel._clear_stale_record_state
+            _ensure_record_file_snapshot = RightPanel._ensure_record_file_snapshot
             _snapshot_check_due = RightPanel._snapshot_check_due
             _record_file_snapshot_changed = RightPanel._record_file_snapshot_changed
             _record_file_snapshot = lambda self, record: getattr(self, '_snapshot', (0, 0))
@@ -392,6 +393,25 @@ def check_core_logic():
                 errors.append(f"  FAIL stale snapshot force bypass: {forced_record}")
             if forced_record.get('black') != '' or forced_record.get('black_count') != 0 or forced_record.get('black_ranges') != []:
                 errors.append(f"  FAIL stale snapshot force clear: {forced_record}")
+
+            legacy_record = {
+                'filepath': 'C:/sample/legacy.mxf',
+                'black': 'found',
+                'black_count': 1,
+                'black_ranges': [{'start': 1.0}],
+            }
+            stale_probe._snapshot = (321, 33)
+            if RightPanel._clear_stale_record_state(stale_probe, legacy_record, force=True):
+                errors.append(f"  FAIL legacy snapshot should backfill without clearing: {legacy_record}")
+            if legacy_record.get('size') != 321 or legacy_record.get('mtime_ns') != 33:
+                errors.append(f"  FAIL legacy snapshot backfill: {legacy_record}")
+            if legacy_record.get('black') != 'found':
+                errors.append(f"  FAIL legacy snapshot backfill mutated QC: {legacy_record}")
+            stale_probe._snapshot = (400, 44)
+            if not RightPanel._clear_stale_record_state(stale_probe, legacy_record, force=True):
+                errors.append(f"  FAIL legacy snapshot subsequent stale clear: {legacy_record}")
+            if legacy_record.get('black') != '' or legacy_record.get('black_count') != 0 or legacy_record.get('black_ranges') != []:
+                errors.append(f"  FAIL legacy snapshot subsequent clear values: {legacy_record}")
         finally:
             rpm.load_clip_metadata_hint = original_hint_loader
 

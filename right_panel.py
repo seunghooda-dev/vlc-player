@@ -1194,13 +1194,32 @@ class RightPanel(QWidget):
         mtime_changed = bool(stored_mtime_ns and current_mtime_ns and stored_mtime_ns != current_mtime_ns)
         return size_changed or mtime_changed
 
+    def _ensure_record_file_snapshot(self, record):
+        if not isinstance(record, dict):
+            return False
+        stored_size = _safe_int(record.get('size', 0), 0)
+        stored_mtime_ns = _safe_int(record.get('mtime_ns', 0), 0)
+        if stored_size or stored_mtime_ns:
+            return True
+        size, mtime_ns = self._record_file_snapshot(record)
+        if size:
+            record['size'] = size
+        if mtime_ns:
+            record['mtime_ns'] = mtime_ns
+        return bool(size or mtime_ns)
+
     def _snapshot_check_due(self, record, force=False):
         if not isinstance(record, dict):
             return False
         stored_size = _safe_int(record.get('size', 0), 0)
         stored_mtime_ns = _safe_int(record.get('mtime_ns', 0), 0)
         if not stored_size and not stored_mtime_ns:
-            return False
+            if not self._ensure_record_file_snapshot(record):
+                return False
+            stored_size = _safe_int(record.get('size', 0), 0)
+            stored_mtime_ns = _safe_int(record.get('mtime_ns', 0), 0)
+            if not stored_size and not stored_mtime_ns:
+                return False
         now = time.monotonic()
         if force:
             record['_snapshot_checked_at'] = now
