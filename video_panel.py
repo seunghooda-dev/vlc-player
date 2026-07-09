@@ -2415,6 +2415,14 @@ class VideoPanel(QWidget):
             log.debug(f"metadata hint applied before probe: {p.name}")
         return info
 
+    @classmethod
+    def _provisional_audio_mix_layout(cls, info):
+        if not isinstance(info, dict) or not info.get("metadata_hint"):
+            return 0, 0
+        audio_streams = max(0, cls._safe_int_value(info.get("audio_stream_count", 0), 0))
+        channels = max(0, cls._safe_int_value(info.get("channels", 0), 0))
+        return audio_streams, channels
+
     def _apply_provisional_metadata(self, filepath):
         p = Path(filepath)
         info = self._provisional_info(filepath)
@@ -2458,7 +2466,8 @@ class VideoPanel(QWidget):
             cb.setChecked(ch_no in (1, 2))
             cb.setEnabled(ch_no <= provisional_ch)
         self._selected_chs = [1, 2]
-        self.audio_mix.set_file(filepath, 0, 0)
+        mix_streams, mix_channels = self._provisional_audio_mix_layout(info)
+        self.audio_mix.set_file(filepath, mix_streams, mix_channels)
         self.audio_mix.set_channels(self._selected_chs)
         # Metadata is intentionally delayed for playback responsiveness, but
         # meters should still appear immediately with a sensible provisional rail.
@@ -2766,7 +2775,7 @@ class VideoPanel(QWidget):
             self._set_loading_state(False)
             self.ai_lbl.setText(message)
             self.status_changed.emit(status_message)
-            self._start_pending_metadata_probe_after_cue(delay_ms=1200)
+            self._start_pending_metadata_probe_after_cue(delay_ms=350)
             return
         self._set_loading_state(False)
         self.ai_lbl.setText(message)

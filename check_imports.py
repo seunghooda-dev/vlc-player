@@ -109,7 +109,7 @@ def check_core_logic():
         from right_panel import RightPanel
         from constants import DEFAULT_SETTINGS, VIDEO_EXTS, _normalize_settings
         from db_models import frames_to_tc, is_df_fps, qc_summary_from_status, tc_to_frames
-        from video_panel import AudioMixPlayer, DIRECT_VLC_EXTS
+        from video_panel import AudioMixPlayer, DIRECT_VLC_EXTS, VideoPanel
     except Exception as e:
         return [f"  FAIL core logic import: {e}"]
 
@@ -257,6 +257,19 @@ def check_core_logic():
         audio_mix.set_channels([8, 7])
         if audio_mix.channels != [8, 7]:
             errors.append(f"  FAIL audio mix channel upper bound: {audio_mix.channels}")
+        hinted_layout = VideoPanel._provisional_audio_mix_layout({
+            'metadata_hint': True,
+            'audio_stream_count': 8,
+            'channels': 8,
+        })
+        if hinted_layout != (8, 8):
+            errors.append(f"  FAIL provisional hinted audio layout: {hinted_layout}")
+        guessed_layout = VideoPanel._provisional_audio_mix_layout({
+            'audio_stream_count': 8,
+            'channels': 8,
+        })
+        if guessed_layout != (0, 0):
+            errors.append(f"  FAIL provisional guessed audio layout: {guessed_layout}")
 
         required_video_exts = {'.mxf', '.mp4'}
         missing_video_exts = sorted(required_video_exts - set(VIDEO_EXTS))
