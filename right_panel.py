@@ -2706,6 +2706,11 @@ class RightPanel(QWidget):
         """Abort running analysis threads and invalidate their queued UI callbacks."""
         had_work = False
         active_kind = getattr(self, '_analysis_active', None)
+        active_file = (
+            getattr(self, '_analysis_seq_file', None)
+            or getattr(self, '_batch_current', None)
+            or getattr(self, f'_{active_kind}_file', None)
+        )
         self._analysis_seq += 1
         self._analysis_seq_kind = None
         self._analysis_seq_file = None
@@ -2760,6 +2765,7 @@ class RightPanel(QWidget):
                 self.freeze_status.setText(f"  ⏹ {reason} — 프리즈 검출 중단")
             except Exception:
                 pass
+        self._clear_cancelled_analysis_state(active_file)
         self._finish_cancel_elapsed_timer(active_kind)
         if had_work:
             try:
@@ -2782,6 +2788,31 @@ class RightPanel(QWidget):
             log.info(f'batch qc cancelled: {reason}')
         self._finish_analysis_mode()
         return had_work
+
+    def _clear_cancelled_analysis_state(self, filepath=None):
+        records = self._file_records()
+        candidates = []
+        target = self._file_path_text(filepath)
+        for record in records:
+            fp = self._file_path_text(record.get('filepath'))
+            if target and fp == target:
+                candidates.append(fp)
+            elif record.get('analysis'):
+                candidates.append(fp)
+        seen = set()
+        for fp in candidates:
+            if not fp or fp in seen:
+                continue
+            seen.add(fp)
+            try:
+                if hasattr(self.vp, '_set_file_status'):
+                    self.vp._set_file_status(fp, analysis=None)
+                else:
+                    record = self._file_record_for_path(fp)
+                    if record is not None:
+                        record['analysis'] = None
+            except Exception as e:
+                log.debug(f'clear cancelled analysis state: {self._path_name(fp)} {e}')
 
     def set_loading_state(self, loading):
         enabled = not bool(loading)

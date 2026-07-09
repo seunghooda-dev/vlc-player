@@ -876,6 +876,33 @@ def check_core_logic():
         if elapsed_cancel_probe.calls != expected_elapsed_cancel:
             errors.append(f"  FAIL cancel elapsed timer routing: {elapsed_cancel_probe.calls}")
 
+        class ClearAnalysisProbe:
+            _clear_cancelled_analysis_state = RightPanel._clear_cancelled_analysis_state
+            _file_path_text = staticmethod(RightPanel._file_path_text)
+            _path_name = staticmethod(RightPanel._path_name)
+
+            def __init__(self):
+                self.cleared = []
+                self.vp = type('VP', (), {})()
+                self.vp._set_file_status = lambda fp, **changes: self.cleared.append((fp, changes))
+                self.records = [
+                    {'filepath': 'C:/qc/active.mxf', 'analysis': 'black'},
+                    {'filepath': 'C:/qc/stale.mxf', 'analysis': 'mute'},
+                    {'filepath': 'C:/qc/done.mxf', 'analysis': None},
+                ]
+
+            def _file_records(self):
+                return self.records
+
+        clear_probe = ClearAnalysisProbe()
+        RightPanel._clear_cancelled_analysis_state(clear_probe, 'C:/qc/active.mxf')
+        expected_clear = [
+            ('C:/qc/active.mxf', {'analysis': None}),
+            ('C:/qc/stale.mxf', {'analysis': None}),
+        ]
+        if clear_probe.cleared != expected_clear:
+            errors.append(f"  FAIL clear cancelled analysis state: {clear_probe.cleared}")
+
         class RemoveProbe(Probe):
             _is_video_file_path = staticmethod(RightPanel._is_video_file_path)
             _same_path_text = staticmethod(RightPanel._same_path_text)
