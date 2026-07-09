@@ -1554,6 +1554,26 @@ class VideoPanel(QWidget):
             count = max(2, max((self._safe_int_value(ch, 0) for ch in selected), default=0))
         return max(0, min(8, count))
 
+    def _audio_channel_display_text(self, info=None):
+        info = info or getattr(self, 'cur_info', {}) or {}
+        streams = max(0, self._safe_int_value(info.get('audio_stream_count', 0), 0))
+        channels = max(0, self._safe_int_value(info.get('channels', 0), 0))
+        source_count = max(streams, channels)
+        if source_count <= 0:
+            return "0CH"
+        visible_count = max(1, min(8, source_count))
+        if source_count > visible_count:
+            return f"{visible_count}CH/{source_count}CH"
+        return f"{visible_count}CH"
+
+    def _set_audio_channel_display(self, info=None):
+        text = self._audio_channel_display_text(info)
+        self.lbl_ch.setText(text)
+        if "/" in text:
+            self.lbl_ch.setToolTip("앞 숫자: 표시/출력 가능 채널, 뒤 숫자: 원본 오디오 채널")
+        else:
+            self.lbl_ch.setToolTip("표시/출력 오디오 채널 수")
+
     def _metadata_or_cue_ready(self):
         return bool(
             getattr(self, '_metadata_ready', False)
@@ -2615,7 +2635,10 @@ class VideoPanel(QWidget):
             max(0, self._safe_int_value(info.get("channels", 0), 0)),
         )
         provisional_ch = max(1, min(8, hinted_ch)) if hinted_ch else (8 if p.suffix.lower() == ".mxf" else 2)
-        self.lbl_ch.setText(f"{provisional_ch}CH")
+        self._set_audio_channel_display({
+            'audio_stream_count': provisional_ch,
+            'channels': provisional_ch,
+        })
         for cb, ch_no in self._ch_checks:
             cb.setChecked(ch_no in (1, 2))
             cb.setEnabled(ch_no <= provisional_ch)
@@ -2674,7 +2697,7 @@ class VideoPanel(QWidget):
         audio_streams = max(0, self._safe_int_value(info.get('audio_stream_count', 0), 0))
         stream_count = max(audio_streams, ch_count)
         meter_ch_count = self._meter_channel_count(info)
-        self.lbl_ch.setText(f"{stream_count}CH")
+        self._set_audio_channel_display(info)
         first_enabled = None
         for cb, ch_no in self._ch_checks:
             enabled = ch_no <= stream_count
@@ -3531,7 +3554,7 @@ class VideoPanel(QWidget):
         audio_streams = max(0, self._safe_int_value(info.get('audio_stream_count', 0), 0))
         stream_count = max(audio_streams, ch_count)
         meter_ch_count = self._meter_channel_count(info)
-        self.lbl_ch.setText(f"{stream_count}CH")
+        self._set_audio_channel_display(info)
         # 파일 채널 수에 따라 체크박스 활성화/비활성화
         first_enabled = None
         for cb, ch_no in self._ch_checks:

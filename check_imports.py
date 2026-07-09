@@ -1370,6 +1370,16 @@ def check_core_logic():
         )
         if ready_channel_controls != 8:
             errors.append(f"  FAIL ready metadata channel controls: {ready_channel_controls}")
+        class ChannelDisplayProbe:
+            _safe_int_value = staticmethod(VideoPanel._safe_int_value)
+            _audio_channel_display_text = VideoPanel._audio_channel_display_text
+        display_probe = ChannelDisplayProbe()
+        if VideoPanel._audio_channel_display_text(display_probe, {'audio_stream_count': 16, 'channels': 1}) != '8CH/16CH':
+            errors.append("  FAIL capped source channel display text")
+        if VideoPanel._audio_channel_display_text(display_probe, {'audio_stream_count': 8, 'channels': 1}) != '8CH':
+            errors.append("  FAIL 8-channel display text")
+        if VideoPanel._audio_channel_display_text(display_probe, {'audio_stream_count': 0, 'channels': 0}) != '0CH':
+            errors.append("  FAIL no-audio channel display text")
         class AudioRestartProbe:
             _safe_int_value = staticmethod(VideoPanel._safe_int_value)
             _metadata_audio_restart_required = VideoPanel._metadata_audio_restart_required
