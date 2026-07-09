@@ -524,21 +524,11 @@ class RightPanel(QWidget):
             return "뮤트 검사중", C['teal']
         if analysis == "freeze":
             return "프리즈 검사중", C['purple']
-        if f.get("black") == "error" or f.get("mute") == "error" or f.get("freeze") == "error":
-            return "검사 오류", C['red']
-        found = []
-        if f.get("black") == "found":
-            found.append("블랙")
-        if f.get("mute") == "found":
-            found.append("무음")
-        if f.get("freeze") == "found":
-            found.append("프리즈")
-        if found:
-            return f"{'/'.join(found)} 있음", C['red']
-        if f.get("black") == "ok" and f.get("mute") == "ok" and f.get("freeze") == "ok":
-            return "정상", C['green']
-        if f.get("black") == "ok" and f.get("mute") == "ok":
-            return "블랙/무음 정상", C['green']
+        summary = qc_summary_from_status(f.get("black"), f.get("mute"), f.get("freeze"))
+        if summary == "검사 오류" or "있음" in summary:
+            return summary, C['red']
+        if summary in ("정상", "블랙/무음 정상"):
+            return summary, C['green']
         if f.get("playing"):
             return "재생중", C['green']
         if is_cue or f.get("cue"):

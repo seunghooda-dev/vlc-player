@@ -193,6 +193,16 @@ def check_core_logic():
             errors.append(f"  FAIL status summary black/mute count: {status_summary}")
         if "복합 문제 1" not in status_summary:
             errors.append(f"  FAIL status summary complex count: {status_summary}")
+        badge_cases = [
+            ({'black': 'ok', 'mute': 'ok', 'freeze': ''}, '블랙/무음 정상', 'partial badge'),
+            ({'black': 'ok', 'mute': 'ok', 'freeze': 'ok'}, '정상', 'normal badge'),
+            ({'black': 'found', 'mute': 'ok', 'freeze': 'found'}, '블랙/프리즈 있음', 'multi issue badge'),
+            ({'black': 'ok', 'mute': 'error', 'freeze': ''}, '검사 오류', 'error badge'),
+        ]
+        for file_state, expected, label in badge_cases:
+            actual, _ = RightPanel._file_status_badge(Probe(), file_state)
+            if actual != expected:
+                errors.append(f"  FAIL {label}: {actual} != {expected}")
         qc_summary_cases = [
             (qc_summary_from_status('ok', 'ok', ''), '블랙/무음 정상', 'black/mute ok without freeze'),
             (qc_summary_from_status('ok', 'ok', 'ok'), '정상', 'black/mute/freeze ok'),
