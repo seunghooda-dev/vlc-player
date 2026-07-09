@@ -2929,7 +2929,7 @@ class VideoPanel(QWidget):
             log.debug(msg)
 
     def _show_file_load_error(self, title, detail='', filepath=None, replace_stage=False):
-        name = Path(filepath).name if filepath else '?'
+        name = self._display_file_name(filepath, '?')
         self.ai_lbl.setText(f'⚠ {title}')
         self.status_changed.emit(f'  ⚠ {title} — {name}')
         if replace_stage or not self.cur_file:
@@ -3127,8 +3127,21 @@ class VideoPanel(QWidget):
         self._schedule_metadata_probe(filepath, load_t0, timings, load_seq=load_seq, delay_ms=delay_ms)
 
     def load_file(self, filepath):
+        p = self._video_file_path(filepath)
+        if not p:
+            ok, title, detail = self._quick_file_preflight(filepath)
+            if ok:
+                title = '파일을 찾을 수 없습니다'
+                detail = '파일 경로가 올바른 영상 파일로 확인되지 않았습니다.'
+            log.warning(
+                f'load_file blocked invalid path: '
+                f'{self._display_file_name(filepath, "?")} | {title} | {detail}'
+            )
+            self._show_file_load_error(title, detail, filepath, replace_stage=not bool(self.cur_file))
+            return
+        filepath = str(p)
+        file_name = p.name
         if self._same_path(filepath, self.cur_file):
-            file_name = Path(filepath).name if filepath else '?'
             if self._is_busy_loading():
                 self.status_changed.emit(f'  ⏳ 이미 로드 중입니다 — {file_name}')
                 log.info(f'duplicate load ignored while loading: {file_name}')
@@ -3147,7 +3160,6 @@ class VideoPanel(QWidget):
             return
         load_t0 = time.monotonic()
         preflight_start = load_t0
-        file_name = Path(filepath).name if filepath else '?'
         self.status_changed.emit(f"  ⏳ 1/4 파일 확인 — {file_name}")
         ok, title, detail = self._quick_file_preflight(filepath)
         if not ok:
