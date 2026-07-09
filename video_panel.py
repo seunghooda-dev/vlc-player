@@ -1527,6 +1527,16 @@ class VideoPanel(QWidget):
             pass
         return None
 
+    @staticmethod
+    def _display_file_name(filepath, default='파일'):
+        try:
+            text = str(filepath or '').strip()
+            if text:
+                return Path(text).name or default
+        except Exception:
+            pass
+        return default
+
     def _nominal_fps(self):
         return max(1, int(round(self._media_fps())))
 
@@ -1797,7 +1807,10 @@ class VideoPanel(QWidget):
         return False
 
     def _file_records(self):
-        return [f for f in (getattr(self, '_files', []) or []) if isinstance(f, dict)]
+        return [
+            f for f in (getattr(self, '_files', []) or [])
+            if isinstance(f, dict) and str(f.get("filepath") or "").strip()
+        ]
 
     def _new_file_record(self, filepath):
         p = self._video_file_path(filepath) or Path(filepath)
@@ -1827,7 +1840,7 @@ class VideoPanel(QWidget):
 
     def _file_entry(self, filepath):
         for item in self._file_records():
-            if item.get("filepath") == filepath:
+            if self._same_path(item.get("filepath"), filepath):
                 item.setdefault("cue", False)
                 item.setdefault("playing", False)
                 item.setdefault("black", None)
@@ -1864,6 +1877,8 @@ class VideoPanel(QWidget):
         entry = self._file_entry(filepath)
         if not entry:
             return
+        filepath = str(entry.get("filepath") or filepath or "")
+        file_name = self._display_file_name(filepath)
         entry.update(changes)
         qc_keys = {
             "black", "mute", "freeze",
@@ -1898,7 +1913,7 @@ class VideoPanel(QWidget):
                     entry["qc_updated_at"] = saved.get("updated_at")
                     log.info(
                         "qc status saved "
-                        f"file={Path(filepath).name} summary={entry['qc_summary']} "
+                        f"file={file_name} summary={entry['qc_summary']} "
                         f"black={entry['black']}({entry['black_count']}) "
                         f"mute={entry['mute']}({entry['mute_count']}) "
                         f"freeze={entry['freeze']}({entry['freeze_count']})"
@@ -1906,14 +1921,14 @@ class VideoPanel(QWidget):
                     record_state_event(
                         "qc",
                         "status saved",
-                        file=Path(filepath).name,
+                        file=file_name,
                         summary=entry["qc_summary"],
                         black=entry["black"],
                         mute=entry["mute"],
                         freeze=entry["freeze"],
                     )
             except Exception as e:
-                log.warning(f"qc status save failed file={Path(filepath).name}: {e}")
+                log.warning(f"qc status save failed file={file_name}: {e}")
         if hasattr(self, '_right_panel'):
             self._right_panel.refresh_explorer()
         if filepath and self._same_path(filepath, self.cur_file):
@@ -2187,24 +2202,31 @@ class VideoPanel(QWidget):
             removed.append(f"invalid record x{invalid_count}")
         for f in records:
             fp = f.get("filepath")
-            try:
-                if fp and Path(fp).exists():
-                    existing.append(f)
-                else:
-                    removed.append(f.get("name") or str(fp))
-            except Exception:
-                removed.append(f.get("name") or str(fp))
+            p = self._video_file_path(fp)
+            if p:
+                normalized_fp = str(p)
+                f["filepath"] = normalized_fp
+                f["name"] = f.get("name") or p.name
+                f["ext"] = f.get("ext") or p.suffix.upper().lstrip(".")
+                if not self._safe_int_value(f.get("size", 0), 0):
+                    f["size"] = _path_size(p)
+                existing.append(f)
+            else:
+                removed.append(f.get("name") or self._display_file_name(fp, str(fp) if fp else "unknown"))
         if removed:
             self._files = existing
             log.warning(f'missing loaded files removed: {", ".join(removed[:5])}')
-            if self.cur_file and not Path(self.cur_file).exists():
+            if self.cur_file and not self._video_file_path(self.cur_file):
                 self.cur_file = None
                 self.cur_info = {}
         self.clip_list.clear()
         for f in self._file_records():
             fp = f.get("filepath", "")
-            name = str(f.get("name") or (Path(fp).name if fp else "파일"))
-            ext = str(f.get("ext") or Path(fp).suffix.upper().lstrip(".") or "-")
+            name = str(f.get("name") or self._display_file_name(fp))
+            try:
+                ext = str(f.get("ext") or Path(str(fp or "")).suffix.upper().lstrip(".") or "-")
+            except Exception:
+                ext = str(f.get("ext") or "-")
             size_mb = max(0, self._safe_int_value(f.get("size", 0), 0)) // 1024 // 1024
             item = QListWidgetItem(
                 f"  {name}  —  {ext}  {size_mb}MB"
