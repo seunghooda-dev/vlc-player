@@ -392,23 +392,8 @@ class RightPanel(QWidget):
 
     def _show_recent_menu(self):
         settings = load_settings()
-        recent_files = []
-        for fp in settings.get('recent_files', []):
-            try:
-                p = Path(fp)
-                if p.exists() and p.suffix.lower() in VIDEO_EXTS and str(p) not in recent_files:
-                    recent_files.append(str(p))
-            except Exception:
-                pass
-        recent_dirs = []
-        for folder in settings.get('recent_dirs', []):
-            try:
-                p = Path(folder)
-                if p.exists() and p.is_dir() and str(p) not in recent_dirs:
-                    recent_dirs.append(str(p))
-            except Exception:
-                pass
-        if recent_files != settings.get('recent_files', []) or recent_dirs != settings.get('recent_dirs', []):
+        recent_files, recent_dirs = self._clean_recent_entries(settings)
+        if recent_files != (settings.get('recent_files') or []) or recent_dirs != (settings.get('recent_dirs') or []):
             self._settings = save_settings(recent_files=recent_files, recent_dirs=recent_dirs)
             self.vp._settings = load_settings()
 
@@ -457,6 +442,46 @@ class RightPanel(QWidget):
             self._settings = save_settings(recent_files=[], recent_dirs=[])
             self.vp._settings = load_settings()
             self.vp.status_changed.emit("  ↺ 최근 파일 / 폴더 목록을 비웠습니다")
+
+    def _clean_recent_entries(self, settings):
+        def _entries(key):
+            values = settings.get(key) or []
+            if isinstance(values, (str, bytes)):
+                return [values]
+            if isinstance(values, (list, tuple, set)):
+                return values
+            return []
+
+        recent_files = []
+        for fp in _entries('recent_files'):
+            try:
+                text = str(fp or '').strip()
+                if not text:
+                    continue
+                p = Path(text)
+                if not p.exists() or not p.is_file() or p.suffix.lower() not in VIDEO_EXTS:
+                    continue
+                text = str(p)
+                if text not in recent_files:
+                    recent_files.append(text)
+            except Exception:
+                continue
+
+        recent_dirs = []
+        for folder in _entries('recent_dirs'):
+            try:
+                text = str(folder or '').strip()
+                if not text:
+                    continue
+                p = Path(text)
+                if not p.exists() or not p.is_dir():
+                    continue
+                text = str(p)
+                if text not in recent_dirs:
+                    recent_dirs.append(text)
+            except Exception:
+                continue
+        return recent_files, recent_dirs
 
     def _on_exp_clicked(self, item):
         fp = item.data(Qt.ItemDataRole.UserRole)
