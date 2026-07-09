@@ -7,7 +7,7 @@ MXF QC Player - PyQt6 완전판
 파일 탐색 + 비디오 플레이어 + DB + STT + 씬감지 + 검색
 """
 
-import sys, os, json, subprocess, hashlib, csv, shutil, threading, atexit, time, zipfile
+import sys, os, json, subprocess, hashlib, csv, shutil, threading, atexit, time, zipfile, math
 from collections import deque
 from pathlib import Path
 from datetime import datetime
@@ -1202,7 +1202,10 @@ def _settings_str(value, default):
 
 def _settings_int(value, default, min_value=None, max_value=None):
     try:
-        n = int(value)
+        raw = float(value)
+        if not math.isfinite(raw):
+            raise ValueError('non-finite number')
+        n = int(raw)
     except Exception:
         n = int(default)
     if min_value is not None:
@@ -1214,6 +1217,8 @@ def _settings_int(value, default, min_value=None, max_value=None):
 def _settings_float(value, default, min_value=None, max_value=None):
     try:
         n = float(value)
+        if not math.isfinite(n):
+            raise ValueError('non-finite number')
     except Exception:
         n = float(default)
     if min_value is not None:
@@ -1231,6 +1236,8 @@ def _settings_float_str(value, default, min_value, max_value):
 def _settings_db_str(value, default):
     try:
         n = float(value)
+        if not math.isfinite(n):
+            raise ValueError('non-finite number')
     except Exception:
         n = float(default)
     if n > 0:
@@ -1266,7 +1273,10 @@ def _settings_audio_channels(value):
     out = []
     for item in value:
         try:
-            ch = int(item)
+            raw = float(item)
+            if not math.isfinite(raw):
+                raise ValueError('non-finite number')
+            ch = int(raw)
         except Exception:
             continue
         if 1 <= ch <= 8 and ch not in out:
