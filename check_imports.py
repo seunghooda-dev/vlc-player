@@ -114,8 +114,10 @@ def check_core_logic():
         return [f"  FAIL core logic import: {e}"]
 
     class Probe:
+        vp = type('VP', (), {'cur_file': ''})()
         _file_path_text = staticmethod(lambda value: str(value or ''))
         _path_exists = staticmethod(lambda value: True)
+        _file_status_badge = RightPanel._file_status_badge
         _is_standard_playback_resolution = staticmethod(RightPanel._is_standard_playback_resolution)
         _is_common_playback_fps = staticmethod(RightPanel._is_common_playback_fps)
         _is_ntsc_drop_frame_rate = staticmethod(RightPanel._is_ntsc_drop_frame_rate)
@@ -172,6 +174,17 @@ def check_core_logic():
         for key, expected in expected_qc_counts.items():
             if qc_counts.get(key) != expected:
                 errors.append(f"  FAIL batch QC count {key}: {qc_counts.get(key)} != {expected}")
+        status_summary = RightPanel._status_summary_text(Probe(), [
+            {'black': 'ok', 'mute': 'ok', 'freeze': ''},
+            {'black': 'found', 'mute': 'found', 'freeze': ''},
+            {'black': 'found', 'mute': 'ok', 'freeze': 'found'},
+        ])
+        if "정상 1" not in status_summary:
+            errors.append(f"  FAIL status summary normal count: {status_summary}")
+        if "블랙/무음 1" not in status_summary:
+            errors.append(f"  FAIL status summary black/mute count: {status_summary}")
+        if "복합 문제 1" not in status_summary:
+            errors.append(f"  FAIL status summary complex count: {status_summary}")
 
         if DEFAULT_SETTINGS.get('audio_channels') != [1, 2]:
             errors.append(f"  FAIL default audio channels: {DEFAULT_SETTINGS.get('audio_channels')}")

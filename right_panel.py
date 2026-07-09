@@ -705,6 +705,8 @@ class RightPanel(QWidget):
                 counts["검사중"] += 1
             elif badge in counts:
                 counts[badge] += 1
+            elif badge == "블랙/무음 있음":
+                counts["블랙/무음"] += 1
             elif "있음" in badge:
                 counts["복합 문제"] += 1
             elif badge in ("CUE", "재생중"):
