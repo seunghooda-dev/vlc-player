@@ -858,7 +858,12 @@ class RightPanel(QWidget):
         if key == 'error':
             return black == 'error' or mute == 'error' or freeze == 'error'
         if key == 'normal':
-            return black == 'ok' and mute == 'ok' and freeze not in ('found', 'error')
+            return (
+                black == 'ok'
+                and mute == 'ok'
+                and freeze not in ('found', 'error')
+                and not RightPanel._file_needs_report_attention(f, unavailable=unavailable)
+            )
         return True
 
     def _filter_label(self):
@@ -905,7 +910,12 @@ class RightPanel(QWidget):
                 counts['mute'] += 1
             if freeze == 'found':
                 counts['freeze'] += 1
-            if black == 'ok' and mute == 'ok' and freeze not in ('found', 'error'):
+            if (
+                black == 'ok'
+                and mute == 'ok'
+                and freeze not in ('found', 'error')
+                and not RightPanel._file_needs_report_attention(f, unavailable='')
+            ):
                 counts['normal'] += 1
         return counts
 

@@ -277,6 +277,7 @@ def check_core_logic():
         filter_cases = [
             ('normal', {'black': 'ok', 'mute': 'ok', 'freeze': ''}, True, 'normal includes black/mute normal'),
             ('normal', {'black': 'ok', 'mute': 'ok', 'freeze': 'found'}, False, 'normal excludes freeze issue'),
+            ('normal', {'black': 'ok', 'mute': 'ok', 'freeze': '', 'meta_status': '확인 필요'}, False, 'normal excludes metadata warning'),
             ('done', {'black': 'found', 'mute': 'ok', 'freeze': ''}, True, 'done includes black/mute completed'),
             ('done', {'black': 'ok', 'mute': '', 'freeze': ''}, False, 'done excludes mute pending'),
             ('attention', {'black': '', 'mute': '', 'freeze': ''}, True, 'attention includes untouched file'),
@@ -307,12 +308,13 @@ def check_core_logic():
             {'black': 'found', 'mute': 'ok', 'freeze': ''},
             {'black': 'ok', 'mute': 'error', 'freeze': ''},
             {'black': 'ok', 'mute': 'ok', 'freeze': 'found'},
+            {'black': 'ok', 'mute': 'ok', 'freeze': '', 'meta_status': '확인 필요'},
         ]
         filter_counts = RightPanel._filter_counts(filter_count_records)
         expected_filter_counts = {
-            'all': 5,
-            'done': 3,
-            'attention': 4,
+            'all': 6,
+            'done': 4,
+            'attention': 5,
             'pending': 1,
             'issues': 3,
             'black': 1,
