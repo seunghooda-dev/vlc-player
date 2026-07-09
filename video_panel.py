@@ -1632,6 +1632,9 @@ class VideoPanel(QWidget):
     def _media_transport_ready(self):
         return bool(getattr(self, 'cur_file', None) and self._metadata_or_cue_ready())
 
+    def _analysis_buttons_ready(self):
+        return self._media_transport_ready()
+
     @staticmethod
     def _settings_entries(value):
         if isinstance(value, (str, bytes)):
@@ -2990,12 +2993,11 @@ class VideoPanel(QWidget):
         stream_count = self._audio_channel_control_count()
         for cb, ch_no in getattr(self, '_ch_checks', []):
             cb.setEnabled(enabled and stream_count > 0 and ch_no <= stream_count)
-        has_file = bool(self.cur_file)
-        metadata_ready = bool(getattr(self, '_metadata_ready', False))
+        analysis_ready = bool(self._analysis_buttons_ready())
         for name in ('btn_black', 'btn_audio', 'btn_freeze'):
             btn = getattr(self, name, None)
             if btn:
-                btn.setEnabled(enabled and has_file and metadata_ready)
+                btn.setEnabled(enabled and analysis_ready)
         rp = getattr(self, '_right_panel', None)
         if rp and hasattr(rp, 'set_loading_state'):
             rp.set_loading_state(self._loading)

@@ -2322,6 +2322,22 @@ def check_core_logic():
         media_transport_probe._cue_ready = True
         if not VideoPanel._media_transport_ready(media_transport_probe):
             errors.append("  FAIL media transport ready with file and cue")
+        class AnalysisButtonsReadyProbe:
+            _metadata_or_cue_ready = VideoPanel._metadata_or_cue_ready
+            _media_transport_ready = VideoPanel._media_transport_ready
+            _analysis_buttons_ready = VideoPanel._analysis_buttons_ready
+            cur_file = 'C:/qc/sample.mxf'
+            _metadata_ready = False
+            _cue_ready = False
+        analysis_buttons_probe = AnalysisButtonsReadyProbe()
+        if VideoPanel._analysis_buttons_ready(analysis_buttons_probe):
+            errors.append("  FAIL analysis buttons ready before cue/metadata")
+        analysis_buttons_probe._cue_ready = True
+        if not VideoPanel._analysis_buttons_ready(analysis_buttons_probe):
+            errors.append("  FAIL analysis buttons should enable after cue before metadata")
+        analysis_buttons_probe.cur_file = ''
+        if VideoPanel._analysis_buttons_ready(analysis_buttons_probe):
+            errors.append("  FAIL analysis buttons need current file")
 
         class DropUrl:
             def __init__(self, path):
