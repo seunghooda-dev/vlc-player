@@ -825,18 +825,19 @@ class RightPanel(QWidget):
 
     def _metadata_for_report(self, fp, p_name=''):
         if not self._path_exists(fp):
-            return {}
+            return {}, ''
         try:
             info = load_clip_metadata_hint(fp) or {}
             if info:
-                return info
+                return info, 'DB캐시'
         except Exception as e:
             log.debug(f'qc report metadata hint skipped file={p_name}: {e}')
         try:
-            return probe(fp) or {}
+            info = probe(fp) or {}
+            return info, 'FFprobe' if info else ''
         except Exception as e:
             log.debug(f'qc report probe skipped file={p_name}: {e}')
-            return {}
+            return {}, ''
 
     def _qc_criteria(self):
         def _value(attr, setting_key, default):
@@ -970,7 +971,7 @@ class RightPanel(QWidget):
             if not size:
                 size = _path_size(fp)
             file_exists = self._path_exists(fp)
-            info = self._metadata_for_report(fp, p_name) if file_exists else {}
+            info, metadata_source = self._metadata_for_report(fp, p_name) if file_exists else ({}, '')
             metadata_available = bool(info)
             fps = _safe_float(info.get('fps', 0), 0.0)
             duration = _safe_float(info.get('duration', 0), 0.0)
@@ -1004,6 +1005,7 @@ class RightPanel(QWidget):
                 '크기_bytes': str(size or ''),
                 '메타정합성': meta_status,
                 '메타확인사항': ' / '.join(meta_issues),
+                '메타출처': metadata_source,
                 '블랙기준_화면비율': criteria['black_amount'],
                 '블랙기준_밝기': criteria['black_threshold'],
                 '무음기준_dB': criteria['mute_threshold'],
@@ -1059,7 +1061,10 @@ class RightPanel(QWidget):
             lines.append(f"{idx:03d}. {cell(row, '파일명')}")
             lines.append(f"     상태: {cell(row, 'QC상태')} / {cell(row, 'QC요약')}")
             lines.append(f"     미디어: {row.get('해상도') or '-'} / {fps_cell(row)} / {audio_cell(row)} / {row.get('길이_TC') or '-'}")
-            lines.append(f"     정합성: {row.get('메타정합성') or '-'} / {row.get('메타확인사항') or '-'}")
+            lines.append(
+                f"     정합성: {row.get('메타정합성') or '-'} / "
+                f"{row.get('메타확인사항') or '-'} / 출처 {row.get('메타출처') or '-'}"
+            )
             if row.get('소스타임코드'):
                 lines.append(f"     소스TC: {row['소스타임코드']}")
             lines.append(

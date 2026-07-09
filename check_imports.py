@@ -205,7 +205,7 @@ def check_core_logic():
         )
         if report_summary != '블랙/무음 있음':
             errors.append(f"  FAIL report QC summary recompute: {report_summary}")
-        if RightPanel._metadata_for_report(MissingFileProbe(), 'C:/missing/sample.mxf', 'sample.mxf') != {}:
+        if RightPanel._metadata_for_report(MissingFileProbe(), 'C:/missing/sample.mxf', 'sample.mxf') != ({}, ''):
             errors.append("  FAIL report metadata missing-file guard")
 
         if DEFAULT_SETTINGS.get('audio_channels') != [1, 2]:
