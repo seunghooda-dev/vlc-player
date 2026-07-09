@@ -708,6 +708,21 @@ class RightPanel(QWidget):
                 parts.append(f"{key} {counts[key]}")
         return " | ".join(parts)
 
+    @staticmethod
+    def _is_common_playback_fps(fps):
+        fps = _safe_float(fps, 0.0)
+        targets = (
+            (23.976, 0.04),
+            (24.0, 0.04),
+            (25.0, 0.04),
+            (29.97, 0.08),
+            (30.0, 0.04),
+            (50.0, 0.08),
+            (59.94, 0.12),
+            (60.0, 0.08),
+        )
+        return any(abs(fps - target) <= tolerance for target, tolerance in targets)
+
     def _metadata_qc_summary(self, info, filepath=''):
         issues = []
         path_text = self._file_path_text(filepath or info.get('filepath', '') or '')
@@ -729,10 +744,11 @@ class RightPanel(QWidget):
         fps = _safe_float(info.get('fps', 0), 0.0)
         if not fps:
             issues.append('FPS 정보 없음')
-        elif not (abs(fps - 29.97) < 0.08 or abs(fps - 59.94) < 0.12):
-            issues.append(f'방송 DF 기준 FPS 확인({fps:.3f})')
-        elif not bool(info.get('df')):
-            issues.append('DF 타임코드 아님')
+        elif not self._is_common_playback_fps(fps):
+            issues.append(f'FPS 확인({fps:.3f})')
+        elif abs(fps - 29.97) < 0.08 or abs(fps - 59.94) < 0.12:
+            if not bool(info.get('df')):
+                issues.append('DF 타임코드 아님')
         duration = _safe_float(info.get('duration', 0), 0.0)
         if duration <= 0:
             issues.append('길이 정보 없음')
