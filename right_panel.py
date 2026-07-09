@@ -1298,7 +1298,8 @@ class RightPanel(QWidget):
         )
 
     def _start_analysis_timeout(self, kind, label, seq, seconds=None):
-        seconds = self._analysis_timeout_seconds() if seconds is None else int(seconds)
+        seconds = self._analysis_timeout_seconds() if seconds is None else _safe_int(seconds, 120)
+        seconds = max(1, seconds)
         self._analysis_timeout_kind = kind
         self._analysis_timeout_label = label
         self._analysis_timeout_seq = seq
@@ -1379,7 +1380,7 @@ class RightPanel(QWidget):
                     log.debug(f'{label} cancel abort: {e}')
                 finished = False
                 try:
-                    finished = bool(thread.wait(int(wait_ms)))
+                    finished = bool(thread.wait(max(1, _safe_int(wait_ms, 700))))
                 except Exception as e:
                     log.debug(f'{label} cancel wait: {e}')
                 if not finished:
@@ -1916,13 +1917,13 @@ class RightPanel(QWidget):
         return True
 
     def _issue_count_text(self, count):
-        count = int(count or 0)
+        count = max(0, _safe_int(count, 0))
         if count > 0:
             return f"<span style='color:{C['red']};font-weight:800;'>{count}</span>"
         return "0"
 
     def _black_done_label(self, count, *, compact=False):
-        count = int(count or 0)
+        count = max(0, _safe_int(count, 0))
         if count <= 0:
             return f"{'' if compact else '  '}✓ 블랙 검출 완료 — 0구간" if compact else "  ✓ 완료 — 블랙 0구간"
         red_count = self._issue_count_text(count)
@@ -1931,7 +1932,7 @@ class RightPanel(QWidget):
         return f"&nbsp;&nbsp;✓ 완료 — 블랙 {red_count}구간"
 
     def _mute_done_label(self, count, detail='', *, compact=False):
-        count = int(count or 0)
+        count = max(0, _safe_int(count, 0))
         count_text = self._issue_count_text(count)
         suffix = f" | {detail}" if detail and not compact else ""
         if compact:
@@ -1939,7 +1940,7 @@ class RightPanel(QWidget):
         return f"&nbsp;&nbsp;✓ 완료 — 뮤트 {count_text}구간{suffix}"
 
     def _freeze_done_label(self, count, *, compact=False):
-        count = int(count or 0)
+        count = max(0, _safe_int(count, 0))
         count_text = self._issue_count_text(count)
         if compact:
             return f"✓ 프리즈 검출 완료 — {count_text}구간"
@@ -2500,7 +2501,7 @@ class RightPanel(QWidget):
         log.error(f'FreezeDetect UI error: {err}')
 
     def _format_elapsed(self, elapsed):
-        elapsed = max(0, int(elapsed))
+        elapsed = max(0, _safe_int(elapsed, 0))
         h = elapsed // 3600
         m = (elapsed % 3600) // 60
         s = elapsed % 60
