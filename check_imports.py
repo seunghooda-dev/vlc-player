@@ -320,6 +320,56 @@ def check_core_logic():
         if filtered_report_names != ['bad-a.mxf', 'bad-b.mxf']:
             errors.append(f"  FAIL filtered report scope: {filtered_report_names}")
 
+        class SummaryCopyProbe:
+            vp = type('VP', (), {'cur_file': ''})()
+
+            def _file_path_text(self, value):
+                return RightPanel._file_path_text(value)
+
+            def _path_name(self, value, default='파일'):
+                return RightPanel._path_name(value, default)
+
+            def _qc_status_text(self, value, kind):
+                return RightPanel._qc_status_text(self, value, kind)
+
+            def _file_status_detail(self, f):
+                return RightPanel._file_status_detail(self, f)
+
+            def _ranges_report_text(self, ranges, limit=20):
+                return RightPanel._ranges_report_text(self, ranges, limit)
+
+            def _file_status_badge(self, f, is_cue=False):
+                return qc_summary_from_status(f.get('black'), f.get('mute'), f.get('freeze')), '#fff'
+
+        summary_text = RightPanel._qc_summary_clipboard_text(
+            SummaryCopyProbe(),
+            {
+                'name': 'copy-me.mxf',
+                'filepath': 'C:/qc/copy-me.mxf',
+                'black': 'found',
+                'mute': 'ok',
+                'freeze': '',
+                'black_count': 1,
+                'mute_count': 0,
+                'freeze_count': 0,
+                'black_ranges': [{
+                    'start': 1.0,
+                    'end': 2.0,
+                    'duration': 1.0,
+                    'tc_start': '00:00:01;00',
+                    'tc_end': '00:00:02;00',
+                }],
+            },
+        )
+        if '파일명: copy-me.mxf' not in summary_text or 'QC상태: 블랙 있음' not in summary_text:
+            errors.append(f"  FAIL QC summary copy header: {summary_text}")
+        if '상세: 블랙 있음 1 / 무음 정상 0 / 프리즈 미분석 0' not in summary_text:
+            errors.append(f"  FAIL QC summary copy detail: {summary_text}")
+        if '블랙구간: 00:00:01;00>00:00:02;00(1.000s)' not in summary_text:
+            errors.append(f"  FAIL QC summary copy ranges: {summary_text}")
+        if '경로: C:/qc/copy-me.mxf' not in summary_text:
+            errors.append(f"  FAIL QC summary copy path: {summary_text}")
+
         class RemoveProbe(Probe):
             _is_video_file_path = staticmethod(RightPanel._is_video_file_path)
             _same_path_text = staticmethod(RightPanel._same_path_text)

@@ -1368,6 +1368,44 @@ class RightPanel(QWidget):
             self.vp.status_changed.emit(f"  ⚠ 경로 복사 실패 — {self._path_name(filepath)}")
             return False
 
+    def _qc_summary_clipboard_text(self, record):
+        record = record or {}
+        fp = self._file_path_text(record.get('filepath'))
+        name = record.get('name') or self._path_name(fp, '파일')
+        badge, _ = self._file_status_badge(record, fp == getattr(self.vp, 'cur_file', ''))
+        lines = [
+            f"파일명: {name}",
+            f"QC상태: {badge}",
+            f"상세: {self._file_status_detail(record)}",
+        ]
+        ranges = (
+            ('블랙구간', record.get('black_ranges')),
+            ('무음구간', record.get('mute_ranges')),
+            ('프리즈구간', record.get('freeze_ranges')),
+        )
+        for label, value in ranges:
+            text = self._ranges_report_text(value)
+            if text:
+                lines.append(f"{label}: {text}")
+        if fp:
+            lines.append(f"경로: {fp}")
+        return '\n'.join(lines)
+
+    def _copy_qc_summary(self, record):
+        if not isinstance(record, dict):
+            return False
+        try:
+            text = self._qc_summary_clipboard_text(record)
+            if not text:
+                return False
+            QApplication.clipboard().setText(text)
+            self.vp.status_changed.emit(f"  QC 요약 복사됨 — {record.get('name') or self._path_name(record.get('filepath'))}")
+            return True
+        except Exception as e:
+            log.warning(f'copy QC summary failed file={self._path_name(record.get("filepath"))}: {e}')
+            self.vp.status_changed.emit(f"  ⚠ QC 요약 복사 실패 — {self._path_name(record.get('filepath'))}")
+            return False
+
     def _persist_relinked_qc(self, record):
         if not isinstance(record, dict):
             return
@@ -1447,7 +1485,7 @@ class RightPanel(QWidget):
             return
         menu = QMenu(self.exp_list)
         menu.setStyleSheet(self._menu_style())
-        act_cue = act_del = act_relink = act_open_location = act_copy_path = None
+        act_cue = act_del = act_relink = act_open_location = act_copy_path = act_copy_qc = None
         act_export_visible = act_export_one = act_reset_qc = act_clean_unavailable = None
         record = self._file_record_for_path(fp)
         visible_files = self._filtered_file_records()
@@ -1459,6 +1497,8 @@ class RightPanel(QWidget):
             act_cue = menu.addAction("▶   CUE  —  화면에 올리기")
             act_open_location = menu.addAction("📁   폴더 열기")
             act_copy_path = menu.addAction("⧉   경로 복사")
+            if record:
+                act_copy_qc = menu.addAction("⧉   QC 요약 복사")
             if visible_files and (
                 getattr(self, '_filter_key', 'all') != 'all'
                 or len(visible_files) != len(all_files)
@@ -1498,6 +1538,8 @@ class RightPanel(QWidget):
             self._open_file_location(fp)
         elif action == act_copy_path:
             self._copy_file_path(fp)
+        elif action == act_copy_qc:
+            self._copy_qc_summary(record)
         elif action == act_export_visible:
             self._export_qc_report(
                 visible_files,
