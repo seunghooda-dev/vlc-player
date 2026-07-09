@@ -108,6 +108,7 @@ def check_core_logic():
     errors = []
     try:
         import right_panel as rpm
+        import video_panel as vpm
         from right_panel import FILE_FILTER_TIPS, RightPanel
         from constants import C, DEFAULT_SETTINGS, VIDEO_EXTS, _normalize_settings
         import db_models as dbm
@@ -1877,6 +1878,60 @@ def check_core_logic():
         feedback_invalid_only = VideoPanel._file_add_feedback_text(2, 0, 2, action_hint='')
         if feedback_invalid_only != '⚠ 지원 안 함 2개':
             errors.append(f"  FAIL file add feedback invalid only: {feedback_invalid_only}")
+
+        class RecentPruneProbe:
+            _settings_entries = staticmethod(VideoPanel._settings_entries)
+            _prune_recent_entries = VideoPanel._prune_recent_entries
+
+            def __init__(self, settings):
+                self._settings = settings
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            existing_recent = tmp_path / 'existing.mxf'
+            unsupported_recent = tmp_path / 'notes.txt'
+            existing_recent.write_bytes(b'test')
+            unsupported_recent.write_text('test', encoding='utf-8')
+            missing_recent = tmp_path / 'moved_clip.mxf'
+            existing_dir = tmp_path / 'media'
+            existing_dir.mkdir()
+            missing_dir = tmp_path / 'missing_media'
+            recent_probe = RecentPruneProbe({
+                'recent_files': [
+                    str(existing_recent),
+                    str(missing_recent),
+                    str(unsupported_recent),
+                    str(existing_recent),
+                ],
+                'recent_dirs': [
+                    str(existing_dir),
+                    str(missing_dir),
+                    str(existing_dir),
+                ],
+            })
+            saved_recent_settings = []
+            original_save_settings = vpm.save_settings
+            try:
+                def fake_save_settings(**kwargs):
+                    saved_recent_settings.append(kwargs)
+                    recent_probe._settings.update(kwargs)
+                    return dict(recent_probe._settings)
+
+                vpm.save_settings = fake_save_settings
+                VideoPanel._prune_recent_entries(recent_probe)
+            finally:
+                vpm.save_settings = original_save_settings
+            expected_recent_files = [str(existing_recent), str(missing_recent)]
+            expected_recent_dirs = [str(existing_dir), str(missing_dir)]
+            if not saved_recent_settings:
+                errors.append("  FAIL recent prune should persist normalized settings")
+            else:
+                saved = saved_recent_settings[-1]
+                if saved.get('recent_files') != expected_recent_files:
+                    errors.append(f"  FAIL recent prune files: {saved.get('recent_files')}")
+                if saved.get('recent_dirs') != expected_recent_dirs:
+                    errors.append(f"  FAIL recent prune dirs: {saved.get('recent_dirs')}")
+
         hinted_layout = VideoPanel._provisional_audio_mix_layout({
             'metadata_hint': True,
             'audio_stream_count': 8,

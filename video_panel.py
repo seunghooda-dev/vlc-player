@@ -1893,7 +1893,7 @@ class VideoPanel(QWidget):
                     if not text:
                         continue
                     p = Path(text)
-                    if p.exists() and p.is_file() and p.suffix.lower() in VIDEO_EXTS and str(p) not in recent_files:
+                    if p.suffix.lower() in VIDEO_EXTS and str(p) not in recent_files:
                         recent_files.append(str(p))
                 except Exception:
                     pass
@@ -1904,8 +1904,9 @@ class VideoPanel(QWidget):
                     if not text:
                         continue
                     p = Path(text)
-                    if p.exists() and p.is_dir() and str(p) not in recent_dirs:
-                        recent_dirs.append(str(p))
+                    normalized = str(p)
+                    if normalized not in recent_dirs:
+                        recent_dirs.append(normalized)
                 except Exception:
                     pass
             if (
