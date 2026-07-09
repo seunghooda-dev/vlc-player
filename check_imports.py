@@ -1323,11 +1323,14 @@ def check_core_logic():
                 return self.path
 
         class DropPathProbe:
+            _safe_int_value = staticmethod(VideoPanel._safe_int_value)
             _same_path = VideoPanel._same_path
             _video_file_path = VideoPanel._video_file_path
             _drop_url_texts = staticmethod(VideoPanel._drop_url_texts)
+            _video_file_drop_info_from_texts = VideoPanel._video_file_drop_info_from_texts
             _video_file_paths_from_texts = VideoPanel._video_file_paths_from_texts
             _video_file_paths_from_urls = VideoPanel._video_file_paths_from_urls
+            _cached_video_drop_info_from_urls = VideoPanel._cached_video_drop_info_from_urls
             _cached_video_file_paths_from_urls = VideoPanel._cached_video_file_paths_from_urls
             _clear_drag_url_cache = VideoPanel._clear_drag_url_cache
             _has_video_file_urls = VideoPanel._has_video_file_urls
@@ -1346,6 +1349,12 @@ def check_core_logic():
             expected_drop_paths = [str(first), str(second)]
             if drop_paths != expected_drop_paths:
                 errors.append(f"  FAIL multi-file drop path filter: {drop_paths} != {expected_drop_paths}")
+            drop_info = VideoPanel._video_file_drop_info_from_texts(
+                DropPathProbe(),
+                [str(first), str(second), str(invalid), str(first)],
+            )
+            if drop_info != {'paths': expected_drop_paths, 'invalid': 1}:
+                errors.append(f"  FAIL multi-file drop info: {drop_info}")
             if not VideoPanel._has_video_file_urls(DropPathProbe(), [DropUrl(str(invalid)), DropUrl(str(first))]):
                 errors.append("  FAIL supported drag urls should be accepted")
             if VideoPanel._has_video_file_urls(DropPathProbe(), [DropUrl(str(invalid))]):
@@ -1360,6 +1369,9 @@ def check_core_logic():
 
             cache_probe = DropCacheProbe()
             urls = [DropUrl(str(first)), DropUrl(str(second)), DropUrl(str(invalid))]
+            cached_info = VideoPanel._cached_video_drop_info_from_urls(cache_probe, urls)
+            if cached_info != {'paths': expected_drop_paths, 'invalid': 1}:
+                errors.append(f"  FAIL drag URL cache info: {cached_info}")
             first_cached = VideoPanel._cached_video_file_paths_from_urls(cache_probe, urls)
             calls_after_first = cache_probe.calls
             second_cached = VideoPanel._cached_video_file_paths_from_urls(cache_probe, urls)

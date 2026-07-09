@@ -729,6 +729,7 @@ class VideoPanel(QWidget):
         self._last_meter_raise_at = 0.0
         self._drag_url_cache_key = None
         self._drag_url_cache_paths = []
+        self._drag_url_cache_invalid = 0
         self.setAcceptDrops(True)
         self._frame_display_timer = QTimer(self)
         self._frame_display_timer.setTimerType(Qt.TimerType.PreciseTimer)
@@ -1595,33 +1596,50 @@ class VideoPanel(QWidget):
                 texts.append(text)
         return texts
 
-    def _video_file_paths_from_texts(self, texts):
+    def _video_file_drop_info_from_texts(self, texts):
         paths = []
+        invalid = 0
         for raw in texts or []:
             p = self._video_file_path(raw)
             if not p:
+                invalid += 1
                 continue
             fp = str(p)
             if not any(self._same_path(fp, existing) for existing in paths):
                 paths.append(fp)
-        return paths
+        return {'paths': paths, 'invalid': invalid}
+
+    def _video_file_paths_from_texts(self, texts):
+        info = self._video_file_drop_info_from_texts(texts)
+        return list(info.get('paths') or []) if isinstance(info, dict) else []
 
     def _video_file_paths_from_urls(self, urls):
         return self._video_file_paths_from_texts(self._drop_url_texts(urls))
 
-    def _cached_video_file_paths_from_urls(self, urls):
+    def _cached_video_drop_info_from_urls(self, urls):
         texts = self._drop_url_texts(urls)
         key = tuple(texts)
         if getattr(self, '_drag_url_cache_key', None) == key:
-            return list(getattr(self, '_drag_url_cache_paths', []) or [])
-        paths = self._video_file_paths_from_texts(texts)
+            return {
+                'paths': list(getattr(self, '_drag_url_cache_paths', []) or []),
+                'invalid': max(0, self._safe_int_value(getattr(self, '_drag_url_cache_invalid', 0), 0)),
+            }
+        info = self._video_file_drop_info_from_texts(texts)
+        paths = list(info.get('paths') or [])
+        invalid = max(0, self._safe_int_value(info.get('invalid', 0), 0))
         self._drag_url_cache_key = key
-        self._drag_url_cache_paths = list(paths)
-        return paths
+        self._drag_url_cache_paths = paths
+        self._drag_url_cache_invalid = invalid
+        return {'paths': list(paths), 'invalid': invalid}
+
+    def _cached_video_file_paths_from_urls(self, urls):
+        info = self._cached_video_drop_info_from_urls(urls)
+        return list(info.get('paths') or []) if isinstance(info, dict) else []
 
     def _clear_drag_url_cache(self):
         self._drag_url_cache_key = None
         self._drag_url_cache_paths = []
+        self._drag_url_cache_invalid = 0
 
     def _has_video_file_urls(self, urls):
         return bool(self._cached_video_file_paths_from_urls(urls))
@@ -4485,10 +4503,12 @@ class VideoPanel(QWidget):
             e.ignore()
             self._clear_drag_url_cache()
             return
-        paths = self._cached_video_file_paths_from_urls(e.mimeData().urls())
+        drop_info = self._cached_video_drop_info_from_urls(e.mimeData().urls())
+        paths = list(drop_info.get('paths') or [])
+        invalid = max(0, self._safe_int_value(drop_info.get('invalid', 0), 0))
         self._clear_drag_url_cache()
         if paths:
-            added = invalid = 0
+            added = 0
             for fp in paths:
                 result = self._add_file_to_list_result(fp)
                 if result == 'added':
@@ -4499,7 +4519,7 @@ class VideoPanel(QWidget):
             e.acceptProposedAction()
             first = paths[0]
             feedback = self._file_add_feedback_text(
-                len(paths), added, invalid,
+                len(paths) + invalid, added, invalid,
                 action_hint='첫 파일 CUE',
             )
             if feedback:
