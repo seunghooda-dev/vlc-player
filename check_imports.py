@@ -1432,6 +1432,66 @@ def check_core_logic():
         if batch_audio_probe.timeout_stopped != 1 or single_shots != [80]:
             errors.append(f"  FAIL batch no-audio completion timing: stop={batch_audio_probe.timeout_stopped} shots={single_shots}")
 
+        class AnalysisRestoreButton:
+            def __init__(self):
+                self.enabled = None
+
+            def setEnabled(self, value):
+                self.enabled = bool(value)
+
+        class AnalysisRestoreProbe:
+            _set_transport_enabled = RightPanel._set_transport_enabled
+            _analysis_transport_ready = RightPanel._analysis_transport_ready
+            _analysis_cue_button_ready = RightPanel._analysis_cue_button_ready
+            _restore_transport_after_analysis = RightPanel._restore_transport_after_analysis
+
+            def __init__(self, current=True, media_ready=True, loading=False, records=True):
+                self.current = current
+                self.media_ready = media_ready
+                self.records = records
+
+                class VP:
+                    def __init__(self, owner):
+                        self.owner = owner
+                        self._loading = loading
+                        for name in (
+                            'btn_folder', 'btn_m1', 'btn_gos', 'btn_rew', 'btn_play',
+                            'btn_stop', 'btn_fwd', 'btn_goe', 'btn_p1', 'btn_cue',
+                        ):
+                            setattr(self, name, AnalysisRestoreButton())
+
+                    def _media_transport_ready(self):
+                        return self.owner.media_ready
+
+                self.vp = VP(self)
+
+            def _current_video_file(self):
+                return 'C:/qc/current.mxf' if self.current else ''
+
+            def _video_file_records(self):
+                return [{'filepath': 'C:/qc/current.mxf'}] if self.records else []
+
+        ready_restore = AnalysisRestoreProbe(current=True, media_ready=True, loading=False, records=True)
+        RightPanel._restore_transport_after_analysis(ready_restore)
+        if ready_restore.vp.btn_play.enabled is not True or ready_restore.vp.btn_cue.enabled is not True:
+            errors.append(
+                f"  FAIL analysis restore ready buttons: play={ready_restore.vp.btn_play.enabled} cue={ready_restore.vp.btn_cue.enabled}"
+            )
+
+        missing_restore = AnalysisRestoreProbe(current=False, media_ready=True, loading=False, records=True)
+        RightPanel._restore_transport_after_analysis(missing_restore)
+        if missing_restore.vp.btn_play.enabled is not False or missing_restore.vp.btn_cue.enabled is not True:
+            errors.append(
+                f"  FAIL analysis restore missing-current buttons: play={missing_restore.vp.btn_play.enabled} cue={missing_restore.vp.btn_cue.enabled}"
+            )
+
+        loading_restore = AnalysisRestoreProbe(current=True, media_ready=True, loading=True, records=True)
+        RightPanel._restore_transport_after_analysis(loading_restore)
+        if loading_restore.vp.btn_play.enabled is not False or loading_restore.vp.btn_cue.enabled is not False:
+            errors.append(
+                f"  FAIL analysis restore loading buttons: play={loading_restore.vp.btn_play.enabled} cue={loading_restore.vp.btn_cue.enabled}"
+            )
+
         class ElapsedCancelProbe:
             _finish_cancel_elapsed_timer = RightPanel._finish_cancel_elapsed_timer
 

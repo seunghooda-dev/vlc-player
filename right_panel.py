@@ -3382,6 +3382,35 @@ class RightPanel(QWidget):
                 except Exception:
                     pass
 
+    def _analysis_transport_ready(self):
+        if bool(getattr(self.vp, '_loading', False)):
+            return False
+        if not self._current_video_file():
+            return False
+        ready = getattr(self.vp, '_media_transport_ready', None)
+        if callable(ready):
+            try:
+                return bool(ready())
+            except Exception as e:
+                log.debug(f'analysis transport ready check failed: {e}')
+                return False
+        return True
+
+    def _analysis_cue_button_ready(self):
+        return bool(
+            not getattr(self.vp, '_loading', False)
+            and self._video_file_records()
+        )
+
+    def _restore_transport_after_analysis(self):
+        self._set_transport_enabled(self._analysis_transport_ready())
+        cue = getattr(self.vp, 'btn_cue', None)
+        if cue:
+            try:
+                cue.setEnabled(self._analysis_cue_button_ready())
+            except Exception:
+                pass
+
     def _begin_analysis_mode(self, kind, label):
         if self._analysis_thread_running():
             return False
@@ -3418,7 +3447,7 @@ class RightPanel(QWidget):
         return True
 
     def _finish_analysis_mode(self):
-        self._set_transport_enabled(True)
+        self._restore_transport_after_analysis()
         self._set_analysis_buttons_busy(None, False)
         if self._current_video_file():
             try:
