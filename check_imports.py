@@ -277,6 +277,38 @@ def check_core_logic():
         if RightPanel._metadata_for_report(MissingFileProbe(), 'C:/missing/sample.mxf', 'sample.mxf') != ({}, ''):
             errors.append("  FAIL report metadata missing-file guard")
 
+        class RemoveProbe(Probe):
+            def __init__(self):
+                self.updated = 0
+                self.vp = type('VP', (), {})()
+                self.vp._files = [
+                    {'filepath': 'C:/missing/remove_me.mxf', 'name': 'remove_me.mxf'},
+                    {'filepath': 'C:/keep/keep_me.mxf', 'name': 'keep_me.mxf'},
+                ]
+                self.vp.cur_file = ''
+                self.vp.cur_info = {}
+                self.vp.cur_id = ''
+                self.vp.refreshed = 0
+                self.vp.ejected = 0
+                self.vp._refresh_clip_list = lambda: setattr(self.vp, 'refreshed', self.vp.refreshed + 1)
+                self.vp.eject_clip = lambda: setattr(self.vp, 'ejected', self.vp.ejected + 1)
+
+            def _update_explorer(self, info, clip_id):
+                self.updated += 1
+
+        remove_probe = RemoveProbe()
+        removed = RightPanel._remove_file_records_by_paths(remove_probe, ['C:/missing/remove_me.mxf'])
+        if removed != 1 or len(remove_probe.vp._files) != 1:
+            errors.append(f"  FAIL remove missing-file records: removed={removed} files={remove_probe.vp._files}")
+        if remove_probe.vp.refreshed != 1 or remove_probe.updated != 1:
+            errors.append("  FAIL remove missing-file records refresh path")
+
+        remove_cue_probe = RemoveProbe()
+        remove_cue_probe.vp.cur_file = 'C:/missing/remove_me.mxf'
+        removed = RightPanel._remove_file_records_by_paths(remove_cue_probe, ['C:/missing/remove_me.mxf'])
+        if removed != 1 or remove_cue_probe.vp.ejected != 1:
+            errors.append("  FAIL remove current missing-file eject path")
+
         if DEFAULT_SETTINGS.get('audio_channels') != [1, 2]:
             errors.append(f"  FAIL default audio channels: {DEFAULT_SETTINGS.get('audio_channels')}")
         normalized = _normalize_settings({'audio_channels': [1, 2, 9, 16, 2, 'bad']})

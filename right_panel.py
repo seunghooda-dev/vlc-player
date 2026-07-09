@@ -1223,17 +1223,53 @@ class RightPanel(QWidget):
             log.error(f'qc report export failed: {e}')
             QMessageBox.warning(self, 'QC 리포트 저장 실패', str(e))
 
+    def _unavailable_file_records(self):
+        return [
+            f for f in self._file_records()
+            if self._file_unavailable_badge(f.get("filepath"))
+        ]
+
+    def _remove_file_records_by_paths(self, paths):
+        targets = {self._file_path_text(path) for path in (paths or []) if self._file_path_text(path)}
+        if not targets:
+            return 0
+        kept = []
+        removed = 0
+        for f in (getattr(self.vp, '_files', []) or []):
+            fp = self._file_path_text(f.get("filepath")) if isinstance(f, dict) else ''
+            if fp in targets:
+                removed += 1
+            else:
+                kept.append(f)
+        if not removed:
+            return 0
+        self.vp._files = kept
+        cur_removed = self._file_path_text(getattr(self.vp, 'cur_file', '')) in targets
+        if cur_removed:
+            self.vp.eject_clip()
+        else:
+            self.vp._refresh_clip_list()
+        self._update_explorer(self.vp.cur_info, self.vp.cur_id or "")
+        return removed
+
     def _exp_context_menu(self, pos):
         from PyQt6.QtWidgets import QMenu
         item = self.exp_list.itemAt(pos)
-        if not item: return
-        fp = self._file_path_text(item.data(Qt.ItemDataRole.UserRole))
-        if not fp: return
+        fp = self._file_path_text(item.data(Qt.ItemDataRole.UserRole)) if item else ''
+        unavailable = self._unavailable_file_records()
+        if not fp and not unavailable:
+            return
         menu = QMenu(self.exp_list)
         menu.setStyleSheet(self._menu_style())
-        act_cue = menu.addAction("▶   CUE  —  화면에 올리기")
-        menu.addSeparator()
-        act_del = menu.addAction("✕   목록에서 제거")
+        act_cue = act_del = act_clean_unavailable = None
+        if fp:
+            act_cue = menu.addAction("▶   CUE  —  화면에 올리기")
+            menu.addSeparator()
+            act_del = menu.addAction("✕   목록에서 제거")
+        if unavailable:
+            if fp:
+                menu.addSeparator()
+            act_clean_unavailable = menu.addAction(f"🧹   접근 불가 항목 {len(unavailable)}개 정리")
         action = menu.exec(self.exp_list.mapToGlobal(pos))
         if action is None:
             return
@@ -1244,14 +1280,14 @@ class RightPanel(QWidget):
                 return
             self.vp.load_file(fp)
         elif action == act_del:
-            self.vp._files = [
-                f for f in (getattr(self.vp, '_files', []) or [])
-                if not (isinstance(f, dict) and self._file_path_text(f.get("filepath")) == fp)
-            ]
-            if self._file_path_text(getattr(self.vp, 'cur_file', '')) == fp:
-                self.vp.eject_clip()
-            self.vp._refresh_clip_list()
-            self._update_explorer(self.vp.cur_info, self.vp.cur_id or "")
+            removed = self._remove_file_records_by_paths([fp])
+            if removed:
+                self.vp.status_changed.emit(f"  ✕ 목록에서 제거 — {self._path_name(fp)}")
+        elif action == act_clean_unavailable:
+            paths = [self._file_path_text(f.get("filepath")) for f in unavailable]
+            removed = self._remove_file_records_by_paths(paths)
+            if removed:
+                self.vp.status_changed.emit(f"  🧹 접근 불가 항목 {removed}개를 목록에서 정리했습니다")
 
     def _file_item_height(self, text):
         width = max(170, self.exp_list.viewport().width() - 34)
