@@ -357,6 +357,7 @@ def check_core_logic():
             errors.append(f"  FAIL selected report prefix: {prefix}")
         report_rows = [
             {
+                '파일명': 'normal.mxf',
                 'QC요약': '정상',
                 '파일존재': 'Y',
                 '블랙상태': '정상',
@@ -365,6 +366,7 @@ def check_core_logic():
                 '메타정합성': '정상',
             },
             {
+                '파일명': 'partial.mxf',
                 'QC요약': '블랙/무음 정상',
                 '파일존재': 'Y',
                 '블랙상태': '정상',
@@ -373,14 +375,18 @@ def check_core_logic():
                 '메타정합성': '정상',
             },
             {
+                '파일명': 'issue.mxf',
                 'QC요약': '블랙/프리즈 있음',
                 '파일존재': 'Y',
                 '블랙상태': '있음',
+                '블랙구간': '2',
                 '무음상태': '정상',
                 '프리즈상태': '있음',
+                '프리즈구간': '1',
                 '메타정합성': '확인 필요',
             },
             {
+                '파일명': 'error.mxf',
                 'QC요약': '검사 오류',
                 '파일존재': 'Y',
                 '블랙상태': '정상',
@@ -389,6 +395,7 @@ def check_core_logic():
                 '메타정합성': '확인 필요',
             },
             {
+                '파일명': 'missing.mxf',
                 'QC요약': '파일 없음',
                 '파일존재': 'N',
                 '블랙상태': '정상',
@@ -421,6 +428,16 @@ def check_core_logic():
             errors.append(f"  FAIL report summary line issues: {report_lines}")
         if not any('복합문제 1' in line for line in report_lines):
             errors.append(f"  FAIL report summary line complex: {report_lines}")
+        attention_lines = RightPanel._qc_report_attention_lines(report_rows)
+        if '확인 필요 파일: 3개' not in attention_lines:
+            errors.append(f"  FAIL report attention count: {attention_lines}")
+        if not any('issue.mxf: 블랙 2, 프리즈 1, 메타 확인' in line for line in attention_lines):
+            errors.append(f"  FAIL report attention issue detail: {attention_lines}")
+        if not any('missing.mxf: 파일 없음' in line for line in attention_lines):
+            errors.append(f"  FAIL report attention missing detail: {attention_lines}")
+        clean_attention = RightPanel._qc_report_attention_lines([report_rows[0], report_rows[1]])
+        if clean_attention != ['확인 필요 파일: 없음']:
+            errors.append(f"  FAIL report clean attention: {clean_attention}")
 
         class SummaryCopyProbe:
             vp = type('VP', (), {'cur_file': ''})()

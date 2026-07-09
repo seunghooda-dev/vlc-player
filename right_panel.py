@@ -1245,6 +1245,45 @@ class RightPanel(QWidget):
             f"메타요약: 확인 필요 {counts['metadata_warn']}",
         ]
 
+    @staticmethod
+    def _qc_report_attention_lines(rows, limit=20):
+        rows = [row for row in (rows or []) if isinstance(row, dict)]
+
+        def issue_parts(row):
+            parts = []
+            summary = str(row.get('QC요약') or row.get('QC상태') or '').strip()
+            if str(row.get('파일존재') or '').upper() == 'N' or summary.startswith('파일'):
+                parts.append('파일 없음')
+            elif summary == '검사 오류':
+                parts.append('검사 오류')
+            for label, state_key, count_key in (
+                ('블랙', '블랙상태', '블랙구간'),
+                ('무음', '무음상태', '무음구간'),
+                ('프리즈', '프리즈상태', '프리즈구간'),
+            ):
+                if str(row.get(state_key) or '').strip() == '있음':
+                    count = str(row.get(count_key) or '0').strip() or '0'
+                    parts.append(f'{label} {count}')
+            meta = str(row.get('메타정합성') or '').strip()
+            if meta and meta != '정상':
+                parts.append('메타 확인')
+            return parts
+
+        attention = []
+        for row in rows:
+            parts = issue_parts(row)
+            if not parts:
+                continue
+            name = str(row.get('파일명') or row.get('경로') or '파일').strip()
+            attention.append(f" - {name}: {', '.join(parts)}")
+        if not attention:
+            return ['확인 필요 파일: 없음']
+        lines = [f'확인 필요 파일: {len(attention)}개']
+        lines.extend(attention[:limit])
+        if len(attention) > limit:
+            lines.append(f' - ... 외 {len(attention) - limit}개')
+        return lines
+
     def _write_qc_report_txt(self, path, rows):
         rows = [row for row in (rows or []) if isinstance(row, dict)]
         if not rows:
@@ -1276,6 +1315,7 @@ class RightPanel(QWidget):
         lines.append(f'생성시각: {datetime.now().isoformat(timespec="seconds")}')
         lines.append(f'파일수  : {len(rows)}')
         lines.extend(self._qc_report_summary_lines(rows))
+        lines.extend(self._qc_report_attention_lines(rows))
         lines.append('')
         for idx, row in enumerate(rows, 1):
             lines.append(f"{idx:03d}. {cell(row, '파일명')}")
