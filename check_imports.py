@@ -438,6 +438,19 @@ def check_core_logic():
         clean_attention = RightPanel._qc_report_attention_lines([report_rows[0], report_rows[1]])
         if clean_attention != ['확인 필요 파일: 없음']:
             errors.append(f"  FAIL report clean attention: {clean_attention}")
+        issue_fields = RightPanel._qc_report_attention_fields(report_rows[2])
+        if issue_fields != {'확인필요': 'Y', '확인사유': '블랙 2, 프리즈 1, 메타 확인'}:
+            errors.append(f"  FAIL report attention fields issue: {issue_fields}")
+        clean_fields = RightPanel._qc_report_attention_fields(report_rows[0])
+        if clean_fields != {'확인필요': 'N', '확인사유': ''}:
+            errors.append(f"  FAIL report attention fields clean: {clean_fields}")
+        meta_only_fields = RightPanel._qc_report_attention_fields({
+            'QC요약': '정상',
+            '파일존재': 'Y',
+            '메타정합성': '확인 필요',
+        })
+        if meta_only_fields != {'확인필요': 'Y', '확인사유': '메타 확인'}:
+            errors.append(f"  FAIL report attention fields metadata: {meta_only_fields}")
 
         class SummaryCopyProbe:
             vp = type('VP', (), {'cur_file': ''})()

@@ -1094,7 +1094,7 @@ class RightPanel(QWidget):
             streams = _safe_count(info.get('audio_stream_count', 0))
             frame_mode = self._frame_mode_label(fps, info.get('df'))
             meta_status, meta_issues = self._metadata_qc_summary(info, fp)
-            rows.append({
+            row = {
                 '앱버전': 'MXF QC Player V.1.0',
                 '검수시각': datetime.now().isoformat(timespec='seconds'),
                 'QC상태': badge,
@@ -1136,7 +1136,9 @@ class RightPanel(QWidget):
                 '프리즈구간목록': self._ranges_report_text(f.get('freeze_ranges')),
                 'QC요약': self._qc_summary_for_report(f, badge),
                 '갱신시각': str(f.get('qc_updated_at') or ''),
-            })
+            }
+            row.update(self._qc_report_attention_fields(row))
+            rows.append(row)
         return rows
 
     @staticmethod
@@ -1175,6 +1177,36 @@ class RightPanel(QWidget):
         name = record.get('name') or self._path_name(record.get('filepath'), 'file')
         token = self._report_filename_token(name)
         return f"{base}-{token}" if token else base
+
+    @staticmethod
+    def _qc_report_issue_parts(row):
+        row = row if isinstance(row, dict) else {}
+        parts = []
+        summary = str(row.get('QC요약') or row.get('QC상태') or '').strip()
+        if str(row.get('파일존재') or '').upper() == 'N' or summary.startswith('파일'):
+            parts.append('파일 없음')
+        elif summary == '검사 오류':
+            parts.append('검사 오류')
+        for label, state_key, count_key in (
+            ('블랙', '블랙상태', '블랙구간'),
+            ('무음', '무음상태', '무음구간'),
+            ('프리즈', '프리즈상태', '프리즈구간'),
+        ):
+            if str(row.get(state_key) or '').strip() == '있음':
+                count = str(row.get(count_key) or '0').strip() or '0'
+                parts.append(f'{label} {count}')
+        meta = str(row.get('메타정합성') or '').strip()
+        if meta and meta != '정상':
+            parts.append('메타 확인')
+        return parts
+
+    @classmethod
+    def _qc_report_attention_fields(cls, row):
+        parts = cls._qc_report_issue_parts(row)
+        return {
+            '확인필요': 'Y' if parts else 'N',
+            '확인사유': ', '.join(parts),
+        }
 
     @staticmethod
     def _qc_report_summary_counts(rows):
@@ -1249,29 +1281,9 @@ class RightPanel(QWidget):
     def _qc_report_attention_lines(rows, limit=20):
         rows = [row for row in (rows or []) if isinstance(row, dict)]
 
-        def issue_parts(row):
-            parts = []
-            summary = str(row.get('QC요약') or row.get('QC상태') or '').strip()
-            if str(row.get('파일존재') or '').upper() == 'N' or summary.startswith('파일'):
-                parts.append('파일 없음')
-            elif summary == '검사 오류':
-                parts.append('검사 오류')
-            for label, state_key, count_key in (
-                ('블랙', '블랙상태', '블랙구간'),
-                ('무음', '무음상태', '무음구간'),
-                ('프리즈', '프리즈상태', '프리즈구간'),
-            ):
-                if str(row.get(state_key) or '').strip() == '있음':
-                    count = str(row.get(count_key) or '0').strip() or '0'
-                    parts.append(f'{label} {count}')
-            meta = str(row.get('메타정합성') or '').strip()
-            if meta and meta != '정상':
-                parts.append('메타 확인')
-            return parts
-
         attention = []
         for row in rows:
-            parts = issue_parts(row)
+            parts = RightPanel._qc_report_issue_parts(row)
             if not parts:
                 continue
             name = str(row.get('파일명') or row.get('경로') or '파일').strip()
