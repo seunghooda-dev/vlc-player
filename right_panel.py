@@ -965,6 +965,7 @@ class RightPanel(QWidget):
     def _status_summary_text(self, files, availability=None):
         files = [f for f in (files or []) if isinstance(f, dict)]
         counts = {
+            "확인 필요": 0,
             "미분석": 0,
             "정상": 0,
             "블랙/무음 정상": 0,
@@ -982,6 +983,8 @@ class RightPanel(QWidget):
         }
         for f in files:
             unavailable = RightPanel._availability_for_record(f, availability)
+            if RightPanel._file_needs_report_attention(f, unavailable=unavailable):
+                counts["확인 필요"] += 1
             badge, _ = self._file_status_badge(
                 f,
                 f.get("filepath") == self.vp.cur_file,
@@ -999,6 +1002,7 @@ class RightPanel(QWidget):
                 counts["미분석"] += 1
         parts = [f"파일 {len(files)}"]
         for key in (
+            "확인 필요",
             "정상", "블랙/무음 정상", "블랙 있음", "무음 있음", "프리즈 있음",
             "블랙/무음", "복합 문제", "검사 오류",
             "파일 없음", "파일 아님", "지원 안함", "접근 불가",

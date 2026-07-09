@@ -207,6 +207,8 @@ def check_core_logic():
         ])
         if "정상 1" not in status_summary:
             errors.append(f"  FAIL status summary normal count: {status_summary}")
+        if "확인 필요 3" not in status_summary:
+            errors.append(f"  FAIL status summary attention count: {status_summary}")
         if "블랙/무음 정상 1" not in status_summary:
             errors.append(f"  FAIL status summary black/mute normal count: {status_summary}")
         if "블랙/무음 1" not in status_summary:
