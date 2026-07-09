@@ -280,7 +280,11 @@ class TranscodeThread(QThread):
             # stderr를 별도 스레드에서 읽음 → 버퍼 블록 방지 (버그 3번 해결)
             self._stderr_buf = []
             def _read_stderr():
-                for line in self._proc.stderr:
+                stderr = getattr(self._proc, 'stderr', None)
+                if stderr is None:
+                    self._stderr_buf.append('FFmpeg stderr pipe unavailable')
+                    return
+                for line in stderr:
                     try:
                         decoded = line.decode('utf-8','replace').strip()
                         self._stderr_buf.append(decoded)
@@ -559,12 +563,14 @@ class AudioAnalyzeThread(QThread):
             buf = bytearray()
             processed_windows = 0
             next_emit_sec = 0.0
-            assert self._proc.stdout is not None
+            stdout = getattr(self._proc, 'stdout', None)
+            if stdout is None:
+                raise RuntimeError('오디오 인덱스 stdout 파이프를 열지 못했습니다')
             while True:
                 if self._abort:
                     self.abort()
                     return []
-                chunk = self._proc.stdout.read(262144)
+                chunk = stdout.read(262144)
                 if not chunk:
                     break
                 buf.extend(chunk)
@@ -842,7 +848,8 @@ class LoudnessAnalyzeThread(QThread):
                     creationflags=_analysis_flags()
                 ), 'loudness analyze ffmpeg')
 
-                if self._proc.stderr is None:
+                stderr = self._proc.stderr
+                if stderr is None:
                     raise RuntimeError('라우드니스 분석 stderr 파이프를 열지 못했습니다')
                 last_emit = 0.0
                 start = time.monotonic()
@@ -850,7 +857,7 @@ class LoudnessAnalyzeThread(QThread):
                     if self._abort:
                         self.abort()
                         return
-                    line = self._proc.stderr.readline()
+                    line = stderr.readline()
                     if line:
                         tail.append(line)
                         if len(tail) > 420:
@@ -978,9 +985,10 @@ class BlackDetectThread(QThread):
                 ranges = []
                 seg = None
                 hit_count = 0
-                if self._proc.stderr is None:
+                stderr = self._proc.stderr
+                if stderr is None:
                     raise RuntimeError('블랙 검출 stderr 파이프를 열지 못했습니다')
-                for line in self._proc.stderr:
+                for line in stderr:
                     if self._abort:
                         self.abort()
                         return
@@ -1118,9 +1126,10 @@ class FreezeDetectThread(QThread):
                 pending_start = None
                 pending_duration = None
                 hit_count = 0
-                if self._proc.stderr is None:
+                stderr = self._proc.stderr
+                if stderr is None:
                     raise RuntimeError('프리즈 검출 stderr 파이프를 열지 못했습니다')
-                for line in self._proc.stderr:
+                for line in stderr:
                     if self._abort:
                         self.abort()
                         return
