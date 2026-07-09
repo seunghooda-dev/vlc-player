@@ -52,9 +52,9 @@ FILE_FILTER_LABELS = {
 FILE_FILTER_TIPS = {
     'all': '모든 파일 보기',
     'done': '일괄 검수 기준인 블랙/무음 검사가 완료된 파일만 보기',
-    'attention': '미분석, 발견, 오류, 파일 없음, 메타 확인 등 확인이 필요한 파일만 보기',
+    'attention': '미분석, 발견, 오류, 파일 접근 문제, 메타 확인 등 확인이 필요한 파일만 보기',
     'pending': '블랙/무음 검사가 아직 완료되지 않은 파일만 보기',
-    'issues': '블랙/무음/프리즈 발견, 검사 오류, 파일 없음만 보기',
+    'issues': '블랙/무음/프리즈 발견, 검사 오류, 파일 접근 문제만 보기',
     'black': '블랙 구간이 발견된 파일만 보기',
     'mute': '무음 구간이 발견된 파일만 보기',
     'freeze': '정지 화면 구간이 발견된 파일만 보기',
@@ -1107,6 +1107,24 @@ class RightPanel(QWidget):
             "font-size:11px;font-weight:700;padding:7px 10px;"
         )
         self.batch_summary.show()
+
+    @staticmethod
+    def _batch_summary_text(total, counts, elapsed):
+        counts = counts if isinstance(counts, dict) else {}
+        return (
+            f"일괄 검수 완료 | 총 {_safe_int(total, 0)} | "
+            f"확인필요 {_safe_int(counts.get('attention'), 0)} | "
+            f"정상 {_safe_int(counts.get('normal'), 0)} | "
+            f"블랙/무음 정상 {_safe_int(counts.get('partial_normal'), 0)} | "
+            f"블랙 {_safe_int(counts.get('black'), 0)} | "
+            f"무음 {_safe_int(counts.get('mute'), 0)} | "
+            f"프리즈 {_safe_int(counts.get('freeze'), 0)} | "
+            f"복합 {_safe_int(counts.get('both'), 0)} | "
+            f"오류 {_safe_int(counts.get('error'), 0)} | "
+            f"파일접근 {_safe_int(counts.get('missing'), 0)} | "
+            f"미분석 {_safe_int(counts.get('pending'), 0)} | "
+            f"{_safe_float(elapsed, 0.0):.1f}초"
+        )
 
     def _status_summary_text(self, files, availability=None):
         files = [f for f in (files or []) if isinstance(f, dict)]
@@ -3771,13 +3789,7 @@ class RightPanel(QWidget):
                 log.warning(f'batch qc auto report failed: {e}')
         suffix = f" / 리포트 {Path(report).name}" if report else ""
         counts = self._batch_summary_counts(self._file_records())
-        summary = (
-            f"일괄 검수 완료 | 총 {total} | 확인필요 {counts['attention']} | 정상 {counts['normal']} | "
-            f"블랙/무음 정상 {counts['partial_normal']} | "
-            f"블랙 {counts['black']} | 무음 {counts['mute']} | 프리즈 {counts['freeze']} | "
-            f"복합 {counts['both']} | 오류 {counts['error']} | 파일없음 {counts.get('missing', 0)} | "
-            f"미분석 {counts['pending']} | {elapsed:.1f}초"
-        )
+        summary = self._batch_summary_text(total, counts, elapsed)
         self._set_batch_summary_panel(summary + suffix, issues=counts['attention'] > 0)
         self.exp_path.setText(f"✓ {summary}{suffix}")
         self.vp.ai_lbl.setText(f"✓ 일괄 검수 완료 — {total}개 파일{suffix}")

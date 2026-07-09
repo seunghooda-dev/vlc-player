@@ -477,6 +477,9 @@ def check_core_logic():
         for key, expected in expected_qc_counts.items():
             if qc_counts.get(key) != expected:
                 errors.append(f"  FAIL batch QC count {key}: {qc_counts.get(key)} != {expected}")
+        batch_summary_text = RightPanel._batch_summary_text(8, qc_counts, 12.34)
+        if '파일접근 1' not in batch_summary_text or '파일없음' in batch_summary_text:
+            errors.append(f"  FAIL batch QC summary file access label: {batch_summary_text}")
         status_summary = RightPanel._status_summary_text(Probe(), [
             {'black': 'ok', 'mute': 'ok', 'freeze': 'ok'},
             {'black': 'ok', 'mute': 'ok', 'freeze': ''},
@@ -648,6 +651,11 @@ def check_core_logic():
             errors.append("  FAIL filter button text all-zero")
         if '메타 확인' not in FILE_FILTER_TIPS.get('attention', ''):
             errors.append(f"  FAIL attention filter tooltip metadata scope: {FILE_FILTER_TIPS.get('attention')}")
+        if '파일 접근' not in FILE_FILTER_TIPS.get('attention', '') or '파일 접근' not in FILE_FILTER_TIPS.get('issues', ''):
+            errors.append(
+                f"  FAIL filter tooltip file access scope: "
+                f"attention={FILE_FILTER_TIPS.get('attention')} issues={FILE_FILTER_TIPS.get('issues')}"
+            )
         if '확인 필요가 없는' not in FILE_FILTER_TIPS.get('normal', ''):
             errors.append(f"  FAIL normal filter tooltip attention exclusion: {FILE_FILTER_TIPS.get('normal')}")
         if RightPanel._compact_filter_labels(429) is not True:
