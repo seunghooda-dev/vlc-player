@@ -455,8 +455,10 @@ def qc_summary_from_status(black_status="", mute_status="", freeze_status=""):
         found.append("프리즈")
     if found:
         return "/".join(found) + " 있음"
-    if black_status == "ok" and mute_status == "ok":
+    if black_status == "ok" and mute_status == "ok" and freeze_status == "ok":
         return "정상"
+    if black_status == "ok" and mute_status == "ok":
+        return "블랙/무음 정상"
     return "미분석"
 
 def _sanitize_qc_ranges(ranges, limit=2000):

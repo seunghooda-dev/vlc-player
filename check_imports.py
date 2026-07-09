@@ -194,7 +194,8 @@ def check_core_logic():
         if "복합 문제 1" not in status_summary:
             errors.append(f"  FAIL status summary complex count: {status_summary}")
         qc_summary_cases = [
-            (qc_summary_from_status('ok', 'ok', ''), '정상', 'black/mute ok'),
+            (qc_summary_from_status('ok', 'ok', ''), '블랙/무음 정상', 'black/mute ok without freeze'),
+            (qc_summary_from_status('ok', 'ok', 'ok'), '정상', 'black/mute/freeze ok'),
             (qc_summary_from_status('found', 'ok', ''), '블랙 있음', 'black found'),
             (qc_summary_from_status('found', 'found', ''), '블랙/무음 있음', 'black+mute found'),
             (qc_summary_from_status('found', 'ok', 'found'), '블랙/프리즈 있음', 'black+freeze found'),
