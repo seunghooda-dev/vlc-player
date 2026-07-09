@@ -1375,6 +1375,63 @@ def check_core_logic():
         if idle_cancel_probe.cancelled or not idle_cancel_probe.messages:
             errors.append(f"  FAIL idle analysis cancel message: {idle_cancel_probe.cancelled}/{idle_cancel_probe.messages}")
 
+        class BatchAudioDoneProbe:
+            _on_batch_audio_done = RightPanel._on_batch_audio_done
+            _analysis_matches = RightPanel._analysis_matches
+            _log_stale_analysis = RightPanel._log_stale_analysis
+            _path_name = staticmethod(lambda value, default='파일': Path(str(value or '')).name or default)
+
+            def __init__(self):
+                self._batch_active = True
+                self._batch_current = 'C:/qc/no_audio.mxf'
+                self._batch_queue = ['C:/qc/next.mxf']
+                self._batch_total = 3
+                self._analysis_seq = 42
+                self._analysis_seq_kind = 'audio'
+                self._analysis_seq_file = self._batch_current
+                self._audio_thread = None
+                self.timeout_stopped = 0
+                self.next_calls = 0
+                self.status_calls = []
+                self.ai_text = []
+                self.vp = type('VP', (), {})()
+                self.vp._set_file_status = lambda fp, **changes: self.status_calls.append((fp, changes))
+                self.vp.ai_lbl = type(
+                    'Label',
+                    (),
+                    {'setText': lambda _, msg: self.ai_text.append(msg)},
+                )()
+
+            def _stop_analysis_timeout(self):
+                self.timeout_stopped += 1
+
+            def _start_next_batch_file(self):
+                self.next_calls += 1
+
+        batch_audio_probe = BatchAudioDoneProbe()
+        single_shots = []
+        original_qtimer = rpm.QTimer
+        try:
+            class DummyQTimer:
+                @staticmethod
+                def singleShot(ms, callback):
+                    single_shots.append(ms)
+
+            rpm.QTimer = DummyQTimer
+            RightPanel._on_batch_audio_done(batch_audio_probe, {'mutes': [], 'no_audio': True}, seq=42)
+        except Exception as e:
+            errors.append(f"  FAIL batch no-audio completion exception: {e}")
+        finally:
+            rpm.QTimer = original_qtimer
+        if not batch_audio_probe.status_calls:
+            errors.append("  FAIL batch no-audio status not stored")
+        elif batch_audio_probe.status_calls[0][1].get('analysis') is not None:
+            errors.append(f"  FAIL batch no-audio analysis not cleared: {batch_audio_probe.status_calls}")
+        if not batch_audio_probe.ai_text or '2/3' not in batch_audio_probe.ai_text[-1] or '오디오 없음' not in batch_audio_probe.ai_text[-1]:
+            errors.append(f"  FAIL batch no-audio ai text: {batch_audio_probe.ai_text}")
+        if batch_audio_probe.timeout_stopped != 1 or single_shots != [80]:
+            errors.append(f"  FAIL batch no-audio completion timing: stop={batch_audio_probe.timeout_stopped} shots={single_shots}")
+
         class ElapsedCancelProbe:
             _finish_cancel_elapsed_timer = RightPanel._finish_cancel_elapsed_timer
 

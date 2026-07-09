@@ -3688,6 +3688,7 @@ class RightPanel(QWidget):
                 mute_ranges=mutes,
             )
         if no_audio:
+            idx = self._batch_total - len(self._batch_queue)
             self.vp.ai_lbl.setText(f"🔇 일괄 검수 {idx}/{self._batch_total} — 오디오 없음")
         log.info(f'batch qc audio done file={self._path_name(fp)} mutes={len(mutes)} no_audio={no_audio}')
         QTimer.singleShot(80, self._start_next_batch_file)
