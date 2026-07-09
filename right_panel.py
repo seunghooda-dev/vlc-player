@@ -723,6 +723,12 @@ class RightPanel(QWidget):
         )
         return any(abs(fps - target) <= tolerance for target, tolerance in targets)
 
+    @staticmethod
+    def _is_standard_playback_resolution(width, height):
+        width = _safe_int(width, 0)
+        height = _safe_int(height, 0)
+        return (width, height) in ((1920, 1080), (3840, 2160))
+
     def _metadata_qc_summary(self, info, filepath=''):
         issues = []
         path_text = self._file_path_text(filepath or info.get('filepath', '') or '')
@@ -739,8 +745,8 @@ class RightPanel(QWidget):
         height = _safe_int(info.get('height', 0), 0)
         if not width or not height:
             issues.append('해상도 정보 없음')
-        elif (width, height) != (1920, 1080):
-            issues.append(f'HD 1920x1080 아님({width}x{height})')
+        elif not self._is_standard_playback_resolution(width, height):
+            issues.append(f'표준 HD/UHD 해상도 확인({width}x{height})')
         fps = _safe_float(info.get('fps', 0), 0.0)
         if not fps:
             issues.append('FPS 정보 없음')
