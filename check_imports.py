@@ -102,6 +102,56 @@ def check_syntax():
             errors.append(f"  FAIL {fname} L{e.lineno}: {e.msg}")
     return errors
 
+def check_core_logic():
+    """UI를 띄우지 않고 방송 QC 핵심 판정만 회귀 검사."""
+    errors = []
+    try:
+        from right_panel import RightPanel
+    except Exception as e:
+        return [f"  FAIL core logic import: {e}"]
+
+    class Probe:
+        _file_path_text = staticmethod(lambda value: str(value or ''))
+        _path_exists = staticmethod(lambda value: True)
+        _is_standard_playback_resolution = staticmethod(RightPanel._is_standard_playback_resolution)
+        _is_common_playback_fps = staticmethod(RightPanel._is_common_playback_fps)
+        _is_ntsc_drop_frame_rate = staticmethod(RightPanel._is_ntsc_drop_frame_rate)
+
+    try:
+        status, issues = RightPanel._metadata_qc_summary(Probe(), {}, 'C:/sample/bad.mxf')
+        if status != '확인 필요' or issues != ['메타데이터 확인 실패']:
+            errors.append(f"  FAIL empty metadata summary: {status} / {issues}")
+
+        base = {
+            'filepath': 'C:/sample/good.mxf',
+            'width': 1920,
+            'height': 1080,
+            'duration': 10,
+            'channels': 2,
+            'audio_stream_count': 1,
+            'codec': 'MPEG2VIDEO',
+            'timecode': '00:00:00:00',
+        }
+
+        status, issues = RightPanel._metadata_qc_summary(Probe(), dict(base, fps=30.0, df=False), '')
+        if status != '정상' or issues:
+            errors.append(f"  FAIL 30.000 NDF summary: {status} / {issues}")
+
+        status, issues = RightPanel._metadata_qc_summary(
+            Probe(),
+            dict(base, fps=29.97, df=True, timecode='00:00:00;00'),
+            '',
+        )
+        if status != '정상' or issues:
+            errors.append(f"  FAIL 29.97 DF summary: {status} / {issues}")
+
+        status, issues = RightPanel._metadata_qc_summary(Probe(), dict(base, fps=29.97, df=False), '')
+        if 'DF 타임코드 아님' not in issues:
+            errors.append(f"  FAIL 29.97 NDF detection: {status} / {issues}")
+    except Exception as e:
+        errors.append(f"  FAIL core logic check: {e}")
+    return errors
+
 def main():
     print("=" * 55)
     print("  MXF QC Player - Import consistency check")
@@ -134,6 +184,14 @@ def main():
         for e in errors: print(e)
     else:
         print("  OK all imported symbols exist")
+
+    print("\n[4] 핵심 QC 로직 회귀 검사")
+    logic_errors = check_core_logic()
+    if logic_errors:
+        all_ok = False
+        for e in logic_errors: print(e)
+    else:
+        print("  OK metadata QC summary rules")
 
     print()
     print("=" * 55)
