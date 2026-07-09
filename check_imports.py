@@ -1633,6 +1633,39 @@ def check_core_logic():
             if unsupported_state.get('can_cue') or unsupported_state.get('unavailable') != '지원 안함':
                 errors.append(f"  FAIL context menu state unsupported file: {unsupported_state}")
 
+            class RecentMenuProbe:
+                _file_path_text = staticmethod(RightPanel._file_path_text)
+                _path_name = classmethod(RightPanel._path_name.__func__)
+                _file_unavailable_badge = classmethod(RightPanel._file_unavailable_badge.__func__)
+                _recent_dir_unavailable_badge = classmethod(RightPanel._recent_dir_unavailable_badge.__func__)
+                _recent_menu_entry_state = RightPanel._recent_menu_entry_state
+                _recent_unavailable_count = RightPanel._recent_unavailable_count
+                _clean_recent_entries = RightPanel._clean_recent_entries
+
+            missing_recent = existing_root / 'recent-missing.mxf'
+            recent_files, recent_dirs = RightPanel._clean_recent_entries(RecentMenuProbe(), {
+                'recent_files': [str(existing_mxf), str(missing_recent), str(unsupported_file)],
+                'recent_dirs': [str(existing_root), str(existing_root / 'missing-dir')],
+            })
+            if str(missing_recent) not in recent_files:
+                errors.append(f"  FAIL recent missing file preserved: {recent_files}")
+            if str(unsupported_file) in recent_files:
+                errors.append(f"  FAIL recent unsupported file kept: {recent_files}")
+            if str(existing_root / 'missing-dir') not in recent_dirs:
+                errors.append(f"  FAIL recent missing dir preserved: {recent_dirs}")
+            recent_ok = RightPanel._recent_menu_entry_state(RecentMenuProbe(), "file", str(existing_mxf))
+            recent_missing = RightPanel._recent_menu_entry_state(RecentMenuProbe(), "file", str(missing_recent))
+            recent_dir_missing = RightPanel._recent_menu_entry_state(RecentMenuProbe(), "dir", str(existing_root / 'missing-dir'))
+            if not recent_ok.get('available') or recent_ok.get('badge'):
+                errors.append(f"  FAIL recent valid file state: {recent_ok}")
+            if recent_missing.get('available') or recent_missing.get('badge') != '파일 없음':
+                errors.append(f"  FAIL recent missing file state: {recent_missing}")
+            if recent_dir_missing.get('available') or recent_dir_missing.get('badge') != '폴더 없음':
+                errors.append(f"  FAIL recent missing dir state: {recent_dir_missing}")
+            unavailable_count = RightPanel._recent_unavailable_count(RecentMenuProbe(), recent_files, recent_dirs)
+            if unavailable_count != 2:
+                errors.append(f"  FAIL recent unavailable count: {unavailable_count}")
+
         if DEFAULT_SETTINGS.get('audio_channels') != [1, 2]:
             errors.append(f"  FAIL default audio channels: {DEFAULT_SETTINGS.get('audio_channels')}")
         normalized = _normalize_settings({'audio_channels': [1, 2, 9, 16, 2, 'bad']})

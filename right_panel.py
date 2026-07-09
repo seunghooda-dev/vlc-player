@@ -445,19 +445,20 @@ class RightPanel(QWidget):
     def _show_recent_menu(self):
         settings = load_settings()
         recent_files, recent_dirs = self._clean_recent_entries(settings)
-        if recent_files != (settings.get('recent_files') or []) or recent_dirs != (settings.get('recent_dirs') or []):
-            self._settings = save_settings(recent_files=recent_files, recent_dirs=recent_dirs)
-            self.vp._settings = load_settings()
 
         menu = QMenu(self)
         menu.setStyleSheet(self._menu_style())
+        unavailable_count = self._recent_unavailable_count(recent_files, recent_dirs)
         if recent_files:
             file_header = menu.addAction("최근 파일")
             file_header.setEnabled(False)
             for fp in recent_files[:8]:
-                act = menu.addAction(f"  {Path(fp).name}")
+                state = self._recent_menu_entry_state("file", fp)
+                act = menu.addAction(f"  {state['label']}")
                 act.setToolTip(fp)
-                act.setData(("file", fp))
+                act.setEnabled(state['available'])
+                if state['available']:
+                    act.setData(("file", fp))
         else:
             empty = menu.addAction("최근 파일 없음")
             empty.setEnabled(False)
@@ -467,14 +468,20 @@ class RightPanel(QWidget):
             dir_header = menu.addAction("최근 폴더")
             dir_header.setEnabled(False)
             for folder in recent_dirs[:6]:
-                act = menu.addAction(f"  {Path(folder).name or folder}")
+                state = self._recent_menu_entry_state("dir", folder)
+                act = menu.addAction(f"  {state['label']}")
                 act.setToolTip(folder)
-                act.setData(("dir", folder))
+                act.setEnabled(state['available'])
+                if state['available']:
+                    act.setData(("dir", folder))
         else:
             empty = menu.addAction("최근 폴더 없음")
             empty.setEnabled(False)
 
         menu.addSeparator()
+        if unavailable_count:
+            prune_act = menu.addAction(f"접근 불가 최근 항목 정리 ({unavailable_count}개)")
+            prune_act.setData(("prune-unavailable", ""))
         clear_act = menu.addAction("최근 목록 비우기")
         clear_act.setData(("clear", ""))
         sender = self.sender()
@@ -490,6 +497,9 @@ class RightPanel(QWidget):
             self.vp.add_recent_file(value, cue=True)
         elif kind == "dir":
             self.vp.add_files(value)
+        elif kind == "prune-unavailable":
+            removed = self._prune_unavailable_recent_entries()
+            self.vp.status_changed.emit(f"  최근 목록에서 접근 불가 항목 {removed}개를 정리했습니다")
         elif kind == "clear":
             self._settings = save_settings(recent_files=[], recent_dirs=[])
             self.vp._settings = load_settings()
@@ -583,7 +593,7 @@ class RightPanel(QWidget):
                 if not text:
                     continue
                 p = Path(text)
-                if not p.exists() or not p.is_file() or p.suffix.lower() not in VIDEO_EXTS:
+                if p.suffix.lower() not in VIDEO_EXTS:
                     continue
                 text = str(p)
                 if text not in recent_files:
@@ -598,14 +608,77 @@ class RightPanel(QWidget):
                 if not text:
                     continue
                 p = Path(text)
-                if not p.exists() or not p.is_dir():
-                    continue
                 text = str(p)
                 if text not in recent_dirs:
                     recent_dirs.append(text)
             except Exception:
                 continue
         return recent_files, recent_dirs
+
+    def _recent_menu_entry_state(self, kind, value):
+        text = self._file_path_text(value)
+        name = self._path_name(text, text or '항목')
+        badge = ''
+        available = False
+        if kind == "file":
+            badge = self._file_unavailable_badge(text)
+            available = bool(text and not badge)
+        elif kind == "dir":
+            badge = self._recent_dir_unavailable_badge(text)
+            available = bool(text and not badge)
+            if text:
+                try:
+                    name = Path(text).name or text
+                except Exception:
+                    name = text
+        label = name if available else f"{name} — {badge or '접근 불가'}"
+        return {
+            'path': text,
+            'label': label,
+            'badge': badge,
+            'available': available,
+        }
+
+    @classmethod
+    def _recent_dir_unavailable_badge(cls, value):
+        text = cls._file_path_text(value)
+        if not text:
+            return '경로 없음'
+        try:
+            p = Path(text)
+            if not p.exists():
+                return '폴더 없음'
+            if not p.is_dir():
+                return '폴더 아님'
+            return ''
+        except Exception:
+            return '접근 불가'
+
+    def _recent_unavailable_count(self, recent_files, recent_dirs):
+        count = 0
+        for fp in recent_files or []:
+            if self._file_unavailable_badge(fp):
+                count += 1
+        for folder in recent_dirs or []:
+            if self._recent_dir_unavailable_badge(folder):
+                count += 1
+        return count
+
+    def _prune_unavailable_recent_entries(self):
+        try:
+            settings = load_settings()
+            recent_files, recent_dirs = self._clean_recent_entries(settings)
+            kept_files = [fp for fp in recent_files if not self._file_unavailable_badge(fp)]
+            kept_dirs = [folder for folder in recent_dirs if not self._recent_dir_unavailable_badge(folder)]
+            removed = (len(recent_files) - len(kept_files)) + (len(recent_dirs) - len(kept_dirs))
+            if removed:
+                self._settings = save_settings(recent_files=kept_files, recent_dirs=kept_dirs)
+                self.vp._settings = load_settings()
+                log.info(f'recent unavailable entries pruned: {removed}')
+            return removed
+        except Exception as e:
+            log.debug(f'recent unavailable prune failed: {e}')
+            return 0
 
     def _on_exp_clicked(self, item):
         fp = self._file_path_text(item.data(Qt.ItemDataRole.UserRole))
