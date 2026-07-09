@@ -1698,11 +1698,19 @@ class VideoPanel(QWidget):
         try:
             if not folder:
                 return
+            limit = max(1, self._safe_int_value(limit, 8))
             p = Path(folder)
             if not p.exists() or not p.is_dir():
                 return
             folder = str(p)
-            recent_dirs = [d for d in self._settings.get('recent_dirs', []) if d and d != folder]
+            recent_dirs = []
+            for item in self._settings.get('recent_dirs', []):
+                try:
+                    text = str(item or '')
+                    if text and text != folder and text not in recent_dirs:
+                        recent_dirs.append(text)
+                except Exception:
+                    continue
             recent_dirs.insert(0, folder)
             self._settings = save_settings(last_dir=folder, recent_dirs=recent_dirs[:limit])
         except Exception as e:
@@ -1712,13 +1720,30 @@ class VideoPanel(QWidget):
         try:
             if not filepath:
                 return
+            limit = max(1, self._safe_int_value(limit, 12))
             p = Path(filepath)
             if not p.exists() or p.suffix.lower() not in VIDEO_EXTS:
                 return
             fp = str(p)
-            recent_files = [f for f in self._settings.get('recent_files', []) if f and f != fp]
+            recent_files = []
+            for item in self._settings.get('recent_files', []):
+                try:
+                    text = str(item or '')
+                    if text and text != fp and text not in recent_files:
+                        recent_files.append(text)
+                except Exception:
+                    continue
             recent_files.insert(0, fp)
-            recent_files = [f for f in recent_files if Path(f).exists()][:limit]
+            existing_files = []
+            for item in recent_files:
+                try:
+                    if Path(item).exists():
+                        existing_files.append(item)
+                except Exception:
+                    continue
+                if len(existing_files) >= limit:
+                    break
+            recent_files = existing_files
             self._settings = save_settings(recent_files=recent_files)
             self._remember_recent_dir(str(p.parent))
         except Exception as e:
