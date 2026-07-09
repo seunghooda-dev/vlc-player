@@ -1488,6 +1488,10 @@ def check_core_logic():
             errors.append("  FAIL empty audio channel label")
         if VideoPanel._audio_channel_label([1, '2', 2, 9, 'bad']) != '1,2':
             errors.append("  FAIL cleaned audio channel label")
+        if VideoPanel._audio_channel_status_label([]) != '오디오 없음':
+            errors.append("  FAIL empty audio channel status label")
+        if VideoPanel._audio_channel_status_label([1, 2]) != 'CH 1,2':
+            errors.append("  FAIL prefixed audio channel status label")
         if VideoPanel._metadata_audio_restart_required(
             audio_restart,
             {'audio_stream_count': 1, 'channels': 2},

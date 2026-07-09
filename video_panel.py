@@ -3843,6 +3843,11 @@ class VideoPanel(QWidget):
                 cleaned.append(n)
         return ",".join(str(ch) for ch in cleaned) if cleaned else "오디오 없음"
 
+    @classmethod
+    def _audio_channel_status_label(cls, channels):
+        label = cls._audio_channel_label(channels)
+        return label if label == "오디오 없음" else f"CH {label}"
+
     def _on_ch_select(self):
         if getattr(self, '_loading', False): return
         selected = [
@@ -4308,6 +4313,7 @@ class VideoPanel(QWidget):
         else:
             selected_channels = self._get_selected_audio_channels()
             channel_label = self._audio_channel_label(selected_channels)
+            status_channel_label = self._audio_channel_status_label(selected_channels)
             log.info(
                 f'play request: start file={Path(self.cur_file).name} '
                 f'pos={self.player.position()}ms metadata={self._metadata_ready} cue={self._cue_ready} '
@@ -4321,7 +4327,7 @@ class VideoPanel(QWidget):
                 channels=selected_channels,
             )
             self.status_changed.emit(
-                f"  ▶ PLAY 요청 — {Path(self.cur_file).name} | {channel_label}"
+                f"  ▶ PLAY 요청 — {Path(self.cur_file).name} | {status_channel_label}"
             )
             self.player.play()
 
