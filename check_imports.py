@@ -366,6 +366,18 @@ def check_core_logic():
             if result != 'duplicate-removed' or len(duplicate_probe.vp._files) != 1:
                 errors.append(f"  FAIL relink duplicate handling: result={result} files={duplicate_probe.vp._files}")
 
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            existing_root = Path(tmp_dir)
+            missing_nested = existing_root / 'missing' / 'child' / 'clip.mxf'
+            resolved_dir = RightPanel._existing_dir_for_path(str(missing_nested))
+            if resolved_dir != str(existing_root):
+                errors.append(f"  FAIL existing dir fallback: {resolved_dir} != {existing_root}")
+            exact_file = existing_root / 'clip.mxf'
+            exact_file.write_bytes(b'test')
+            resolved_dir = RightPanel._existing_dir_for_path(str(exact_file))
+            if resolved_dir != str(existing_root):
+                errors.append(f"  FAIL existing dir from file: {resolved_dir} != {existing_root}")
+
         if DEFAULT_SETTINGS.get('audio_channels') != [1, 2]:
             errors.append(f"  FAIL default audio channels: {DEFAULT_SETTINGS.get('audio_channels')}")
         normalized = _normalize_settings({'audio_channels': [1, 2, 9, 16, 2, 'bad']})

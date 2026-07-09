@@ -17,8 +17,8 @@ from PyQt6.QtWidgets import (
     QFileDialog, QMenu, QMessageBox, QCheckBox, QStyledItemDelegate,
     QStyle, QStyleOptionViewItem,
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QRect
-from PyQt6.QtGui  import QColor, QFontMetrics, QTextDocument, QTextOption
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QRect, QUrl
+from PyQt6.QtGui  import QColor, QFontMetrics, QTextDocument, QTextOption, QDesktopServices
 from PyQt6.QtMultimedia import QMediaPlayer
 
 from constants   import (
@@ -1263,6 +1263,47 @@ class RightPanel(QWidget):
         except Exception:
             return left.casefold() == right.casefold()
 
+    @classmethod
+    def _existing_dir_for_path(cls, value, fallback=None):
+        text = cls._file_path_text(value)
+        candidates = []
+        if text:
+            try:
+                p = Path(text)
+                candidates.append(p if p.is_dir() else p.parent)
+                candidates.extend(p.parents)
+            except Exception:
+                pass
+        if fallback:
+            try:
+                candidates.append(Path(fallback))
+            except Exception:
+                pass
+        candidates.append(Path.home())
+        for candidate in candidates:
+            try:
+                if candidate and candidate.exists() and candidate.is_dir():
+                    return str(candidate)
+            except Exception:
+                continue
+        return ''
+
+    def _open_file_location(self, filepath):
+        folder = self._existing_dir_for_path(filepath)
+        if not folder:
+            self.vp.status_changed.emit(f"  ⚠ 폴더를 찾을 수 없습니다 — {self._path_name(filepath)}")
+            return False
+        try:
+            ok = QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
+        except Exception as e:
+            log.warning(f'open file location failed file={self._path_name(filepath)}: {e}')
+            ok = False
+        if ok:
+            self.vp.status_changed.emit(f"  📁 폴더 열기 — {folder}")
+            return True
+        self.vp.status_changed.emit(f"  ⚠ 폴더 열기 실패 — {folder}")
+        return False
+
     def _persist_relinked_qc(self, record):
         if not isinstance(record, dict):
             return
@@ -1342,12 +1383,13 @@ class RightPanel(QWidget):
             return
         menu = QMenu(self.exp_list)
         menu.setStyleSheet(self._menu_style())
-        act_cue = act_del = act_relink = act_clean_unavailable = None
+        act_cue = act_del = act_relink = act_open_location = act_clean_unavailable = None
         if fp:
             if self._file_unavailable_badge(fp):
                 act_relink = menu.addAction("↻   파일 다시 연결")
                 menu.addSeparator()
             act_cue = menu.addAction("▶   CUE  —  화면에 올리기")
+            act_open_location = menu.addAction("📁   폴더 열기")
             menu.addSeparator()
             act_del = menu.addAction("✕   목록에서 제거")
         if unavailable:
@@ -1358,7 +1400,7 @@ class RightPanel(QWidget):
         if action is None:
             return
         elif action == act_relink:
-            start_dir = self._path_parent_text(fp) or str(Path.home())
+            start_dir = self._existing_dir_for_path(fp, self._path_parent_text(fp))
             selected, _ = QFileDialog.getOpenFileName(
                 self,
                 '파일 다시 연결',
@@ -1374,6 +1416,8 @@ class RightPanel(QWidget):
                 self.vp.status_changed.emit(f"  ↻ 이미 목록에 있는 파일입니다 — 기존 접근 불가 항목 제거")
             else:
                 self.vp.status_changed.emit(f"  ⚠ 다시 연결할 수 없습니다 — {self._path_name(selected, selected)}")
+        elif action == act_open_location:
+            self._open_file_location(fp)
         elif action == act_cue:
             if not self._is_video_file_path(fp):
                 self.vp.status_changed.emit(f"  ⚠ 파일을 찾을 수 없습니다 — {self._path_name(fp)}")
