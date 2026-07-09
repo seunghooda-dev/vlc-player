@@ -195,6 +195,13 @@ def check_core_logic():
         for actual, expected, label in qc_summary_cases:
             if actual != expected:
                 errors.append(f"  FAIL QC summary {label}: {actual} != {expected}")
+        report_summary = RightPanel._qc_summary_for_report(
+            Probe(),
+            {'black': 'found', 'mute': 'found', 'freeze': '', 'qc_summary': '미분석'},
+            'fallback',
+        )
+        if report_summary != '블랙/무음 있음':
+            errors.append(f"  FAIL report QC summary recompute: {report_summary}")
 
         if DEFAULT_SETTINGS.get('audio_channels') != [1, 2]:
             errors.append(f"  FAIL default audio channels: {DEFAULT_SETTINGS.get('audio_channels')}")

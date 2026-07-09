@@ -26,7 +26,7 @@ from constants   import (
     friendly_error_title, format_missing_runtime_tools, heavy_analysis_status,
     format_bytes, record_state_event, _path_size,
 )
-from db_models   import probe, sec_to_tc, tc_to_frames, sanitize_qc_ranges
+from db_models   import probe, sec_to_tc, tc_to_frames, sanitize_qc_ranges, qc_summary_from_status
 from threads     import AudioAnalyzeThread, BlackDetectThread, FreezeDetectThread
 from meters      import mk_label
 
@@ -815,6 +815,11 @@ class RightPanel(QWidget):
             parts.append(f"...+{len(ranges) - limit}")
         return ' | '.join(parts)
 
+    def _qc_summary_for_report(self, f, fallback=''):
+        if not isinstance(f, dict):
+            return fallback or '미분석'
+        return qc_summary_from_status(f.get('black'), f.get('mute'), f.get('freeze')) or fallback or '미분석'
+
     def _qc_criteria(self):
         def _value(attr, setting_key, default):
             widget = getattr(self, attr, None)
@@ -1000,7 +1005,7 @@ class RightPanel(QWidget):
                 '프리즈상태': self._qc_status_text(f.get('freeze'), 'freeze'),
                 '프리즈구간': str(_safe_count(f.get('freeze_count', 0))),
                 '프리즈구간목록': self._ranges_report_text(f.get('freeze_ranges')),
-                'QC요약': f.get('qc_summary') or badge,
+                'QC요약': self._qc_summary_for_report(f, badge),
                 '갱신시각': str(f.get('qc_updated_at') or ''),
             })
         return rows
