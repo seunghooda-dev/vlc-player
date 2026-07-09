@@ -152,6 +152,27 @@ def check_core_logic():
         if 'DF 타임코드 아님' not in issues:
             errors.append(f"  FAIL 29.97 NDF detection: {status} / {issues}")
 
+        qc_counts = RightPanel._batch_summary_counts(Probe(), [
+            {'black': 'ok', 'mute': 'ok', 'freeze': ''},
+            {'black': 'found', 'mute': 'ok', 'freeze': 'found'},
+            {'black': 'found', 'mute': 'found', 'freeze': ''},
+            {'black': 'ok', 'mute': 'error', 'freeze': ''},
+            {'black': '', 'mute': '', 'freeze': ''},
+        ])
+        expected_qc_counts = {
+            'total': 5,
+            'normal': 1,
+            'black': 2,
+            'mute': 1,
+            'freeze': 1,
+            'both': 2,
+            'error': 1,
+            'pending': 1,
+        }
+        for key, expected in expected_qc_counts.items():
+            if qc_counts.get(key) != expected:
+                errors.append(f"  FAIL batch QC count {key}: {qc_counts.get(key)} != {expected}")
+
         if DEFAULT_SETTINGS.get('audio_channels') != [1, 2]:
             errors.append(f"  FAIL default audio channels: {DEFAULT_SETTINGS.get('audio_channels')}")
         normalized = _normalize_settings({'audio_channels': [1, 2, 9, 16, 2, 'bad']})

@@ -647,15 +647,22 @@ class RightPanel(QWidget):
             freeze = str(f.get('freeze') or '').lower()
             if black == 'error' or mute == 'error' or freeze == 'error':
                 counts['error'] += 1
-            elif freeze == 'found':
-                counts['freeze'] += 1
-            elif black == 'found' and mute == 'found':
-                counts['both'] += 1
-            elif black == 'found':
+                continue
+            issue_count = 0
+            if black == 'found':
                 counts['black'] += 1
-            elif mute == 'found':
+                issue_count += 1
+            if mute == 'found':
                 counts['mute'] += 1
-            elif black == 'ok' and mute == 'ok':
+                issue_count += 1
+            if freeze == 'found':
+                counts['freeze'] += 1
+                issue_count += 1
+            if issue_count >= 2:
+                counts['both'] += 1
+            if issue_count:
+                continue
+            if black == 'ok' and mute == 'ok':
                 counts['normal'] += 1
             else:
                 counts['pending'] += 1
@@ -2033,8 +2040,8 @@ class RightPanel(QWidget):
         issue_total = counts['black'] + counts['mute'] + counts['freeze'] + counts['both'] + counts['error']
         summary = (
             f"일괄 검수 완료 | 총 {total} | 정상 {counts['normal']} | "
-            f"블랙 {counts['black'] + counts['both']} | 무음 {counts['mute'] + counts['both']} | "
-            f"프리즈 {counts['freeze']} | 오류 {counts['error']} | 미분석 {counts['pending']} | {elapsed:.1f}초"
+            f"블랙 {counts['black']} | 무음 {counts['mute']} | 프리즈 {counts['freeze']} | "
+            f"복합 {counts['both']} | 오류 {counts['error']} | 미분석 {counts['pending']} | {elapsed:.1f}초"
         )
         self._set_batch_summary_panel(summary + suffix, issues=issue_total > 0)
         self.exp_path.setText(f"✓ {summary}{suffix}")
@@ -2042,7 +2049,7 @@ class RightPanel(QWidget):
         log.info(
             f"batch qc finished files={total} elapsed={elapsed:.1f}s "
             f"normal={counts['normal']} black={counts['black']} mute={counts['mute']} "
-            f"freeze={counts['freeze']} both={counts['both']} error={counts['error']} pending={counts['pending']}"
+            f"freeze={counts['freeze']} complex={counts['both']} error={counts['error']} pending={counts['pending']}"
         )
         record_state_event(
             'batch-qc',
@@ -2050,9 +2057,10 @@ class RightPanel(QWidget):
             files=total,
             elapsed=f'{elapsed:.1f}s',
             normal=counts['normal'],
-            black=counts['black'] + counts['both'],
-            mute=counts['mute'] + counts['both'],
+            black=counts['black'],
+            mute=counts['mute'],
             freeze=counts['freeze'],
+            complex=counts['both'],
             error=counts['error'],
             pending=counts['pending'],
             report=str(report or ''),
