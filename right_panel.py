@@ -598,6 +598,9 @@ class RightPanel(QWidget):
         fp = self._file_path_text(item.data(Qt.ItemDataRole.UserRole))
         if not fp:
             return
+        if getattr(self, '_analysis_active', None):
+            self.vp.status_changed.emit("  ⏳ 분석 중에는 파일 전환을 잠시 막습니다")
+            return
         if not self._is_video_file_path(fp):
             self.vp.status_changed.emit(f"  ⚠ 파일을 찾을 수 없습니다 — {self._path_name(fp)}")
             return
@@ -607,6 +610,9 @@ class RightPanel(QWidget):
     def _cue_exp_item(self, item):
         fp = self._file_path_text(item.data(Qt.ItemDataRole.UserRole))
         if not fp:
+            return
+        if getattr(self, '_analysis_active', None):
+            self.vp.status_changed.emit("  ⏳ 분석 중에는 CUE를 변경할 수 없습니다")
             return
         if not self._is_video_file_path(fp):
             self.vp.status_changed.emit(f"  ⚠ 파일을 찾을 수 없습니다 — {self._path_name(fp)}")
@@ -2755,15 +2761,17 @@ class RightPanel(QWidget):
 
     def set_loading_state(self, loading):
         enabled = not bool(loading)
+        analysis_busy = bool(getattr(self, '_analysis_active', None))
+        browse_enabled = enabled and not analysis_busy
         for name in ('btn_file', 'btn_recent', 'btn_batch', 'btn_export'):
             btn = getattr(self, name, None)
             if btn:
-                btn.setEnabled(enabled)
+                btn.setEnabled(browse_enabled)
         for btn in getattr(self, '_sort_btns', {}).values():
-            btn.setEnabled(enabled)
+            btn.setEnabled(browse_enabled)
         if hasattr(self, 'exp_list'):
-            self.exp_list.setEnabled(enabled)
-        if getattr(self, '_analysis_active', None):
+            self.exp_list.setEnabled(browse_enabled)
+        if analysis_busy:
             return
         has_file = bool(self._current_video_file())
         if hasattr(self, 'btn_run_black'):
@@ -2777,6 +2785,18 @@ class RightPanel(QWidget):
         has_file = bool(self._current_video_file())
         loading = bool(getattr(self.vp, '_loading', False))
         has_video_records = bool(self._video_file_records())
+        browse_enabled = (not busy) and (not loading)
+        for name in ('btn_file', 'btn_recent'):
+            btn = getattr(self, name, None)
+            if btn:
+                btn.setEnabled(browse_enabled)
+        for btn in getattr(self, '_sort_btns', {}).values():
+            try:
+                btn.setEnabled(browse_enabled)
+            except Exception:
+                pass
+        if hasattr(self, 'exp_list'):
+            self.exp_list.setEnabled(browse_enabled)
         black = getattr(self, 'btn_run_black', None)
         audio = getattr(self, 'btn_run_audio', None)
         freeze = getattr(self, 'btn_run_freeze', None)

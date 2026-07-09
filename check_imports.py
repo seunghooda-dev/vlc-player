@@ -752,6 +752,47 @@ def check_core_logic():
         if RightPanel._run_context_reanalyze(reanalyze_probe, 'black', 'C:/qc/other.mxf'):
             errors.append("  FAIL context reanalyze non-cue blocked")
 
+        class CueBlockItem:
+            def __init__(self, filepath):
+                self.filepath = filepath
+
+            def data(self, _role):
+                return self.filepath
+
+        class CueBlockProbe:
+            _file_path_text = staticmethod(RightPanel._file_path_text)
+            _is_video_file_path = staticmethod(lambda value: bool(value))
+            _path_name = staticmethod(RightPanel._path_name)
+            _cue_exp_item = RightPanel._cue_exp_item
+
+            def __init__(self, active=None):
+                self._analysis_active = active
+                self.loaded = []
+                self.messages = []
+                self.refreshed = 0
+                self.vp = type('VP', (), {})()
+                self.vp.status_changed = type(
+                    'Signal',
+                    (),
+                    {'emit': lambda _, msg: self.messages.append(msg)},
+                )()
+                self.vp.load_file = lambda fp: self.loaded.append(fp)
+
+            def refresh_explorer(self):
+                self.refreshed += 1
+
+        cue_block_probe = CueBlockProbe(active='black')
+        RightPanel._cue_exp_item(cue_block_probe, CueBlockItem('C:/qc/current.mxf'))
+        if cue_block_probe.loaded:
+            errors.append("  FAIL analysis-active cue should be blocked")
+        if not any('CUE' in msg for msg in cue_block_probe.messages):
+            errors.append(f"  FAIL analysis-active cue status message: {cue_block_probe.messages}")
+
+        cue_allowed_probe = CueBlockProbe(active=None)
+        RightPanel._cue_exp_item(cue_allowed_probe, CueBlockItem('C:/qc/current.mxf'))
+        if cue_allowed_probe.loaded != ['C:/qc/current.mxf']:
+            errors.append(f"  FAIL idle cue should load: {cue_allowed_probe.loaded}")
+
         class RemoveProbe(Probe):
             _is_video_file_path = staticmethod(RightPanel._is_video_file_path)
             _same_path_text = staticmethod(RightPanel._same_path_text)
