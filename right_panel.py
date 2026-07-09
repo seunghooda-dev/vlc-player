@@ -583,7 +583,7 @@ class RightPanel(QWidget):
             or str(f.get("freeze") or '').lower() in ('found', 'error')
         )
         badge_color = C['red'] if issue else badge_color
-        name = self._breakable_name_html(f.get('name') or Path(f.get('filepath', '')).name)
+        name = self._breakable_name_html(f.get('name') or self._path_name(f.get('filepath')))
         return (
             f"<div style=\"font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';"
             f"font-size:12px;color:{C['text0']};font-weight:500;\">"
@@ -1177,7 +1177,7 @@ class RightPanel(QWidget):
         if sort_key == 'name':
             files = sorted(files, key=lambda x: _safe_text(x.get('name'), '').lower(), reverse=not sort_asc)
         elif sort_key == 'size':
-            files = sorted(files, key=lambda x: x.get('size', 0), reverse=not sort_asc)
+            files = sorted(files, key=lambda x: _safe_int(x.get('size', 0), 0), reverse=not sort_asc)
         # 'added' 는 원래 순서 유지 (reverse만 적용)
         elif sort_key == 'added':
             files = files if sort_asc else list(reversed(files))
