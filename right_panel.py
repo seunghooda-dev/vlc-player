@@ -497,6 +497,9 @@ class RightPanel(QWidget):
 
     def _report_menu_state(self):
         all_files = self._file_records()
+        stale_refresh = getattr(self, '_refresh_stale_record_states', None)
+        if callable(stale_refresh):
+            stale_refresh(all_files, force=True)
         visible_files = self._filtered_file_records()
         issue_files = self._issue_file_records()
         attention_files = self._attention_file_records()
@@ -1191,7 +1194,7 @@ class RightPanel(QWidget):
         mtime_changed = bool(stored_mtime_ns and current_mtime_ns and stored_mtime_ns != current_mtime_ns)
         return size_changed or mtime_changed
 
-    def _snapshot_check_due(self, record):
+    def _snapshot_check_due(self, record, force=False):
         if not isinstance(record, dict):
             return False
         stored_size = _safe_int(record.get('size', 0), 0)
@@ -1199,6 +1202,9 @@ class RightPanel(QWidget):
         if not stored_size and not stored_mtime_ns:
             return False
         now = time.monotonic()
+        if force:
+            record['_snapshot_checked_at'] = now
+            return True
         last = _safe_float(record.get('_snapshot_checked_at', 0), 0.0)
         interval = max(0.25, _safe_float(getattr(self, '_snapshot_check_interval_sec', 2.0), 2.0))
         if last and now - last < interval:
@@ -1228,10 +1234,10 @@ class RightPanel(QWidget):
         record['qc_summary'] = '미분석'
         record['qc_updated_at'] = None
 
-    def _clear_stale_record_state(self, record):
+    def _clear_stale_record_state(self, record, force=False):
         if not isinstance(record, dict):
             return False
-        if not self._snapshot_check_due(record):
+        if not self._snapshot_check_due(record, force=force):
             return False
         if not self._record_file_snapshot_changed(record):
             return False
@@ -1250,6 +1256,13 @@ class RightPanel(QWidget):
             log.debug(f"stale QC marker refresh skipped: {e}")
         log.debug(f"file record QC state cleared after file change: {self._path_name(record.get('filepath'))}")
         return True
+
+    def _refresh_stale_record_states(self, records, force=False):
+        changed = False
+        for record in (records or []):
+            if isinstance(record, dict) and self._clear_stale_record_state(record, force=force):
+                changed = True
+        return changed
 
     def _restore_metadata_qc_from_hint(self, record):
         if not isinstance(record, dict):
@@ -1502,7 +1515,11 @@ class RightPanel(QWidget):
     def _qc_report_rows(self, files=None):
         rows = []
         criteria = self._qc_criteria()
-        for f in self._iter_report_files(files):
+        report_files = self._iter_report_files(files)
+        stale_refresh = getattr(self, '_refresh_stale_record_states', None)
+        if callable(stale_refresh):
+            stale_refresh(report_files, force=True)
+        for f in report_files:
             fp = self._file_path_text(f.get('filepath', ''))
             p_name = self._path_name(fp, _safe_text(f.get('name'), '파일'))
             p_ext = ''
@@ -2134,6 +2151,12 @@ class RightPanel(QWidget):
 
     def _qc_summary_clipboard_text(self, record):
         record = record or {}
+        try:
+            stale_refresh = getattr(self, '_clear_stale_record_state', None)
+            if callable(stale_refresh):
+                stale_refresh(record, force=True)
+        except Exception as e:
+            log.debug(f'QC summary stale refresh skipped: {e}')
         fp = self._file_path_text(record.get('filepath'))
         name = record.get('name') or self._path_name(fp, '파일')
         badge, _ = self._file_status_badge(record, fp == getattr(self.vp, 'cur_file', ''))
@@ -2177,7 +2200,16 @@ class RightPanel(QWidget):
             return False
 
     def _issue_summary_clipboard_text(self, files=None):
-        issue_files = self._iter_report_files(files) if files is not None else self._attention_file_records()
+        stale_refresh = getattr(self, '_refresh_stale_record_states', None)
+        if files is not None:
+            if callable(stale_refresh):
+                stale_refresh(files, force=True)
+            issue_files = self._iter_report_files(files)
+        else:
+            all_files = self._file_records()
+            if callable(stale_refresh):
+                stale_refresh(all_files, force=True)
+            issue_files = self._attention_file_records()
         lines = ["MXF QC Player 확인 필요 파일 요약"]
         try:
             total = len(self._file_records()) if files is None else None

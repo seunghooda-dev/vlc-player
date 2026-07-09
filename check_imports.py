@@ -379,6 +379,19 @@ def check_core_logic():
                 errors.append(f"  FAIL stale snapshot throttle: {throttled_record}")
             if throttled_record.get('black') != 'found':
                 errors.append(f"  FAIL stale snapshot throttle mutated record: {throttled_record}")
+            forced_record = {
+                'filepath': 'C:/sample/forced.mxf',
+                'size': 100,
+                'mtime_ns': 10,
+                'black': 'found',
+                'black_count': 1,
+                'black_ranges': [{'start': 1.0}],
+                '_snapshot_checked_at': time.monotonic(),
+            }
+            if not RightPanel._clear_stale_record_state(stale_probe, forced_record, force=True):
+                errors.append(f"  FAIL stale snapshot force bypass: {forced_record}")
+            if forced_record.get('black') != '' or forced_record.get('black_count') != 0 or forced_record.get('black_ranges') != []:
+                errors.append(f"  FAIL stale snapshot force clear: {forced_record}")
         finally:
             rpm.load_clip_metadata_hint = original_hint_loader
 
@@ -968,6 +981,37 @@ def check_core_logic():
             errors.append(f"  FAIL QC summary copy ranges: {summary_text}")
         if '경로: C:/qc/copy-me.mxf' not in summary_text:
             errors.append(f"  FAIL QC summary copy path: {summary_text}")
+
+        class StaleSummaryCopyProbe(SummaryCopyProbe):
+            def __init__(self):
+                self.stale_refreshes = 0
+
+            def _clear_stale_record_state(self, record, force=False):
+                self.stale_refreshes += 1 if force else 0
+                record['black'] = ''
+                record['mute'] = ''
+                record['freeze'] = ''
+                record['black_count'] = 0
+                record['black_ranges'] = []
+                record['qc_summary'] = '미분석'
+                return True
+
+        stale_summary_probe = StaleSummaryCopyProbe()
+        stale_summary_record = {
+            'name': 'stale-copy.mxf',
+            'filepath': 'C:/qc/stale-copy.mxf',
+            'black': 'found',
+            'mute': 'ok',
+            'freeze': '',
+            'black_count': 1,
+            'black_ranges': [{'start': 1.0, 'tc_start': '00:00:01;00'}],
+        }
+        stale_summary_text = RightPanel._qc_summary_clipboard_text(stale_summary_probe, stale_summary_record)
+        if stale_summary_probe.stale_refreshes != 1:
+            errors.append(f"  FAIL QC summary copy stale refresh count: {stale_summary_probe.stale_refreshes}")
+        if 'QC상태: 미분석' not in stale_summary_text or '블랙구간:' in stale_summary_text:
+            errors.append(f"  FAIL QC summary copy stale refresh text: {stale_summary_text}")
+
         issue_summary_text = RightPanel._issue_summary_clipboard_text(
             SummaryCopyProbe(),
             [
