@@ -34,6 +34,30 @@ if exist "%ROOT%OPERATOR_QUICK_START_KO.txt" (
     echo [WARN] OPERATOR_QUICK_START_KO.txt is missing.
 )
 
+for %%D in (UPDATE_POLICY.txt BROADCAST_SAMPLE_CHECKLIST.txt BROADCAST_SAMPLE_SET.txt install_desktop_shortcut.bat) do (
+    if exist "%ROOT%%%D" (
+        echo [OK] %%D
+    ) else (
+        echo [WARN] %%D is missing.
+    )
+)
+
+if exist "%ROOT%mxf_qc_player.ico" (
+    echo [OK] mxf_qc_player.ico
+) else if exist "%ROOT%assets\mxf_qc_player.ico" (
+    echo [OK] assets\mxf_qc_player.ico
+) else (
+    echo [WARN] mxf_qc_player.ico is missing.
+)
+
+if exist "%ROOT%LICENSES\THIRD_PARTY_NOTICES.txt" (
+    echo [OK] LICENSES\THIRD_PARTY_NOTICES.txt
+) else if exist "%ROOT%THIRD_PARTY_NOTICES.txt" (
+    echo [OK] THIRD_PARTY_NOTICES.txt
+) else (
+    echo [WARN] THIRD_PARTY_NOTICES.txt is missing.
+)
+
 for %%T in (ffmpeg.exe ffprobe.exe ffplay.exe) do (
     if exist "%ROOT%tools\%%T" (
         echo [OK] tools\%%T
