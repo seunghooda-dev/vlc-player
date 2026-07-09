@@ -182,6 +182,24 @@ def check_core_logic():
         if '오디오 없음' not in issues or '오디오 1/2CH 확인 필요' in issues:
             errors.append(f"  FAIL no-audio metadata detection: {status} / {issues}")
 
+        class MetadataStoreProbe(Probe):
+            _same_path_text = staticmethod(lambda a, b: str(a or '').lower() == str(b or '').lower())
+
+            def __init__(self):
+                self.vp = type('VP', (), {'_files': [{'filepath': 'C:/sample/no_audio.mxf'}]})()
+
+        store_probe = MetadataStoreProbe()
+        stored_status, stored_issues = RightPanel._store_metadata_qc_for_file(
+            store_probe,
+            'C:/sample/no_audio.mxf',
+            dict(base, filepath='C:/sample/no_audio.mxf', fps=29.97, df=True, channels=0, audio_stream_count=0),
+        )
+        stored_record = store_probe.vp._files[0]
+        if stored_status != '확인 필요' or '오디오 없음' not in stored_issues:
+            errors.append(f"  FAIL metadata store result: {stored_status} / {stored_issues}")
+        if stored_record.get('meta_status') != '확인 필요' or '오디오 없음' not in stored_record.get('meta_issues', []):
+            errors.append(f"  FAIL metadata store record: {stored_record}")
+
         status, issues = RightPanel._metadata_qc_summary(
             Probe(),
             dict(base, fps=29.97, df=True, channels=1, audio_stream_count=1),

@@ -706,7 +706,22 @@ class AudioAnalyzeThread(QThread):
                         audio_streams.append(max(1, _safe_int(st.get('channels', 1), 1)))
             except Exception as e: log.debug(f'audio ch parse: {e}')
             if not audio_streams:
-                audio_streams = [2]
+                self.progress.emit('오디오 스트림 없음 — 뮤트 검출 생략')
+                log.info('AudioAnalyze 완료: 오디오 스트림 없음, mute analysis skipped')
+                self.finished.emit({
+                    'mutes'    : [],
+                    'peaks'    : {},
+                    'rms'      : {},
+                    'ch_count' : 0,
+                    'source_ch_count': 0,
+                    'channel_basis': '오디오 없음',
+                    'cache_hit': False,
+                    'no_audio': True,
+                    'index_window_sec': 0.0,
+                    'threshold': self.noise_threshold,
+                    'min_dur'  : self.min_duration,
+                })
+                return
             source_ch_count = sum(audio_streams)
             base_fc, ch_count = self._audio_12_filter(audio_streams, 'aud')
             basis = '1/2CH' if ch_count >= 2 else '1CH'

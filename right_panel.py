@@ -1151,6 +1151,16 @@ class RightPanel(QWidget):
         status = '정상' if not issues else '확인 필요'
         return status, issues
 
+    def _store_metadata_qc_for_file(self, filepath, info):
+        status, issues = RightPanel._metadata_qc_summary(self, info, filepath)
+        target = self._file_path_text(filepath)
+        for f in (getattr(self.vp, '_files', []) or []):
+            if isinstance(f, dict) and self._same_path_text(f.get('filepath'), target):
+                f['meta_status'] = status
+                f['meta_issues'] = list(issues or [])
+                break
+        return status, issues
+
     def _ranges_report_text(self, ranges, limit=20):
         ranges = sanitize_qc_ranges(ranges)
         if not ranges:
@@ -2587,12 +2597,7 @@ class RightPanel(QWidget):
         meta_issues = []
         if info:
             meta_fp = info.get("filepath", "") or self.vp.cur_file or ""
-            meta_status, meta_issues = self._metadata_qc_summary(info, meta_fp)
-            for f in (getattr(self.vp, '_files', []) or []):
-                if isinstance(f, dict) and self._same_path_text(f.get('filepath'), meta_fp):
-                    f['meta_status'] = meta_status
-                    f['meta_issues'] = list(meta_issues or [])
-                    break
+            meta_status, meta_issues = self._store_metadata_qc_for_file(meta_fp, info)
         # 파일 목록 갱신
         self.refresh_explorer()
         # 메타 패널: CUE된 파일 정보 표시
@@ -3282,6 +3287,10 @@ class RightPanel(QWidget):
         except Exception as e:
             self._batch_current_info = {}
             log.warning(f'batch qc probe failed file={file_name}: {e}')
+        try:
+            self._store_metadata_qc_for_file(fp, self._batch_current_info)
+        except Exception as e:
+            log.debug(f'batch metadata qc store failed file={file_name}: {e}')
         if hasattr(self.vp, '_set_file_status'):
             self.vp._set_file_status(fp, analysis='black')
         self.exp_path.setText(f"⏳ 일괄 검수 {idx}/{self._batch_total} — 블랙: {file_name}")
@@ -3389,6 +3398,7 @@ class RightPanel(QWidget):
             log.warning(f'batch qc audio returned unexpected result type: {type(result).__name__}')
             result = {}
         mutes = sanitize_qc_ranges(result.get('mutes', []))
+        no_audio = bool(result.get('no_audio'))
         if hasattr(self.vp, '_set_file_status'):
             self.vp._set_file_status(
                 fp,
@@ -3397,7 +3407,9 @@ class RightPanel(QWidget):
                 mute_count=len(mutes),
                 mute_ranges=mutes,
             )
-        log.info(f'batch qc audio done file={self._path_name(fp)} mutes={len(mutes)}')
+        if no_audio:
+            self.vp.ai_lbl.setText(f"🔇 일괄 검수 {idx}/{self._batch_total} — 오디오 없음")
+        log.info(f'batch qc audio done file={self._path_name(fp)} mutes={len(mutes)} no_audio={no_audio}')
         QTimer.singleShot(80, self._start_next_batch_file)
 
     def _on_batch_audio_error(self, err, seq=None):
@@ -3938,6 +3950,7 @@ class RightPanel(QWidget):
             log.warning(f'audio analysis returned unexpected result type: {type(result).__name__}')
             result = {}
         mutes    = sanitize_qc_ranges(result.get('mutes', []))
+        no_audio = bool(result.get('no_audio'))
         if hasattr(self.vp, '_set_file_status'):
             fp = getattr(self, '_audio_file', self.vp.cur_file)
             self.vp._set_file_status(
@@ -3953,12 +3966,13 @@ class RightPanel(QWidget):
         source_ch_count = result.get('source_ch_count', ch_count)
         basis = result.get('channel_basis', f'{ch_count}CH')
         cache_hit = result.get('cache_hit', False)
-        mode = "캐시 사용" if cache_hit else "인덱스 생성"
+        mode = "검출 생략" if no_audio else ("캐시 사용" if cache_hit else "인덱스 생성")
 
         # 빠른 모드에서는 속도를 위해 피크/RMS 계산을 생략한다.
         self.peak_table.setRowCount(0)
         self.peak_table.insertRow(0)
-        for col, val in enumerate([basis, "100ms 레벨 캐시", mode]):
+        source_label = "오디오 스트림 없음" if no_audio else "100ms 레벨 캐시"
+        for col, val in enumerate([basis, source_label, mode]):
             item = QTableWidgetItem(val)
             item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             item.setForeground(QColor(C['text1'] if col < 2 else C['yellow']))
@@ -3966,7 +3980,11 @@ class RightPanel(QWidget):
 
         # 뮤트 구간 목록
         self.mute_list.clear()
-        if not mutes:
+        if no_audio:
+            item = QListWidgetItem("  오디오 스트림 없음 — 뮤트 검출 생략")
+            item.setForeground(QColor(C['yellow']))
+            self.mute_list.addItem(item)
+        elif not mutes:
             item = QListWidgetItem("  뮤트 구간 없음")
             item.setForeground(QColor(C['text3']))
             self.mute_list.addItem(item)
@@ -3980,12 +3998,15 @@ class RightPanel(QWidget):
                 item.setForeground(QColor(C['teal']))
                 self.mute_list.addItem(item)
 
-        self.audio_status.setText(
-            self._mute_done_label(len(mutes), f"{source_ch_count}ch 파일 / {basis} / {mode}"))
+        if no_audio:
+            self.audio_status.setText("  오디오 없음 — 뮤트 검출 생략")
+        else:
+            self.audio_status.setText(
+                self._mute_done_label(len(mutes), f"{source_ch_count}ch 파일 / {basis} / {mode}"))
         try:
             self.vp.btn_audio.setEnabled(True)
             self.vp.prog_ai.hide()
-            self.vp.ai_lbl.setText(self._mute_done_label(len(mutes), compact=True))
+            self.vp.ai_lbl.setText("뮤트: 오디오 없음 — 검출 생략" if no_audio else self._mute_done_label(len(mutes), compact=True))
             self._finish_audio_elapsed_timer()
         except Exception as e:
             log.debug(f'audio ai done state: {e}')
