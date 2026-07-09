@@ -355,6 +355,72 @@ def check_core_logic():
         )
         if prefix != 'qc-selected-long-sample-_bad_-01':
             errors.append(f"  FAIL selected report prefix: {prefix}")
+        report_rows = [
+            {
+                'QC요약': '정상',
+                '파일존재': 'Y',
+                '블랙상태': '정상',
+                '무음상태': '정상',
+                '프리즈상태': '정상',
+                '메타정합성': '정상',
+            },
+            {
+                'QC요약': '블랙/무음 정상',
+                '파일존재': 'Y',
+                '블랙상태': '정상',
+                '무음상태': '정상',
+                '프리즈상태': '미분석',
+                '메타정합성': '정상',
+            },
+            {
+                'QC요약': '블랙/프리즈 있음',
+                '파일존재': 'Y',
+                '블랙상태': '있음',
+                '무음상태': '정상',
+                '프리즈상태': '있음',
+                '메타정합성': '확인 필요',
+            },
+            {
+                'QC요약': '검사 오류',
+                '파일존재': 'Y',
+                '블랙상태': '정상',
+                '무음상태': '오류',
+                '프리즈상태': '미분석',
+                '메타정합성': '확인 필요',
+            },
+            {
+                'QC요약': '파일 없음',
+                '파일존재': 'N',
+                '블랙상태': '정상',
+                '무음상태': '정상',
+                '프리즈상태': '정상',
+                '메타정합성': '',
+            },
+            {'QC요약': '미분석', '파일존재': 'Y', '메타정합성': ''},
+        ]
+        report_counts = RightPanel._qc_report_summary_counts(report_rows)
+        expected_report_counts = {
+            'total': 6,
+            'normal': 1,
+            'partial_normal': 1,
+            'issue_files': 3,
+            'black': 1,
+            'mute': 0,
+            'freeze': 1,
+            'complex': 1,
+            'error': 1,
+            'pending': 1,
+            'missing': 1,
+            'metadata_warn': 2,
+        }
+        for key, expected in expected_report_counts.items():
+            if report_counts.get(key) != expected:
+                errors.append(f"  FAIL report summary count {key}: {report_counts.get(key)} != {expected}")
+        report_lines = RightPanel._qc_report_summary_lines(report_rows)
+        if not any('문제파일 3' in line and '파일없음 1' in line for line in report_lines):
+            errors.append(f"  FAIL report summary line issues: {report_lines}")
+        if not any('복합문제 1' in line for line in report_lines):
+            errors.append(f"  FAIL report summary line complex: {report_lines}")
 
         class SummaryCopyProbe:
             vp = type('VP', (), {'cur_file': ''})()

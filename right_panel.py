@@ -1176,6 +1176,75 @@ class RightPanel(QWidget):
         token = self._report_filename_token(name)
         return f"{base}-{token}" if token else base
 
+    @staticmethod
+    def _qc_report_summary_counts(rows):
+        rows = [row for row in (rows or []) if isinstance(row, dict)]
+        counts = {
+            'total': len(rows),
+            'normal': 0,
+            'partial_normal': 0,
+            'issue_files': 0,
+            'black': 0,
+            'mute': 0,
+            'freeze': 0,
+            'complex': 0,
+            'error': 0,
+            'pending': 0,
+            'missing': 0,
+            'metadata_warn': 0,
+        }
+        for row in rows:
+            summary = str(row.get('QC요약') or row.get('QC상태') or '').strip()
+            black_found = str(row.get('블랙상태') or '').strip() == '있음'
+            mute_found = str(row.get('무음상태') or '').strip() == '있음'
+            freeze_found = str(row.get('프리즈상태') or '').strip() == '있음'
+            found_count = int(black_found) + int(mute_found) + int(freeze_found)
+
+            if black_found:
+                counts['black'] += 1
+            if mute_found:
+                counts['mute'] += 1
+            if freeze_found:
+                counts['freeze'] += 1
+            if found_count >= 2:
+                counts['complex'] += 1
+
+            if str(row.get('파일존재') or '').upper() == 'N' or summary.startswith('파일'):
+                counts['missing'] += 1
+                counts['issue_files'] += 1
+            elif summary == '검사 오류':
+                counts['error'] += 1
+                counts['issue_files'] += 1
+            elif found_count:
+                counts['issue_files'] += 1
+            elif summary == '정상':
+                counts['normal'] += 1
+            elif summary == '블랙/무음 정상':
+                counts['partial_normal'] += 1
+            else:
+                counts['pending'] += 1
+
+            meta = str(row.get('메타정합성') or '').strip()
+            if meta and meta != '정상':
+                counts['metadata_warn'] += 1
+        return counts
+
+    @classmethod
+    def _qc_report_summary_lines(cls, rows):
+        counts = cls._qc_report_summary_counts(rows)
+        return [
+            (
+                f"검수요약: 정상 {counts['normal']} / 블랙·무음 정상 {counts['partial_normal']} / "
+                f"문제파일 {counts['issue_files']} / 오류 {counts['error']} / "
+                f"미분석 {counts['pending']} / 파일없음 {counts['missing']}"
+            ),
+            (
+                f"검출요약: 블랙 {counts['black']} / 무음 {counts['mute']} / "
+                f"프리즈 {counts['freeze']} / 복합문제 {counts['complex']}"
+            ),
+            f"메타요약: 확인 필요 {counts['metadata_warn']}",
+        ]
+
     def _write_qc_report_txt(self, path, rows):
         rows = [row for row in (rows or []) if isinstance(row, dict)]
         if not rows:
@@ -1206,6 +1275,7 @@ class RightPanel(QWidget):
         lines.append('=' * 64)
         lines.append(f'생성시각: {datetime.now().isoformat(timespec="seconds")}')
         lines.append(f'파일수  : {len(rows)}')
+        lines.extend(self._qc_report_summary_lines(rows))
         lines.append('')
         for idx, row in enumerate(rows, 1):
             lines.append(f"{idx:03d}. {cell(row, '파일명')}")
