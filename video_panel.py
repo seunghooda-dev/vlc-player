@@ -1475,9 +1475,29 @@ class VideoPanel(QWidget):
     def _media_fps(self):
         try:
             fps = float(self.fps or 29.97)
+            if not math.isfinite(fps):
+                fps = 29.97
         except Exception:
             fps = 29.97
         return max(1.0, fps)
+
+    @staticmethod
+    def _safe_float_value(value, default=0.0):
+        try:
+            parsed = float(value)
+            return parsed if math.isfinite(parsed) else default
+        except Exception:
+            return default
+
+    @staticmethod
+    def _safe_int_value(value, default=0):
+        try:
+            parsed = float(value)
+            if math.isfinite(parsed):
+                return int(parsed)
+        except Exception:
+            pass
+        return default
 
     def _nominal_fps(self):
         return max(1, int(round(self._media_fps())))
@@ -1494,18 +1514,21 @@ class VideoPanel(QWidget):
         return 2 if self._nominal_fps() == 30 else 4
 
     def _duration_frames(self):
-        if self.duration <= 0:
+        duration = self._safe_float_value(getattr(self, 'duration', 0.0), 0.0)
+        if duration <= 0:
             return 0
-        return max(0, int(round(self.duration * self._media_fps())))
+        return max(0, int(round(duration * self._media_fps())))
 
     def _sec_to_frame(self, sec):
-        return max(0, int(round(max(0.0, float(sec)) * self._media_fps())))
+        sec = max(0.0, self._safe_float_value(sec, 0.0))
+        return max(0, int(round(sec * self._media_fps())))
 
     def _ms_to_frame(self, ms):
-        return self._sec_to_frame(max(0, int(ms)) / 1000.0)
+        return self._sec_to_frame(max(0, self._safe_int_value(ms, 0)) / 1000.0)
 
     def _frame_to_ms(self, frame):
-        return int(round(max(0, int(frame)) / self._media_fps() * 1000))
+        frame = max(0, self._safe_int_value(frame, 0))
+        return int(round(frame / self._media_fps() * 1000))
 
     def _tc_include_offset(self):
         return False
@@ -1513,7 +1536,7 @@ class VideoPanel(QWidget):
     def _parse_tc_offset_frames(self, tc):
         if tc:
             return tc_to_frames(tc, self._media_fps(), self._drop_frame_enabled())
-        return int(round(float(self.tc_offset or 0.0) * self._media_fps()))
+        return int(round(self._safe_float_value(self.tc_offset, 0.0) * self._media_fps()))
 
     def _frames_to_tc(self, frame, include_offset=False):
         offset = getattr(self, '_tc_offset_frames', 0) if include_offset else 0
@@ -1549,9 +1572,10 @@ class VideoPanel(QWidget):
         rem_tc = self._frames_to_tc(rem_frames, include_offset=False)
         if self.tc_rem.text() != rem_tc:
             self.tc_rem.setText(rem_tc)
-        if update_slider and self.duration > 0 and not self._seeking:
+        duration = self._safe_float_value(getattr(self, 'duration', 0.0), 0.0)
+        if update_slider and duration > 0 and not self._seeking:
             pos_sec = frame / self._media_fps()
-            slider_value = max(0, min(1000, int(pos_sec / self.duration * 1000)))
+            slider_value = max(0, min(1000, int(pos_sec / duration * 1000)))
             if slider_value != getattr(self, '_last_slider_value', None):
                 self._last_slider_value = slider_value
                 self.slider.setValue(slider_value)
@@ -1573,7 +1597,7 @@ class VideoPanel(QWidget):
             self._frame_display_timer.stop()
             return
         elapsed = max(0.0, time.perf_counter() - self._clock_anchor_time)
-        rate = max(0.1, float(getattr(self, '_playback_rate', 1.0) or 1.0))
+        rate = max(0.1, self._safe_float_value(getattr(self, '_playback_rate', 1.0), 1.0))
         frame = self._clock_anchor_frame + int(elapsed * self._media_fps() * rate)
         if frame == self._display_frame:
             return
@@ -3783,7 +3807,9 @@ class VideoPanel(QWidget):
         if self.cur_file and not getattr(self, '_metadata_ready', False):
             self.status_changed.emit('  ⏳ 메타데이터 확인 전입니다 — 잠시만 기다려주세요')
             return
-        ms = max(0, min(int(self.duration * 1000), int(ms))) if self.duration > 0 else max(0, int(ms))
+        duration = self._safe_float_value(getattr(self, 'duration', 0.0), 0.0)
+        target_ms = max(0, self._safe_int_value(ms, 0))
+        ms = max(0, min(int(duration * 1000), target_ms)) if duration > 0 else target_ms
         self.player.setPosition(ms)
         self._sync_frame_clock(ms)
         if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
@@ -3793,10 +3819,11 @@ class VideoPanel(QWidget):
 
     def _set_frame_position(self, frame):
         dur_frames = self._duration_frames()
+        frame = self._safe_int_value(frame, 0)
         if dur_frames > 0:
-            frame = max(0, min(dur_frames, int(frame)))
+            frame = max(0, min(dur_frames, frame))
         else:
-            frame = max(0, int(frame))
+            frame = max(0, frame)
         self._set_position(self._frame_to_ms(frame))
 
     def _transport_allowed(self, action, cooldown_sec=0.18):
