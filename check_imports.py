@@ -959,10 +959,19 @@ def check_core_logic():
             _same_path_text = staticmethod(RightPanel._same_path_text)
             _path_name = staticmethod(RightPanel._path_name)
             _remove_file_records_by_paths = RightPanel._remove_file_records_by_paths
+            _prune_recent_files_by_paths = RightPanel._prune_recent_files_by_paths
             _file_record_for_path = RightPanel._file_record_for_path
 
             def __init__(self):
                 self.updated = 0
+                self.saved_recent = None
+                self._settings = {
+                    'recent_files': [
+                        'C:/missing/remove_me.mxf',
+                        'C:/keep/keep_me.mxf',
+                        'C:/other/other.mxf',
+                    ]
+                }
                 self.vp = type('VP', (), {})()
                 self.vp._files = [
                     {'filepath': 'C:/missing/remove_me.mxf', 'name': 'remove_me.mxf'},
@@ -973,6 +982,7 @@ def check_core_logic():
                 self.vp.cur_id = ''
                 self.vp.refreshed = 0
                 self.vp.ejected = 0
+                self.vp._settings = dict(self._settings)
                 self.vp._refresh_clip_list = lambda: setattr(self.vp, 'refreshed', self.vp.refreshed + 1)
                 self.vp.eject_clip = lambda: setattr(self.vp, 'ejected', self.vp.ejected + 1)
                 self.vp._remember_recent_file = lambda path: None
@@ -983,6 +993,11 @@ def check_core_logic():
             def _file_records(self):
                 return [f for f in self.vp._files if isinstance(f, dict) and f.get('filepath')]
 
+            def _save_recent_files(self, recent_files):
+                self.saved_recent = list(recent_files or [])
+                self._settings['recent_files'] = self.saved_recent
+                self.vp._settings = dict(self._settings)
+
             def _persist_relinked_qc(self, record):
                 return None
 
@@ -992,6 +1007,8 @@ def check_core_logic():
             errors.append(f"  FAIL remove missing-file records: removed={removed} files={remove_probe.vp._files}")
         if remove_probe.vp.refreshed != 1 or remove_probe.updated != 1:
             errors.append("  FAIL remove missing-file records refresh path")
+        if remove_probe.saved_recent != ['C:/keep/keep_me.mxf', 'C:/other/other.mxf']:
+            errors.append(f"  FAIL remove missing-file records recent prune: {remove_probe.saved_recent}")
 
         remove_cue_probe = RemoveProbe()
         remove_cue_probe.vp.cur_file = 'C:/missing/remove_me.mxf'

@@ -1659,6 +1659,7 @@ class RightPanel(QWidget):
         if not removed:
             return 0
         self.vp._files = kept
+        self._prune_recent_files_by_paths(targets)
         cur_removed = self._file_path_text(getattr(self.vp, 'cur_file', '')) in targets
         if cur_removed:
             self.vp.eject_clip()
@@ -1666,6 +1667,36 @@ class RightPanel(QWidget):
             self.vp._refresh_clip_list()
         self._update_explorer(self.vp.cur_info, self.vp.cur_id or "")
         return removed
+
+    def _save_recent_files(self, recent_files):
+        self._settings = save_settings(recent_files=list(recent_files or []))
+        try:
+            self.vp._settings = load_settings()
+        except Exception as e:
+            log.debug(f'recent files settings refresh skipped: {e}')
+
+    def _prune_recent_files_by_paths(self, paths):
+        targets = [self._file_path_text(path) for path in (paths or []) if self._file_path_text(path)]
+        if not targets:
+            return 0
+        try:
+            settings = getattr(self, '_settings', None) or load_settings()
+            recent_files = list(settings.get('recent_files') or [])
+            kept = []
+            removed = 0
+            for fp in recent_files:
+                text = self._file_path_text(fp)
+                if text and any(self._same_path_text(text, target) for target in targets):
+                    removed += 1
+                    continue
+                kept.append(fp)
+            if removed:
+                self._save_recent_files(kept)
+                log.info(f'recent files pruned after file-list remove: {removed}')
+            return removed
+        except Exception as e:
+            log.debug(f'recent files prune failed: {e}')
+            return 0
 
     def _file_record_for_path(self, filepath):
         filepath = self._file_path_text(filepath)
