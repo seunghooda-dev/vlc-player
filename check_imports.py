@@ -3,7 +3,7 @@ check_imports.py — 모듈 간 import 정합성 자동 검증
 실행: python check_imports.py
 모듈 분리 후, 새 기능 추가 후 항상 실행하세요.
 """
-import re, ast, sys, tempfile
+import re, ast, sys, tempfile, csv
 from pathlib import Path
 
 FILES = [
@@ -463,6 +463,27 @@ def check_core_logic():
         })
         if meta_only_fields != {'확인필요': 'Y', '확인사유': '메타 확인'}:
             errors.append(f"  FAIL report attention fields metadata: {meta_only_fields}")
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            report_dir = Path(tmp_dir)
+            txt_path = report_dir / 'report.txt'
+            csv_path = report_dir / 'report.csv'
+            csv_rows = [
+                dict(row, **RightPanel._qc_report_attention_fields(row))
+                for row in report_rows[:3]
+            ]
+            RightPanel._write_qc_report_txt(RightPanel, txt_path, csv_rows)
+            txt = txt_path.read_text(encoding='utf-8')
+            if '검수요약:' not in txt or '확인 필요 파일: 1개' not in txt:
+                errors.append(f"  FAIL TXT report summary smoke: {txt[:300]}")
+            if 'issue.mxf: 블랙 2, 프리즈 1, 메타 확인' not in txt:
+                errors.append(f"  FAIL TXT report attention smoke: {txt[:500]}")
+            RightPanel._write_qc_report_csv(RightPanel, csv_path, csv_rows)
+            with csv_path.open('r', encoding='utf-8-sig', newline='') as fh:
+                saved_rows = list(csv.DictReader(fh))
+            if not saved_rows or '확인필요' not in saved_rows[0] or '확인사유' not in saved_rows[0]:
+                errors.append(f"  FAIL CSV report attention columns: {saved_rows[:1]}")
+            elif saved_rows[2].get('확인필요') != 'Y' or saved_rows[2].get('확인사유') != '블랙 2, 프리즈 1, 메타 확인':
+                errors.append(f"  FAIL CSV report attention values: {saved_rows[2] if len(saved_rows) > 2 else saved_rows}")
 
         class SummaryCopyProbe:
             vp = type('VP', (), {'cur_file': ''})()
