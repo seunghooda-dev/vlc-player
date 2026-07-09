@@ -177,6 +177,7 @@ def check_core_logic():
         qc_counts = RightPanel._batch_summary_counts(Probe(), [
             {'black': 'ok', 'mute': 'ok', 'freeze': 'ok'},
             {'black': 'ok', 'mute': 'ok', 'freeze': ''},
+            {'black': 'ok', 'mute': 'ok', 'freeze': '', 'meta_status': '확인 필요'},
             {'black': 'found', 'mute': 'ok', 'freeze': 'found'},
             {'black': 'found', 'mute': 'found', 'freeze': ''},
             {'black': 'ok', 'mute': 'error', 'freeze': ''},
@@ -184,8 +185,8 @@ def check_core_logic():
             {'filepath': 'C:/missing/file_not_available.mxf', 'black': 'ok', 'mute': 'ok', 'freeze': 'ok'},
         ])
         expected_qc_counts = {
-            'total': 7,
-            'attention': 5,
+            'total': 8,
+            'attention': 6,
             'normal': 1,
             'partial_normal': 1,
             'black': 2,
@@ -202,13 +203,14 @@ def check_core_logic():
         status_summary = RightPanel._status_summary_text(Probe(), [
             {'black': 'ok', 'mute': 'ok', 'freeze': 'ok'},
             {'black': 'ok', 'mute': 'ok', 'freeze': ''},
+            {'black': 'ok', 'mute': 'ok', 'freeze': '', 'meta_status': '확인 필요'},
             {'black': 'found', 'mute': 'found', 'freeze': ''},
             {'black': 'found', 'mute': 'ok', 'freeze': 'found'},
             {'filepath': 'C:/missing/file_not_available.mxf', 'black': 'ok', 'mute': 'ok', 'freeze': 'ok'},
         ])
         if "정상 1" not in status_summary:
             errors.append(f"  FAIL status summary normal count: {status_summary}")
-        if "확인 필요 3" not in status_summary:
+        if "확인 필요 4" not in status_summary:
             errors.append(f"  FAIL status summary attention count: {status_summary}")
         if "블랙/무음 정상 1" not in status_summary:
             errors.append(f"  FAIL status summary black/mute normal count: {status_summary}")
@@ -569,6 +571,7 @@ def check_core_logic():
         report_counts = RightPanel._qc_report_summary_counts(report_rows)
         expected_report_counts = {
             'total': 6,
+            'attention': 4,
             'normal': 1,
             'partial_normal': 1,
             'issue_files': 3,
@@ -585,7 +588,7 @@ def check_core_logic():
             if report_counts.get(key) != expected:
                 errors.append(f"  FAIL report summary count {key}: {report_counts.get(key)} != {expected}")
         report_lines = RightPanel._qc_report_summary_lines(report_rows)
-        if not any('문제파일 3' in line and '파일없음 1' in line for line in report_lines):
+        if not any('확인필요 4' in line and '문제파일 3' in line and '파일없음 1' in line for line in report_lines):
             errors.append(f"  FAIL report summary line issues: {report_lines}")
         if not any('복합문제 1' in line for line in report_lines):
             errors.append(f"  FAIL report summary line complex: {report_lines}")

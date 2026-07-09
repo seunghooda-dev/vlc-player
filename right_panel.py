@@ -958,7 +958,8 @@ class RightPanel(QWidget):
         }
         for f in files:
             unavailable = RightPanel._file_unavailable_badge((f or {}).get('filepath'))
-            if RightPanel._file_needs_report_attention(f, unavailable=unavailable):
+            needs_attention = RightPanel._file_needs_report_attention(f, unavailable=unavailable)
+            if needs_attention:
                 counts['attention'] += 1
             if unavailable:
                 counts['missing'] += 1
@@ -983,10 +984,13 @@ class RightPanel(QWidget):
                 counts['both'] += 1
             if issue_count:
                 continue
-            if black == 'ok' and mute == 'ok' and freeze == 'ok':
-                counts['normal'] += 1
-            elif black == 'ok' and mute == 'ok':
-                counts['partial_normal'] += 1
+            if black == 'ok' and mute == 'ok':
+                if needs_attention:
+                    continue
+                if freeze == 'ok':
+                    counts['normal'] += 1
+                else:
+                    counts['partial_normal'] += 1
             else:
                 counts['pending'] += 1
         return counts
@@ -1030,7 +1034,8 @@ class RightPanel(QWidget):
         }
         for f in files:
             unavailable = RightPanel._availability_for_record(f, availability)
-            if RightPanel._file_needs_report_attention(f, unavailable=unavailable):
+            needs_attention = RightPanel._file_needs_report_attention(f, unavailable=unavailable)
+            if needs_attention:
                 counts["확인 필요"] += 1
             badge, _ = self._file_status_badge(
                 f,
@@ -1039,6 +1044,8 @@ class RightPanel(QWidget):
             )
             if "검사중" in badge:
                 counts["검사중"] += 1
+            elif needs_attention and badge in ("정상", "블랙/무음 정상"):
+                continue
             elif badge in counts:
                 counts[badge] += 1
             elif badge == "블랙/무음 있음":
@@ -1506,6 +1513,7 @@ class RightPanel(QWidget):
         rows = [row for row in (rows or []) if isinstance(row, dict)]
         counts = {
             'total': len(rows),
+            'attention': 0,
             'normal': 0,
             'partial_normal': 0,
             'issue_files': 0,
@@ -1520,6 +1528,9 @@ class RightPanel(QWidget):
         }
         for row in rows:
             summary = str(row.get('QC요약') or row.get('QC상태') or '').strip()
+            attention_parts = RightPanel._qc_report_issue_parts(row)
+            if attention_parts:
+                counts['attention'] += 1
             black_found = str(row.get('블랙상태') or '').strip() == '있음'
             mute_found = str(row.get('무음상태') or '').strip() == '있음'
             freeze_found = str(row.get('프리즈상태') or '').strip() == '있음'
@@ -1542,11 +1553,13 @@ class RightPanel(QWidget):
                 counts['issue_files'] += 1
             elif found_count:
                 counts['issue_files'] += 1
-            elif summary == '정상':
+            elif summary == '미분석':
+                counts['pending'] += 1
+            elif summary == '정상' and not attention_parts:
                 counts['normal'] += 1
-            elif summary == '블랙/무음 정상':
+            elif summary == '블랙/무음 정상' and not attention_parts:
                 counts['partial_normal'] += 1
-            else:
+            elif not attention_parts:
                 counts['pending'] += 1
 
             meta = str(row.get('메타정합성') or '').strip()
@@ -1559,7 +1572,8 @@ class RightPanel(QWidget):
         counts = cls._qc_report_summary_counts(rows)
         return [
             (
-                f"검수요약: 정상 {counts['normal']} / 블랙·무음 정상 {counts['partial_normal']} / "
+                f"검수요약: 확인필요 {counts['attention']} / 정상 {counts['normal']} / "
+                f"블랙·무음 정상 {counts['partial_normal']} / "
                 f"문제파일 {counts['issue_files']} / 오류 {counts['error']} / "
                 f"미분석 {counts['pending']} / 파일없음 {counts['missing']}"
             ),
