@@ -1803,7 +1803,7 @@ class RightPanel(QWidget):
 
     def _finish_batch_qc(self):
         elapsed = time.monotonic() - _safe_float(self._batch_started_at, time.monotonic())
-        total = int(self._batch_total or 0)
+        total = _safe_int(self._batch_total, 0)
         self._batch_active = False
         self._batch_queue = []
         self._batch_current = None

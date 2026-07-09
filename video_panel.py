@@ -2160,10 +2160,7 @@ class VideoPanel(QWidget):
         self._dead_threads = kept
         if removed:
             log.debug(f'dead thread refs pruned: removed={removed} running={len(kept)}')
-        try:
-            limit = max(1, int(getattr(self, '_dead_threads_limit', 16) or 16))
-        except Exception:
-            limit = 16
+        limit = max(1, self._safe_int_value(getattr(self, '_dead_threads_limit', 16), 16))
         if len(kept) > limit:
             if getattr(self, '_dead_threads_limit_logged', False):
                 return
@@ -2464,10 +2461,7 @@ class VideoPanel(QWidget):
             self._loudness_cache = {}
         self._loudness_cache[key] = dict(result)
         self._touch_loudness_cache(key)
-        try:
-            limit = max(1, int(getattr(self, '_loudness_cache_limit', 32) or 32))
-        except Exception:
-            limit = 32
+        limit = max(1, self._safe_int_value(getattr(self, '_loudness_cache_limit', 32), 32))
         while len(self._loudness_cache_order) > limit:
             old = self._loudness_cache_order.pop(0)
             self._loudness_cache.pop(old, None)
