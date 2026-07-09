@@ -410,10 +410,7 @@ def _sanitize_qc_ranges(ranges, limit=2000):
     cleaned = []
     if ranges is None:
         return cleaned
-    try:
-        max_items = max(0, int(limit))
-    except Exception:
-        max_items = 2000
+    max_items = max(0, _safe_int(limit, 2000))
     if max_items <= 0:
         return cleaned
     if isinstance(ranges, dict):
@@ -431,22 +428,12 @@ def _sanitize_qc_ranges(ranges, limit=2000):
         row = {}
         for key in ("start", "end", "duration"):
             if key in item and item.get(key) is not None:
-                try:
-                    value = float(item.get(key))
-                    if not math.isfinite(value):
-                        continue
+                value = _safe_float(item.get(key), None)
+                if value is not None:
                     row[key] = round(max(0.0, value), 3)
-                except Exception:
-                    pass
         for key in ("frames",):
             if key in item and item.get(key) is not None:
-                try:
-                    value = float(item.get(key))
-                    if not math.isfinite(value):
-                        continue
-                    row[key] = max(0, int(value))
-                except Exception:
-                    pass
+                row[key] = max(0, _safe_int(item.get(key), 0))
         for key in ("tc_start", "tc_end"):
             value = str(item.get(key) or "").strip()
             if value:
@@ -472,7 +459,19 @@ def _encode_qc_ranges(ranges):
 
 def _decode_qc_ranges(value):
     try:
-        return _sanitize_qc_ranges(json.loads(value or "[]"))
+        if value is None:
+            return []
+        if isinstance(value, (list, tuple, dict)):
+            return _sanitize_qc_ranges(value)
+        if isinstance(value, bytes):
+            value = value.decode("utf-8", "replace")
+        text_value = str(value or "").strip()
+        if not text_value:
+            return []
+        decoded = json.loads(text_value)
+        if not isinstance(decoded, (list, tuple, dict)):
+            return []
+        return _sanitize_qc_ranges(decoded)
     except Exception:
         return []
 
