@@ -61,6 +61,33 @@ def _safe_int(value, default=0):
 def _safe_count(value):
     return max(0, _safe_int(value, 0))
 
+def _media_file_path(filepath):
+    try:
+        text = str(filepath or '').strip()
+        if not text:
+            return None
+        path = Path(text)
+        if path.exists() and path.is_file():
+            return path
+    except Exception:
+        pass
+    return None
+
+def _media_file_name(filepath, default='파일'):
+    try:
+        text = str(filepath or '').strip()
+        if text:
+            return Path(text).name or default
+    except Exception:
+        pass
+    return default
+
+def _require_media_file(filepath):
+    path = _media_file_path(filepath)
+    if path is None:
+        raise FileNotFoundError(f'파일을 찾을 수 없습니다: {_media_file_name(filepath)}')
+    return str(path)
+
 class ProbeThread(QThread):
     probed = pyqtSignal(dict, float)  # info, elapsed seconds
     error = pyqtSignal(str, float)
@@ -76,6 +103,7 @@ class ProbeThread(QThread):
     def run(self):
         started = time.monotonic()
         try:
+            self.fp = _require_media_file(self.fp)
             info = probe_media(self.fp)
             elapsed = time.monotonic() - started
             if self._abort:
@@ -131,7 +159,7 @@ class RuntimeWarmupThread(QThread):
                     return
                 try:
                     p = Path(fp)
-                    if not p.exists() or p.suffix.lower() not in VIDEO_EXTS:
+                    if not p.exists() or not p.is_file() or p.suffix.lower() not in VIDEO_EXTS:
                         continue
                     probe_started = time.monotonic()
                     hint = load_clip_metadata_hint(str(p))
@@ -183,12 +211,12 @@ class TranscodeThread(QThread):
 
     def __init__(self, fp, ch_pair=(1,2)):
         super().__init__()
-        self.fp      = fp
+        self.fp      = str(fp or '').strip()
         self.ch_pair = ch_pair
         import hashlib as _hl
         ch_key = str(ch_pair).replace(' ','')
-        uid = _hl.md5(f"{fp}_{ch_key}".encode()).hexdigest()[:8]
-        self._fast_remux = Path(fp).suffix.lower() == '.mxf'
+        uid = _hl.md5(f"{self.fp}_{ch_key}".encode()).hexdigest()[:8]
+        self._fast_remux = Path(self.fp).suffix.lower() == '.mxf'
         ext = '.mov' if self._fast_remux else '.mp4'
         self.tmp         = str(TMP_DIR / f"{uid}{ext}")
         self.tmp_preview = str(TMP_DIR / f"{uid}_preview.mp4")
@@ -323,6 +351,7 @@ class TranscodeThread(QThread):
 
     def run(self):
         try:
+            self.fp = _require_media_file(self.fp)
             import json as _j
             pr = subprocess.run(
                 [FFPROBE,"-v","quiet","-print_format","json","-show_streams",self.fp],
@@ -657,6 +686,7 @@ class AudioAnalyzeThread(QThread):
     def run(self):
         import re as _re, json as _json
         try:
+            self.fp = _require_media_file(self.fp)
             self.progress.emit('오디오 분석 준비 중...')
 
             # ── 1단계: 채널 수 확인 (ffprobe) ──
@@ -839,6 +869,7 @@ class LoudnessAnalyzeThread(QThread):
     def run(self):
         tail = []
         try:
+            self.fp = _require_media_file(self.fp)
             self.progress.emit('라우드니스 전체 분석 준비 중...')
             fc = f'{self._channel_filter()};[aud]ebur128=peak=true[loud]'
             cmd = [
@@ -975,6 +1006,7 @@ class BlackDetectThread(QThread):
     def run(self):
         import re as _re
         try:
+            self.fp = _require_media_file(self.fp)
             self.progress.emit('블랙 프레임 검출 준비 중...')
             frame_gap = 1.0 / self.fps if self.fps > 0 else 0.04
             black_re = _re.compile(r'frame:(\d+)\s+pblack:(\d+)\s+pts:\S+\s+t:([\d.]+)')
@@ -1114,6 +1146,7 @@ class FreezeDetectThread(QThread):
 
     def run(self):
         try:
+            self.fp = _require_media_file(self.fp)
             self.progress.emit('프리즈 프레임 검출 준비 중...')
             start_re = re.compile(r'freezedetect\.freeze_start:\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))')
             dur_re = re.compile(r'freezedetect\.freeze_duration:\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))')
