@@ -1118,6 +1118,19 @@ def check_core_logic():
         )
         if ready_channel_controls != 8:
             errors.append(f"  FAIL ready metadata channel controls: {ready_channel_controls}")
+        class TransportReadyProbe:
+            _metadata_ready = False
+            _cue_ready = False
+        transport_probe = TransportReadyProbe()
+        if VideoPanel._metadata_or_cue_ready(transport_probe):
+            errors.append("  FAIL transport ready before cue/metadata")
+        transport_probe._cue_ready = True
+        if not VideoPanel._metadata_or_cue_ready(transport_probe):
+            errors.append("  FAIL transport ready after cue")
+        transport_probe._cue_ready = False
+        transport_probe._metadata_ready = True
+        if not VideoPanel._metadata_or_cue_ready(transport_probe):
+            errors.append("  FAIL transport ready after metadata")
 
         required_video_exts = {'.mxf', '.mp4'}
         missing_video_exts = sorted(required_video_exts - set(VIDEO_EXTS))

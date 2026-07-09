@@ -1551,6 +1551,12 @@ class VideoPanel(QWidget):
             count = max(2, max((self._safe_int_value(ch, 0) for ch in selected), default=0))
         return max(0, min(8, count))
 
+    def _metadata_or_cue_ready(self):
+        return bool(
+            getattr(self, '_metadata_ready', False)
+            or getattr(self, '_cue_ready', False)
+        )
+
     @staticmethod
     def _settings_entries(value):
         if isinstance(value, (str, bytes)):
@@ -4003,10 +4009,10 @@ class VideoPanel(QWidget):
     def _set_position(self, ms):
         if self._is_busy_loading():
             self.status_changed.emit('  ⏳ CUE 준비 중입니다 — 잠시만 기다려주세요')
-            return
-        if self.cur_file and not getattr(self, '_metadata_ready', False):
-            self.status_changed.emit('  ⏳ 메타데이터 확인 전입니다 — 잠시만 기다려주세요')
-            return
+            return False
+        if self.cur_file and not self._metadata_or_cue_ready():
+            self.status_changed.emit('  ⏳ CUE 확인 전입니다 — 잠시만 기다려주세요')
+            return False
         duration = self._safe_float_value(getattr(self, 'duration', 0.0), 0.0)
         target_ms = max(0, self._safe_int_value(ms, 0))
         ms = max(0, min(int(duration * 1000), target_ms)) if duration > 0 else target_ms
@@ -4016,6 +4022,7 @@ class VideoPanel(QWidget):
             self._cancel_audio_mix()
             self._reset_audio_recovery()
             self._schedule_audio_mix(delay_ms=80, pos_ms=ms, restart=True)
+        return True
 
     def _set_frame_position(self, frame):
         dur_frames = self._duration_frames()
@@ -4030,12 +4037,9 @@ class VideoPanel(QWidget):
         if getattr(self, '_loading', False):
             self.status_changed.emit('  ⏳ CUE 준비 중입니다 — 잠시만 기다려주세요')
             return False
-        if self.cur_file and not getattr(self, '_metadata_ready', False):
-            if action == 'play_pause' and getattr(self, '_cue_ready', False):
-                pass
-            else:
-                self.status_changed.emit('  ⏳ 메타데이터 확인 전입니다 — 잠시만 기다려주세요')
-                return False
+        if self.cur_file and not self._metadata_or_cue_ready():
+            self.status_changed.emit('  ⏳ CUE 확인 전입니다 — 잠시만 기다려주세요')
+            return False
         now = time.monotonic()
         if now < self._transport_guard_until:
             log.debug(f'transport ignored action={action} prev={self._transport_guard_action}')
@@ -4129,7 +4133,8 @@ class VideoPanel(QWidget):
             self.load_file(sel)
 
     def seek_to(self, sec):
-        self._set_position(int(sec*1000))
+        if not self._set_position(int(sec*1000)):
+            return
         if self.player.playbackState()!=QMediaPlayer.PlaybackState.PlayingState:
             self.player.play()
 
