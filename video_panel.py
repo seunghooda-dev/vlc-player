@@ -2,7 +2,7 @@
 video_panel.py — 메인 비디오 플레이어 패널
 VideoPanel: 재생/타임코드/트랜스코드/IN-OUT/블랙검출/오디오미터
 """
-import sys, os, json, hashlib, subprocess, time
+import sys, os, json, hashlib, subprocess, time, math
 from pathlib import Path
 from datetime import datetime
 from PyQt6.QtWidgets import (
@@ -48,16 +48,41 @@ class QCMarkerSlider(QSlider):
         self._qc_duration = 0.0
         self.setMinimumHeight(18)
 
+    @staticmethod
+    def _finite_seconds(value, default=None):
+        try:
+            seconds = float(value)
+            if math.isfinite(seconds):
+                return max(0.0, seconds)
+        except Exception:
+            pass
+        return default
+
+    @classmethod
+    def _clean_ranges(cls, ranges):
+        cleaned = []
+        for item in ranges or []:
+            if not isinstance(item, dict):
+                continue
+            start = cls._finite_seconds(item.get("start"))
+            if start is None:
+                continue
+            end = cls._finite_seconds(item.get("end"), start)
+            if end < start:
+                continue
+            row = dict(item)
+            row["start"] = start
+            row["end"] = end
+            cleaned.append(row)
+        return cleaned
+
     def set_qc_markers(self, black_ranges=None, mute_ranges=None, freeze_ranges=None, duration_sec=0.0):
         self._qc_markers = {
-            "black": list(black_ranges or []),
-            "mute": list(mute_ranges or []),
-            "freeze": list(freeze_ranges or []),
+            "black": self._clean_ranges(black_ranges),
+            "mute": self._clean_ranges(mute_ranges),
+            "freeze": self._clean_ranges(freeze_ranges),
         }
-        try:
-            self._qc_duration = max(0.0, float(duration_sec or 0.0))
-        except Exception:
-            self._qc_duration = 0.0
+        self._qc_duration = self._finite_seconds(duration_sec, 0.0) or 0.0
         self.update()
 
     def paintEvent(self, event):
@@ -80,13 +105,8 @@ class QCMarkerSlider(QSlider):
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(color))
             for r in ranges:
-                try:
-                    start = max(0.0, float(r.get("start", 0.0)))
-                    end = float(r.get("end", start))
-                except Exception:
-                    continue
-                if end < start:
-                    end = start
+                start = r.get("start", 0.0)
+                end = r.get("end", start)
                 start = min(start, self._qc_duration)
                 end = min(max(end, start + 0.001), self._qc_duration)
                 x1 = track_left + int((start / self._qc_duration) * track_width)

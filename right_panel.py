@@ -25,7 +25,7 @@ from constants   import (
     friendly_error_title, format_missing_runtime_tools, heavy_analysis_status,
     format_bytes, record_state_event,
 )
-from db_models   import probe, sec_to_tc, tc_to_frames
+from db_models   import probe, sec_to_tc, tc_to_frames, sanitize_qc_ranges
 from threads     import AudioAnalyzeThread, BlackDetectThread, FreezeDetectThread
 from meters      import mk_label
 
@@ -698,7 +698,7 @@ class RightPanel(QWidget):
         return status, issues
 
     def _ranges_report_text(self, ranges, limit=20):
-        ranges = list(ranges or [])
+        ranges = sanitize_qc_ranges(ranges)
         if not ranges:
             return ''
         parts = []
@@ -1690,6 +1690,7 @@ class RightPanel(QWidget):
         self._stop_analysis_timeout()
         if getattr(self, '_black_thread', None) and not self._black_thread.isRunning():
             self._black_thread = None
+        ranges = sanitize_qc_ranges(ranges)
         if hasattr(self.vp, '_set_file_status'):
             self.vp._set_file_status(
                 fp,
@@ -1745,7 +1746,7 @@ class RightPanel(QWidget):
         self._stop_analysis_timeout()
         if getattr(self, '_audio_thread', None) and not self._audio_thread.isRunning():
             self._audio_thread = None
-        mutes = result.get('mutes', []) if isinstance(result, dict) else []
+        mutes = sanitize_qc_ranges(result.get('mutes', []) if isinstance(result, dict) else [])
         if hasattr(self.vp, '_set_file_status'):
             self.vp._set_file_status(
                 fp,
@@ -1945,6 +1946,7 @@ class RightPanel(QWidget):
         self.btn_run_black.setEnabled(True)
         if getattr(self, '_black_thread', None) and not self._black_thread.isRunning():
             self._black_thread = None
+        ranges = sanitize_qc_ranges(ranges)
         if hasattr(self.vp, '_set_file_status'):
             fp = getattr(self, '_black_file', self.vp.cur_file)
             self.vp._set_file_status(
@@ -2281,7 +2283,7 @@ class RightPanel(QWidget):
         self.btn_run_audio.setEnabled(True)
         if getattr(self, '_audio_thread', None) and not self._audio_thread.isRunning():
             self._audio_thread = None
-        mutes    = result.get('mutes', [])
+        mutes    = sanitize_qc_ranges(result.get('mutes', []))
         if hasattr(self.vp, '_set_file_status'):
             fp = getattr(self, '_audio_file', self.vp.cur_file)
             self.vp._set_file_status(
@@ -2430,6 +2432,7 @@ class RightPanel(QWidget):
         self.btn_run_freeze.setEnabled(True)
         if getattr(self, '_freeze_thread', None) and not self._freeze_thread.isRunning():
             self._freeze_thread = None
+        ranges = sanitize_qc_ranges(ranges)
         if hasattr(self.vp, '_set_file_status'):
             fp = getattr(self, '_freeze_file', self.vp.cur_file)
             self.vp._set_file_status(

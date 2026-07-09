@@ -410,6 +410,9 @@ def _sanitize_qc_ranges(ranges, limit=2000):
             break
     return cleaned
 
+def sanitize_qc_ranges(ranges, limit=2000):
+    return _sanitize_qc_ranges(ranges, limit=limit)
+
 def _encode_qc_ranges(ranges):
     try:
         return json.dumps(_sanitize_qc_ranges(ranges), ensure_ascii=False, separators=(",", ":"))
