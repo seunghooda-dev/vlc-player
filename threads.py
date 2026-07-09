@@ -907,22 +907,24 @@ class BlackDetectThread(QThread):
             terminate_child_process(self._proc, 'black detect ffmpeg')
 
     def _flush_segment(self, out, seg):
-        if not seg:
+        if not seg or not isinstance(seg, dict):
             return
         frame_dur = 1.0 / self.fps if self.fps > 0 else 0.0
-        start = max(0.0, float(seg['start']))
-        end_frame_time = max(start, float(seg['end']))
-        frames = max(1, int(seg['frames']))
+        start = max(0.0, _safe_float(seg.get('start'), 0.0))
+        end_frame_time = max(start, _safe_float(seg.get('end'), start))
+        frames = max(1, _safe_int(seg.get('frames'), 1))
+        start_frame = max(0, _safe_int(seg.get('start_frame'), int(round(start * self.fps))))
+        end_frame = max(start_frame, _safe_int(seg.get('end_frame'), start_frame + frames - 1))
         duration = max(frame_dur, frames * frame_dur)
         out.append({
             'start'     : start,
             'end'       : end_frame_time,
             'duration'  : duration,
             'frames'    : frames,
-            'start_frame': int(seg['start_frame']),
-            'end_frame' : int(seg['end_frame']),
-            'tc_start'  : self._tc_from_frame(seg['start_frame']),
-            'tc_end'    : self._tc_from_frame(seg['end_frame']),
+            'start_frame': start_frame,
+            'end_frame' : end_frame,
+            'tc_start'  : self._tc_from_frame(start_frame),
+            'tc_end'    : self._tc_from_frame(end_frame),
         })
 
     def run(self):
@@ -972,8 +974,8 @@ class BlackDetectThread(QThread):
                             'frames': 1,
                         }
                     else:
-                        prev_frame = int(seg['end_frame'])
-                        prev_t = float(seg['end'])
+                        prev_frame = _safe_int(seg.get('end_frame'), frame)
+                        prev_t = _safe_float(seg.get('end'), t)
                         is_next_frame = frame <= prev_frame + 1
                         is_next_time = t <= prev_t + frame_gap * 1.6
                         if is_next_frame or is_next_time:
@@ -1039,11 +1041,11 @@ class FreezeDetectThread(QThread):
 
     def _range_from_times(self, start, end, duration=None):
         frame_dur = 1.0 / self.fps if self.fps > 0 else 0.04
-        start = max(0.0, float(start))
-        end = max(start + frame_dur, float(end))
+        start = max(0.0, _safe_float(start, 0.0))
+        end = max(start + frame_dur, _safe_float(end, start + frame_dur))
         if duration is None:
             duration = end - start
-        duration = max(frame_dur, float(duration))
+        duration = max(frame_dur, _safe_float(duration, end - start))
         start_frame = max(0, int(round(start * self.fps)))
         end_frame = max(start_frame, int(round(end * self.fps)))
         frames = max(1, int(round(duration * self.fps)))
@@ -1127,7 +1129,7 @@ class FreezeDetectThread(QThread):
                 if pending_start is not None:
                     try:
                         info = probe_media(self.fp)
-                        file_duration = float(info.get('duration', 0) or 0)
+                        file_duration = _safe_float(info.get('duration', 0), 0.0)
                     except Exception:
                         file_duration = 0.0
                     if file_duration > pending_start:
