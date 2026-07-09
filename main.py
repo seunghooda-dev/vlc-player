@@ -24,6 +24,7 @@ from constants    import (
     cache_summary, cleanup_runtime_cache, cleanup_old_generated_files, format_bytes, format_cache_summary,
     create_diagnostic_report, load_settings, save_settings,
     _hidden_subprocess_flags,
+    _path_mtime, _path_size,
 )
 from video_panel  import VideoPanel
 from right_panel  import RightPanel
@@ -565,25 +566,27 @@ class MainWindow(QMainWindow):
         candidates = [p for p in candidates if p.is_file()]
         if not candidates:
             return None
-        return max(candidates, key=lambda p: p.stat().st_mtime)
+        return max(candidates, key=_path_mtime)
 
     def _release_info_text(self, runtime=None):
         runtime = runtime or self._runtime or check_runtime_environment()
         self._attach_audio_child_status(runtime)
         exe_path = Path(sys.executable if getattr(sys, 'frozen', False) else __file__).resolve()
         try:
-            exe_modified = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(exe_path.stat().st_mtime))
-            exe_size = format_bytes(exe_path.stat().st_size)
+            exe_mtime = _path_mtime(exe_path)
+            exe_modified = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(exe_mtime)) if exe_mtime else '-'
+            exe_size = format_bytes(_path_size(exe_path))
         except Exception:
             exe_modified = '-'
             exe_size = '-'
         package = self._latest_release_package()
         if package:
             try:
+                package_mtime = _path_mtime(package)
                 package_text = (
                     f"{package}\n"
-                    f"  modified={time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(package.stat().st_mtime))} "
-                    f"size={format_bytes(package.stat().st_size)}"
+                    f"  modified={time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(package_mtime)) if package_mtime else '-'} "
+                    f"size={format_bytes(_path_size(package))}"
                 )
             except Exception:
                 package_text = str(package)
@@ -745,7 +748,7 @@ class MainWindow(QMainWindow):
             candidates = [p for p in candidates if p.is_file()]
             if not candidates:
                 return None
-            return max(candidates, key=lambda p: p.stat().st_mtime)
+            return max(candidates, key=_path_mtime)
         except Exception as e:
             log.debug(f'latest diagnostic lookup failed: {e}')
             return None
@@ -1410,7 +1413,7 @@ def _cleanup_tmp_files():
                 return 0.0
             if target.is_symlink() or not target.is_file():
                 return 0.0
-            size_mb = target.stat().st_size / 1024**2
+            size_mb = _path_size(target) / 1024**2
             target.unlink(missing_ok=True)
             return size_mb
         except Exception as e:
@@ -1424,8 +1427,7 @@ def _cleanup_tmp_files():
                 return None
             if target.is_symlink() or not target.is_file():
                 return None
-            st = target.stat()
-            return (float(st.st_mtime), st.st_size / 1024**2, target)
+            return (_path_mtime(target), _path_size(target) / 1024**2, target)
         except Exception as e:
             log.debug(f'cleanup stat skipped: {e}')
             return None
