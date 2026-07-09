@@ -2042,10 +2042,12 @@ class VideoPanel(QWidget):
         filepath = str(p)
         qc = load_qc_status(filepath)
         size = _path_size(p)
+        mtime_ns = _path_mtime_ns(p)
         return {
             "name": p.name,
             "filepath": filepath,
             "size": size,
+            "mtime_ns": mtime_ns,
             "ext": p.suffix.upper().lstrip("."),
             "cue": False,
             "playing": False,
@@ -2068,6 +2070,10 @@ class VideoPanel(QWidget):
             if self._same_path(item.get("filepath"), filepath):
                 item.setdefault("cue", False)
                 item.setdefault("playing", False)
+                if "size" not in item:
+                    item["size"] = _path_size(Path(item.get("filepath") or filepath))
+                if "mtime_ns" not in item:
+                    item["mtime_ns"] = _path_mtime_ns(Path(item.get("filepath") or filepath))
                 item.setdefault("black", None)
                 item.setdefault("mute", None)
                 item.setdefault("freeze", None)

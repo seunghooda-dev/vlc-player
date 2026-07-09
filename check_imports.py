@@ -258,6 +258,8 @@ def check_core_logic():
 
         class MetadataRestoreProbe(Probe):
             _restore_metadata_qc_from_hint = RightPanel._restore_metadata_qc_from_hint
+            _record_file_snapshot_changed = RightPanel._record_file_snapshot_changed
+            _record_file_snapshot = lambda self, record: getattr(self, '_snapshot', (0, 0))
 
         original_hint_loader = rpm.load_clip_metadata_hint
         try:
@@ -277,6 +279,26 @@ def check_core_logic():
         finally:
             rpm.load_clip_metadata_hint = original_hint_loader
 
+        original_hint_loader = rpm.load_clip_metadata_hint
+        try:
+            rpm.load_clip_metadata_hint = lambda fp: {}
+            stale_probe = MetadataRestoreProbe()
+            stale_probe._snapshot = (200, 20)
+            stale_record = {
+                'filepath': 'C:/sample/replaced.mxf',
+                'size': 100,
+                'mtime_ns': 10,
+                'meta_status': '확인 필요',
+                'meta_issues': ['오디오 없음'],
+                '_meta_qc_hint_checked': True,
+            }
+            if RightPanel._restore_metadata_qc_from_hint(stale_probe, stale_record):
+                errors.append(f"  FAIL stale metadata QC restore result: {stale_record}")
+            if stale_record.get('meta_status') or stale_record.get('meta_issues'):
+                errors.append(f"  FAIL stale metadata QC clear: {stale_record}")
+        finally:
+            rpm.load_clip_metadata_hint = original_hint_loader
+
         status, issues = RightPanel._metadata_qc_summary(
             Probe(),
             dict(base, fps=29.97, df=True, channels=0, audio_stream_count=0),
@@ -287,6 +309,7 @@ def check_core_logic():
 
         class MetadataStoreProbe(Probe):
             _same_path_text = staticmethod(lambda a, b: str(a or '').lower() == str(b or '').lower())
+            _record_file_snapshot = lambda self, record: (100, 10)
 
             def __init__(self):
                 self.vp = type('VP', (), {'_files': [{'filepath': 'C:/sample/no_audio.mxf'}]})()

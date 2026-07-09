@@ -24,7 +24,7 @@ from PyQt6.QtMultimedia import QMediaPlayer
 from constants   import (
     C, VIDEO_EXTS, BASE_DIR, REPORT_DIR, log, load_settings, save_settings,
     friendly_error_title, format_missing_runtime_tools, heavy_analysis_status,
-    format_bytes, record_state_event, _path_size,
+    format_bytes, record_state_event, _path_size, _path_mtime_ns,
 )
 from db_models   import (
     probe, sec_to_tc, tc_to_frames, sanitize_qc_ranges,
@@ -1156,15 +1156,52 @@ class RightPanel(QWidget):
         target = self._file_path_text(filepath)
         for f in (getattr(self.vp, '_files', []) or []):
             if isinstance(f, dict) and self._same_path_text(f.get('filepath'), target):
+                size, mtime_ns = self._record_file_snapshot(f)
+                if size:
+                    f['size'] = size
+                if mtime_ns:
+                    f['mtime_ns'] = mtime_ns
                 f['meta_status'] = status
                 f['meta_issues'] = list(issues or [])
                 f['_meta_qc_hint_checked'] = True
                 break
         return status, issues
 
+    def _record_file_snapshot(self, record):
+        if not isinstance(record, dict):
+            return 0, 0
+        fp = self._file_path_text(record.get('filepath'))
+        if not fp:
+            return 0, 0
+        try:
+            path = Path(fp)
+            return max(0, _path_size(path)), max(0, _path_mtime_ns(path))
+        except Exception:
+            return 0, 0
+
+    def _record_file_snapshot_changed(self, record):
+        if not isinstance(record, dict):
+            return False
+        current_size, current_mtime_ns = self._record_file_snapshot(record)
+        stored_size = _safe_int(record.get('size', 0), 0)
+        stored_mtime_ns = _safe_int(record.get('mtime_ns', 0), 0)
+        size_changed = bool(stored_size and current_size and stored_size != current_size)
+        mtime_changed = bool(stored_mtime_ns and current_mtime_ns and stored_mtime_ns != current_mtime_ns)
+        return size_changed or mtime_changed
+
+    @staticmethod
+    def _clear_record_metadata_qc(record):
+        if not isinstance(record, dict):
+            return
+        record.pop('meta_status', None)
+        record.pop('meta_issues', None)
+        record.pop('_meta_qc_hint_checked', None)
+
     def _restore_metadata_qc_from_hint(self, record):
         if not isinstance(record, dict):
             return False
+        if self._record_file_snapshot_changed(record):
+            RightPanel._clear_record_metadata_qc(record)
         if str(record.get('meta_status') or '').strip():
             return True
         if bool(record.get('_meta_qc_hint_checked')):
@@ -1181,6 +1218,11 @@ class RightPanel(QWidget):
         if not info:
             return False
         status, issues = RightPanel._metadata_qc_summary(self, info, fp)
+        size, mtime_ns = self._record_file_snapshot(record)
+        if size:
+            record['size'] = size
+        if mtime_ns:
+            record['mtime_ns'] = mtime_ns
         record['meta_status'] = status
         record['meta_issues'] = list(issues or [])
         return True
