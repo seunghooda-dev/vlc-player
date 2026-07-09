@@ -3021,11 +3021,19 @@ class VideoPanel(QWidget):
         return True
 
     def _start_metadata_probe(self, filepath, load_t0, timings, load_seq=None):
+        p = self._video_file_path(filepath)
+        if not p:
+            file_name = self._display_file_name(filepath, '?')
+            self._metadata_ready = False
+            self.status_changed.emit(f'  ⚠ 메타데이터 분석 생략 — {file_name}')
+            log.warning(f'metadata probe skipped invalid file: {file_name}')
+            return
+        filepath = str(p)
         self._probe_seq += 1
         seq = self._probe_seq
         thread = ProbeThread(filepath)
         self._probe_thread = thread
-        file_name = Path(filepath).name
+        file_name = p.name
 
         def _stale():
             return seq != self._probe_seq or not self._load_is_current(load_seq, filepath)
@@ -3100,7 +3108,7 @@ class VideoPanel(QWidget):
     def _schedule_metadata_probe(self, filepath, load_t0, timings, load_seq=None, delay_ms=650):
         self._metadata_probe_timer_seq += 1
         timer_seq = self._metadata_probe_timer_seq
-        file_name = Path(filepath).name
+        file_name = self._display_file_name(filepath, '?')
 
         def _run():
             if timer_seq != self._metadata_probe_timer_seq:
@@ -3110,9 +3118,16 @@ class VideoPanel(QWidget):
                 return
             if getattr(self, '_metadata_ready', False):
                 return
+            p = self._video_file_path(filepath)
+            if not p:
+                self._pending_metadata_probe = None
+                self._metadata_ready = False
+                self.status_changed.emit(f'  ⚠ 메타데이터 분석 생략 — {file_name}')
+                log.warning(f'delayed metadata probe skipped invalid file: {file_name}')
+                return
             self._pending_metadata_probe = None
             self.status_changed.emit(f'  ⏳ 메타데이터 백그라운드 분석 중 — {file_name}')
-            self._start_metadata_probe(filepath, load_t0, list(timings), load_seq=load_seq)
+            self._start_metadata_probe(str(p), load_t0, list(timings), load_seq=load_seq)
 
         QTimer.singleShot(max(0, int(delay_ms)), _run)
 
