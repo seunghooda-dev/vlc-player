@@ -2487,6 +2487,25 @@ def sec_to_tc(sec, fps=29.97, df=None):
 def sec_fmt(s):
     return f"{int(s//60):02d}:{int(s%60):02d}"
 
+def _probe_safe_float(value, default=0.0):
+    try:
+        parsed = float(value)
+        return parsed if math.isfinite(parsed) else default
+    except Exception:
+        return default
+
+def _probe_safe_int(value, default=0):
+    try:
+        parsed = float(value)
+        if math.isfinite(parsed):
+            return int(parsed)
+    except Exception:
+        pass
+    return default
+
+def _probe_safe_count(value):
+    return max(0, _probe_safe_int(value, 0))
+
 def probe(filepath):
     try:
         r = subprocess.run(
@@ -2503,28 +2522,32 @@ def probe(filepath):
         info = {
             "filename"    : Path(filepath).name,
             "filepath"    : filepath,
-            "duration"    : float(fmt.get("duration", 0)),
-            "size"        : int(fmt.get("size", 0)),
-            "bit_rate"    : int(fmt.get("bit_rate", 0) or 0),
+            "duration"    : _probe_safe_float(fmt.get("duration", 0), 0.0),
+            "size"        : _probe_safe_count(fmt.get("size", 0)),
+            "bit_rate"    : _probe_safe_count(fmt.get("bit_rate", 0)),
             "fps"         : 29.97,
             "width"       : 0, "height": 0,
-            "codec"       : "", "channels": 0,
+            "codec"       : "", "channels": 0, "audio_stream_count": 0,
             "timecode"    : "",
             "format_short": Path(filepath).suffix.upper().lstrip(".")
         }
         for s in d.get("streams", []):
             if s.get("codec_type") == "video":
                 info["codec"]  = s.get("codec_name", "").upper()
-                info["width"]  = s.get("width", 0)
-                info["height"] = s.get("height", 0)
+                info["width"]  = _probe_safe_count(s.get("width", 0))
+                info["height"] = _probe_safe_count(s.get("height", 0))
                 try:
                     n, dv = s.get("r_frame_rate","30/1").split("/")
-                    info["fps"] = round(int(n)/int(dv), 3)
+                    divisor = _probe_safe_int(dv, 1) or 1
+                    fps_raw = _probe_safe_int(n, 0) / divisor
+                    if fps_raw > 0 and math.isfinite(fps_raw):
+                        info["fps"] = round(fps_raw, 3)
                 except Exception as e: log.debug(f'fps parse: {e}')
                 tc = s.get("tags", {}).get("timecode", "")
                 if tc: info["timecode"] = tc
             elif s.get("codec_type") == "audio":
-                info["channels"] = max(info["channels"], s.get("channels", 0))
+                info["channels"] += _probe_safe_count(s.get("channels", 0))
+                info["audio_stream_count"] += 1
         if not info["timecode"]:
             info["timecode"] = fmt.get("tags", {}).get("timecode", "")
         fps = info["fps"]
