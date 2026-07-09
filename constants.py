@@ -847,7 +847,8 @@ def friendly_error_text(area, detail='', filename=None, max_detail=160):
     return '\n'.join(lines)
 
 def friendly_error_title(area, detail='', filename=None):
-    return friendly_error_text(area, detail, filename).splitlines()[0]
+    lines = friendly_error_text(area, detail, filename).splitlines()
+    return lines[0] if lines else '오류가 발생했습니다'
 
 def format_bytes(size):
     try:
@@ -862,6 +863,28 @@ def format_bytes(size):
     if idx == 0:
         return f'{int(value)} {units[idx]}'
     return f'{value:.1f} {units[idx]}'
+
+def _safe_float_value(value, default=0.0):
+    try:
+        parsed = float(value)
+        return parsed if math.isfinite(parsed) else default
+    except Exception:
+        return default
+
+def _safe_int_value(value, default=0):
+    try:
+        parsed = float(value)
+        if math.isfinite(parsed):
+            return int(parsed)
+    except Exception:
+        pass
+    return default
+
+def _path_mtime(path, default=0.0):
+    try:
+        return float(Path(path).stat().st_mtime)
+    except Exception:
+        return default
 
 def _safe_cache_child(path):
     root = TMP_DIR.resolve()
@@ -1769,7 +1792,7 @@ def format_runtime_environment(runtime=None):
     lines.append('무거운 분석 슬롯')
     lines.append('-' * 42)
     if heavy.get('running'):
-        lines.append(f"진행 중: {heavy.get('owner') or '-'} ({float(heavy.get('elapsed') or 0.0):.1f}s)")
+        lines.append(f"진행 중: {heavy.get('owner') or '-'} ({_safe_float_value(heavy.get('elapsed'), 0.0):.1f}s)")
     else:
         lines.append('진행 중인 무거운 분석 없음')
     lines.append('')
@@ -1848,10 +1871,12 @@ def _latest_report_text(patterns, max_chars=40000):
         candidates = [p for p in candidates if p.is_file()]
         if not candidates:
             return '관련 샘플 검증 리포트 없음'
-        latest = max(candidates, key=lambda p: p.stat().st_mtime)
+        latest = max(candidates, key=_path_mtime)
+        latest_mtime = _path_mtime(latest)
         text = latest.read_text(encoding='utf-8', errors='replace')
-        header = f'LATEST_REPORT: {latest}\nMODIFIED: {datetime.fromtimestamp(latest.stat().st_mtime).isoformat(timespec="seconds")}\n\n'
-        return header + text[-int(max_chars):]
+        modified = datetime.fromtimestamp(latest_mtime).isoformat(timespec="seconds") if latest_mtime else '-'
+        header = f'LATEST_REPORT: {latest}\nMODIFIED: {modified}\n\n'
+        return header + text[-max(1, _safe_int_value(max_chars, 40000)):]
     except Exception as e:
         return f'샘플 검증 리포트 읽기 실패: {e}'
 
