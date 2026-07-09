@@ -2330,6 +2330,22 @@ class VideoPanel(QWidget):
         except Exception:
             return str(filepath)
 
+    def _normalize_loudness_result(self, result):
+        if not isinstance(result, dict):
+            log.warning(f'loudness result ignored: unexpected type {type(result).__name__}')
+            return None
+        try:
+            integrated = float(result.get('integrated'))
+        except Exception:
+            log.warning('loudness result ignored: missing integrated value')
+            return None
+        if not math.isfinite(integrated):
+            log.warning(f'loudness result ignored: non-finite integrated value {integrated!r}')
+            return None
+        normalized = dict(result)
+        normalized['integrated'] = integrated
+        return normalized
+
     def _start_loudness_analysis(self, filepath):
         self._retire_loudness_analysis()
         if not filepath or not Path(filepath).exists():
@@ -2399,8 +2415,14 @@ class VideoPanel(QWidget):
                 return
             if self._loudness_thread is thread:
                 self._loudness_thread = None
-            self._loudness_cache[cache_key] = dict(result)
-            self._apply_loudness_result(fp, result)
+            normalized = self._normalize_loudness_result(result)
+            if normalized is None:
+                if fp == self.cur_file:
+                    self.meter_ctrl.set_loudness_analysis_error('ERR')
+                    self.status_changed.emit(f'  ⚠ 라우드니스 결과 오류 — {Path(fp).name}')
+                return
+            self._loudness_cache[cache_key] = normalized
+            self._apply_loudness_result(fp, normalized)
 
         def _error(err, fp=file_at_start, thread=t, s=seq):
             if s != self._loudness_seq:
@@ -2422,6 +2444,11 @@ class VideoPanel(QWidget):
 
     def _apply_loudness_result(self, filepath, result, from_cache=False):
         if filepath != self.cur_file:
+            return
+        result = self._normalize_loudness_result(result)
+        if result is None:
+            self.meter_ctrl.set_loudness_analysis_error('ERR')
+            self.status_changed.emit(f'  ⚠ 라우드니스 결과 오류 — {Path(filepath).name}')
             return
         integrated = result.get('integrated')
         self.meter_ctrl.set_loudness_analysis_result(integrated)
