@@ -283,6 +283,7 @@ def check_core_logic():
             _same_path_text = staticmethod(RightPanel._same_path_text)
             _path_name = staticmethod(RightPanel._path_name)
             _remove_file_records_by_paths = RightPanel._remove_file_records_by_paths
+            _file_record_for_path = RightPanel._file_record_for_path
 
             def __init__(self):
                 self.updated = 0
@@ -321,6 +322,38 @@ def check_core_logic():
         removed = RightPanel._remove_file_records_by_paths(remove_cue_probe, ['C:/missing/remove_me.mxf'])
         if removed != 1 or remove_cue_probe.vp.ejected != 1:
             errors.append("  FAIL remove current missing-file eject path")
+
+        reset_probe = RemoveProbe()
+        reset_probe.calls = []
+        reset_probe.vp._files = [
+            {
+                'filepath': 'C:/sample/reset_me.mxf',
+                'name': 'reset_me.mxf',
+                'black': 'found',
+                'mute': 'ok',
+                'freeze': '',
+            }
+        ]
+        reset_probe.vp._set_file_status = lambda filepath, **changes: reset_probe.calls.append((filepath, changes))
+        if not RightPanel._has_qc_result(reset_probe, reset_probe.vp._files[0]):
+            errors.append("  FAIL QC reset has-result detection")
+        if RightPanel._has_qc_result(reset_probe, {'black': '', 'mute': '', 'freeze': ''}):
+            errors.append("  FAIL QC reset empty-result detection")
+        if not RightPanel._reset_file_qc(reset_probe, 'C:/sample/reset_me.mxf'):
+            errors.append("  FAIL QC reset call result")
+        if len(reset_probe.calls) != 1:
+            errors.append(f"  FAIL QC reset call count: {len(reset_probe.calls)}")
+        else:
+            _, reset_changes = reset_probe.calls[0]
+            for key in ('black', 'mute', 'freeze'):
+                if reset_changes.get(key) != '':
+                    errors.append(f"  FAIL QC reset status {key}: {reset_changes.get(key)!r}")
+            for key in ('black_count', 'mute_count', 'freeze_count'):
+                if reset_changes.get(key) != 0:
+                    errors.append(f"  FAIL QC reset count {key}: {reset_changes.get(key)!r}")
+            for key in ('black_ranges', 'mute_ranges', 'freeze_ranges'):
+                if reset_changes.get(key) != []:
+                    errors.append(f"  FAIL QC reset ranges {key}: {reset_changes.get(key)!r}")
 
         relink_probe = RemoveProbe()
         relink_probe.vp._files = [

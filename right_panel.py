@@ -1252,6 +1252,47 @@ class RightPanel(QWidget):
         self._update_explorer(self.vp.cur_info, self.vp.cur_id or "")
         return removed
 
+    def _file_record_for_path(self, filepath):
+        filepath = self._file_path_text(filepath)
+        if not filepath:
+            return None
+        for f in self._file_records():
+            if self._same_path_text(f.get('filepath'), filepath):
+                return f
+        return None
+
+    def _has_qc_result(self, record):
+        if not isinstance(record, dict):
+            return False
+        for key in ('black', 'mute', 'freeze'):
+            if str(record.get(key) or '').lower() in ('ok', 'found', 'error'):
+                return True
+        return False
+
+    def _reset_file_qc(self, filepath):
+        filepath = self._file_path_text(filepath)
+        if not filepath:
+            return False
+        record = self._file_record_for_path(filepath)
+        if not record:
+            return False
+        if hasattr(self.vp, '_set_file_status'):
+            self.vp._set_file_status(
+                filepath,
+                analysis=None,
+                black='',
+                mute='',
+                freeze='',
+                black_count=0,
+                mute_count=0,
+                freeze_count=0,
+                black_ranges=[],
+                mute_ranges=[],
+                freeze_ranges=[],
+            )
+            return True
+        return False
+
     @classmethod
     def _same_path_text(cls, left, right):
         left = cls._file_path_text(left)
@@ -1396,7 +1437,8 @@ class RightPanel(QWidget):
             return
         menu = QMenu(self.exp_list)
         menu.setStyleSheet(self._menu_style())
-        act_cue = act_del = act_relink = act_open_location = act_copy_path = act_clean_unavailable = None
+        act_cue = act_del = act_relink = act_open_location = act_copy_path = act_reset_qc = act_clean_unavailable = None
+        record = self._file_record_for_path(fp)
         if fp:
             if self._file_unavailable_badge(fp):
                 act_relink = menu.addAction("↻   파일 다시 연결")
@@ -1404,6 +1446,8 @@ class RightPanel(QWidget):
             act_cue = menu.addAction("▶   CUE  —  화면에 올리기")
             act_open_location = menu.addAction("📁   폴더 열기")
             act_copy_path = menu.addAction("⧉   경로 복사")
+            if self._has_qc_result(record):
+                act_reset_qc = menu.addAction("↺   QC 결과 초기화")
             menu.addSeparator()
             act_del = menu.addAction("✕   목록에서 제거")
         if unavailable:
@@ -1434,6 +1478,16 @@ class RightPanel(QWidget):
             self._open_file_location(fp)
         elif action == act_copy_path:
             self._copy_file_path(fp)
+        elif action == act_reset_qc:
+            answer = QMessageBox.question(
+                self,
+                'QC 결과 초기화',
+                f"선택한 파일의 블랙/무음/프리즈 QC 결과를 초기화할까요?\n\n{self._path_name(fp)}",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer == QMessageBox.StandardButton.Yes and self._reset_file_qc(fp):
+                self.vp.status_changed.emit(f"  ↺ QC 결과 초기화 — {self._path_name(fp)}")
         elif action == act_cue:
             if not self._is_video_file_path(fp):
                 self.vp.status_changed.emit(f"  ⚠ 파일을 찾을 수 없습니다 — {self._path_name(fp)}")
