@@ -702,9 +702,13 @@ class RightPanel(QWidget):
 
     def _metadata_qc_summary(self, info, filepath=''):
         issues = []
-        p = Path(filepath or info.get('filepath', '') or '')
-        ext = (p.suffix.lower() if str(p) else '').lstrip('.')
-        if filepath and not p.exists():
+        path_text = self._file_path_text(filepath or info.get('filepath', '') or '')
+        try:
+            p = Path(path_text) if path_text else None
+        except Exception:
+            p = None
+        ext = (p.suffix.lower() if p else '').lstrip('.')
+        if path_text and not self._path_exists(path_text):
             issues.append('파일 접근 불가')
         if ext and f'.{ext}' not in VIDEO_EXTS:
             issues.append('지원 형식 아님')
@@ -783,25 +787,74 @@ class RightPanel(QWidget):
             files = list(reversed(files))
         return files
 
+    @staticmethod
+    def _file_path_text(value):
+        try:
+            return str(value or '').strip()
+        except Exception:
+            return ''
+
+    @classmethod
+    def _path_name(cls, value, default='파일'):
+        text = cls._file_path_text(value)
+        if not text:
+            return default
+        try:
+            return Path(text).name or default
+        except Exception:
+            return default
+
+    @classmethod
+    def _path_parent_text(cls, value):
+        text = cls._file_path_text(value)
+        if not text:
+            return ''
+        try:
+            return str(Path(text).parent)
+        except Exception:
+            return ''
+
+    @classmethod
+    def _path_exists(cls, value):
+        text = cls._file_path_text(value)
+        if not text:
+            return False
+        try:
+            return Path(text).exists()
+        except Exception:
+            return False
+
     def _file_records(self):
-        return [f for f in (getattr(self.vp, '_files', []) or []) if isinstance(f, dict)]
+        records = []
+        for f in (getattr(self.vp, '_files', []) or []):
+            if not isinstance(f, dict):
+                continue
+            if not self._file_path_text(f.get('filepath')):
+                continue
+            records.append(f)
+        return records
 
     def _qc_report_rows(self):
         rows = []
         criteria = self._qc_criteria()
         for f in self._iter_report_files():
-            fp = f.get('filepath', '')
-            p = Path(fp)
+            fp = self._file_path_text(f.get('filepath', ''))
+            p_name = self._path_name(fp, _safe_text(f.get('name'), '파일'))
+            p_ext = ''
+            try:
+                p_ext = Path(fp).suffix.upper().lstrip('.') if fp else ''
+            except Exception:
+                p_ext = ''
             badge, _ = self._file_status_badge(f, fp == self.vp.cur_file)
             size = _safe_int(f.get('size', 0), 0)
             if not size:
-                size = _path_size(p)
+                size = _path_size(fp)
             info = {}
             try:
-                if Path(fp).exists():
+                if self._path_exists(fp):
                     info = probe(fp) or {}
             except Exception as e:
-                log.debug(f'qc report probe skipped file={p.name}: {e}')
+                log.debug(f'qc report probe skipped file={p_name}: {e}')
             fps = _safe_float(info.get('fps', 0), 0.0)
             duration = _safe_float(info.get('duration', 0), 0.0)
             width = _safe_int(info.get('width', 0), 0)
@@ -813,10 +866,10 @@ class RightPanel(QWidget):
                 '앱버전': 'MXF QC Player V.1.0',
                 '검수시각': datetime.now().isoformat(timespec='seconds'),
                 'QC상태': badge,
-                '파일명': f.get('name') or p.name,
+                '파일명': f.get('name') or p_name,
                 '경로': fp,
-                '파일존재': 'Y' if p.exists() else 'N',
-                '확장자': f.get('ext') or p.suffix.upper().lstrip('.'),
+                '파일존재': 'Y' if self._path_exists(fp) else 'N',
+                '확장자': f.get('ext') or p_ext,
                 '포맷': info.get('format_short', ''),
                 '코덱': info.get('codec', ''),
                 '해상도': f'{width}x{height}' if width and height else '',
@@ -1050,11 +1103,14 @@ class RightPanel(QWidget):
             btn.setChecked(key == getattr(self, '_filter_key', 'all'))
 
         # 경로 표시: CUE 파일 기준, 없으면 첫 번째 파일 기준
-        base_fp = cue_fp or (all_files[0].get("filepath", "") if all_files else "")
+        base_fp = self._file_path_text(cue_fp) or (
+            self._file_path_text(all_files[0].get("filepath", "")) if all_files else ""
+        )
         summary = self._status_summary_text(all_files)
         if base_fp:
+            base_parent = self._path_parent_text(base_fp)
             self.exp_path.setText(
-                f"📁 {Path(base_fp).parent}    QC {summary}    표시 {len(files)}/{len(all_files)} ({self._filter_label()})"
+                f"📁 {base_parent or base_fp}    QC {summary}    표시 {len(files)}/{len(all_files)} ({self._filter_label()})"
             )
         else:
             self.exp_path.setText("파일을 추가하세요")
@@ -1071,8 +1127,8 @@ class RightPanel(QWidget):
             files = files if sort_asc else list(reversed(files))
 
         for f in files:
-            fp = f.get("filepath", "")
-            name = _safe_text(f.get("name"), Path(fp).name if fp else "파일")
+            fp = self._file_path_text(f.get("filepath", ""))
+            name = _safe_text(f.get("name"), self._path_name(fp))
             is_cue = (fp == cue_fp)
             prefix = "▶  " if is_cue else ""
             badge, badge_color = self._file_status_badge(f, is_cue)
