@@ -261,6 +261,10 @@ def check_core_logic():
                 errors.append(f"  FAIL filter count {key}: {filter_counts.get(key)} != {expected}")
         if RightPanel._filter_button_text('issues', 3) != '문제 3':
             errors.append("  FAIL filter button text issues")
+        if RightPanel._filter_button_text('issues', 3, compact=True) != '문제3':
+            errors.append("  FAIL compact filter button text issues")
+        if RightPanel._filter_button_text('all', 0, compact=True) != '전체0':
+            errors.append("  FAIL compact filter button text all-zero")
         if RightPanel._filter_button_text('mute', 0) != '무음':
             errors.append("  FAIL filter button text zero-detail")
         if RightPanel._filter_button_text('all', 0) != '전체 0':

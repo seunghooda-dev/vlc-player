@@ -766,20 +766,26 @@ class RightPanel(QWidget):
         }
 
     @staticmethod
-    def _filter_button_text(key, count):
+    def _filter_button_text(key, count, compact=False):
         label = FILE_FILTER_LABELS.get(key, key)
         count = _safe_count(count)
         if key in ('all', 'done', 'pending', 'issues') or count > 0:
-            return f"{label} {count}"
+            joiner = '' if compact else ' '
+            return f"{label}{joiner}{count}"
         return label
 
     def _update_filter_buttons(self, files):
         counts = self._filter_counts(files)
         current_key = getattr(self, '_filter_key', 'all')
+        compact = False
+        try:
+            compact = self.width() < 430
+        except Exception:
+            compact = False
         for key, btn in getattr(self, '_filter_btns', {}).items():
             btn.setChecked(key == current_key)
             count = counts.get(key, 0)
-            btn.setText(self._filter_button_text(key, count))
+            btn.setText(self._filter_button_text(key, count, compact=compact))
             tip = FILE_FILTER_TIPS.get(key, FILE_FILTER_LABELS.get(key, key))
             btn.setToolTip(f"{tip}\n현재 {count}개")
         return counts
