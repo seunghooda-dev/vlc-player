@@ -673,6 +673,8 @@ class VideoPanel(QWidget):
         self._loudness_cache_limit = 32
         self._loudness_seq = 0
         self._dead_threads = []   # abort된 스레드 보관 (GC 소멸 방지)
+        self._dead_threads_limit = 16
+        self._dead_threads_limit_logged = False
         self._tc_cache = {}
         self._tc_cache_order = []
         self._preconvert_threads = []
@@ -2095,6 +2097,44 @@ class VideoPanel(QWidget):
         self._cancel_audio_mix()
         self.player.stop(); self._video_item.hide(); self._empty_proxy.show()
 
+    def _prune_dead_threads(self):
+        dead_threads = getattr(self, '_dead_threads', [])
+        if not dead_threads:
+            return
+        kept = []
+        removed = 0
+        for thread in list(dead_threads):
+            try:
+                if thread and thread.isRunning():
+                    kept.append(thread)
+                else:
+                    removed += 1
+            except Exception:
+                removed += 1
+        self._dead_threads = kept
+        if removed:
+            log.debug(f'dead thread refs pruned: removed={removed} running={len(kept)}')
+        try:
+            limit = max(1, int(getattr(self, '_dead_threads_limit', 16) or 16))
+        except Exception:
+            limit = 16
+        if len(kept) > limit:
+            if getattr(self, '_dead_threads_limit_logged', False):
+                return
+            self._dead_threads_limit_logged = True
+            log.warning(f'dead thread refs still running above limit: {len(kept)}/{limit}')
+        else:
+            self._dead_threads_limit_logged = False
+
+    def _track_dead_thread(self, thread):
+        if not thread:
+            return
+        if not hasattr(self, '_dead_threads'):
+            self._dead_threads = []
+        if thread not in self._dead_threads:
+            self._dead_threads.append(thread)
+        self._prune_dead_threads()
+
     def _retire_tc(self):
         """_tc_thread를 abort 후 dead_threads로 이동.
         finished 시그널로 완전 종료 시점에 자동 제거 → isRunning() 타이밍 충돌 방지"""
@@ -2109,7 +2149,7 @@ class VideoPanel(QWidget):
                 except ValueError:
                     pass  # 이미 제거됐으면 무시
             t.finished.connect(_on_finished)
-            self._dead_threads.append(t)
+            self._track_dead_thread(t)
             t.abort()   # abort는 finished 시그널 연결 후 호출 (순서 중요)
 
     def _retire_loudness_analysis(self):
@@ -2129,7 +2169,7 @@ class VideoPanel(QWidget):
             t.finished.connect(_on_finished)
         except Exception:
             pass
-        self._dead_threads.append(t)
+        self._track_dead_thread(t)
         try:
             t.abort()
         except Exception as e:
@@ -2154,7 +2194,7 @@ class VideoPanel(QWidget):
             t.finished.connect(_on_finished)
         except Exception:
             pass
-        self._dead_threads.append(t)
+        self._track_dead_thread(t)
         try:
             t.abort()
         except Exception as e:
