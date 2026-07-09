@@ -1594,6 +1594,11 @@ class VideoPanel(QWidget):
             'channels': visible_count,
         }
 
+    @staticmethod
+    def _metadata_hint_says_no_audio(info):
+        info = info if isinstance(info, dict) else {}
+        return bool(info.get('metadata_hint') and VideoPanel._audio_source_count_from_info(info) <= 0)
+
     def _metadata_or_cue_ready(self):
         return bool(
             getattr(self, '_metadata_ready', False)
@@ -4004,12 +4009,12 @@ class VideoPanel(QWidget):
         if not selected:
             return False
         if not getattr(self, '_metadata_ready', False):
+            if self._metadata_hint_says_no_audio(self.cur_info):
+                return False
             # MXF playback must keep video/audio together even while metadata
             # is still probing. A fallback first-audio-stream output is expected.
             return True
-        audio_streams = max(0, self._safe_int_value(self.cur_info.get('audio_stream_count', 0), 0))
-        channels = max(0, self._safe_int_value(self.cur_info.get('channels', 0), 0))
-        return audio_streams > 0 or channels > 0
+        return self._audio_source_count_from_info(self.cur_info) > 0
 
     def _reset_audio_recovery(self):
         self._audio_recovery_attempts = 0
@@ -4489,7 +4494,10 @@ class VideoPanel(QWidget):
             playing
             and self.cur_file
             and (
-                not getattr(self, '_metadata_ready', False)
+                (
+                    not getattr(self, '_metadata_ready', False)
+                    and not self._metadata_hint_says_no_audio(self.cur_info)
+                )
                 or self._audio_source_count_from_info(self.cur_info) > 0
             )
         )

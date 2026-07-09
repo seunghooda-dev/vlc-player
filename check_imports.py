@@ -1394,6 +1394,10 @@ def check_core_logic():
         provisional_unknown_info = VideoPanel._provisional_audio_display_info({}, 8)
         if VideoPanel._audio_channel_display_text(display_probe, provisional_unknown_info) != '8CH':
             errors.append("  FAIL provisional unknown channel display text")
+        if not VideoPanel._metadata_hint_says_no_audio({'metadata_hint': True, 'audio_stream_count': 0, 'channels': 0}):
+            errors.append("  FAIL metadata hint no-audio detection")
+        if VideoPanel._metadata_hint_says_no_audio({'metadata_hint': True, 'audio_stream_count': 1, 'channels': 0}):
+            errors.append("  FAIL metadata hint with audio misdetected as no-audio")
         class AudioRestartProbe:
             _safe_int_value = staticmethod(VideoPanel._safe_int_value)
             _metadata_audio_restart_required = VideoPanel._metadata_audio_restart_required
@@ -1407,6 +1411,8 @@ def check_core_logic():
         audio_restart = AudioRestartProbe([1, 2])
         class AudioExpectedProbe:
             _safe_int_value = staticmethod(VideoPanel._safe_int_value)
+            _audio_source_count_from_info = staticmethod(VideoPanel._audio_source_count_from_info)
+            _metadata_hint_says_no_audio = staticmethod(VideoPanel._metadata_hint_says_no_audio)
             _audio_mix_expected = VideoPanel._audio_mix_expected
 
             def __init__(self, metadata_ready, info, selected=None):
@@ -1430,6 +1436,10 @@ def check_core_logic():
             AudioExpectedProbe(False, {'audio_stream_count': 0, 'channels': 0})
         ):
             errors.append("  FAIL pending metadata should keep fallback audio expected")
+        if VideoPanel._audio_mix_expected(
+            AudioExpectedProbe(False, {'metadata_hint': True, 'audio_stream_count': 0, 'channels': 0})
+        ):
+            errors.append("  FAIL no-audio metadata hint should not expect fallback audio")
         if VideoPanel._metadata_audio_restart_required(
             audio_restart,
             {'audio_stream_count': 1, 'channels': 2},
