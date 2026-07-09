@@ -499,6 +499,10 @@ def _sanitize_qc_ranges(ranges, limit=2000):
                 value = _safe_float(item.get(key), None)
                 if value is not None:
                     row[key] = round(max(0.0, value), 3)
+        if "start" in row and "duration" in row and "end" not in row:
+            row["end"] = round(row["start"] + row["duration"], 3)
+        if "start" in row and "end" in row and "duration" not in row:
+            row["duration"] = round(max(0.0, row["end"] - row["start"]), 3)
         for key in ("frames",):
             if key in item and item.get(key) is not None:
                 row[key] = max(0, _safe_int(item.get(key), 0))

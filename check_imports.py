@@ -110,7 +110,7 @@ def check_core_logic():
         from right_panel import FILE_FILTER_TIPS, RightPanel
         from constants import C, DEFAULT_SETTINGS, VIDEO_EXTS, _normalize_settings
         import db_models as dbm
-        from db_models import frames_to_tc, is_df_fps, qc_summary_from_status, tc_to_frames
+        from db_models import frames_to_tc, is_df_fps, qc_summary_from_status, sanitize_qc_ranges, tc_to_frames
         from threads import AudioAnalyzeThread, TranscodeThread
         from video_panel import AudioMixPlayer, DIRECT_VLC_EXTS, VideoPanel
     except Exception as e:
@@ -206,6 +206,15 @@ def check_core_logic():
                 errors.append(f"  FAIL audio analyze probe guard did not raise: {label}")
             except RuntimeError:
                 pass
+
+        repaired_ranges = sanitize_qc_ranges([
+            {'start': 1.25, 'duration': 0.75},
+            {'start': 4.0, 'end': 5.5},
+        ])
+        if repaired_ranges[0].get('end') != 2.0:
+            errors.append(f"  FAIL QC range end repair: {repaired_ranges}")
+        if repaired_ranges[1].get('duration') != 1.5:
+            errors.append(f"  FAIL QC range duration repair: {repaired_ranges}")
 
         status, issues = RightPanel._metadata_qc_summary(Probe(), {}, 'C:/sample/bad.mxf')
         if status != '확인 필요' or issues != ['메타데이터 확인 실패']:
