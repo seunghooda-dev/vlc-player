@@ -1300,6 +1300,33 @@ def check_core_logic():
         if not VideoPanel._media_transport_ready(media_transport_probe):
             errors.append("  FAIL media transport ready with file and cue")
 
+        class DropUrl:
+            def __init__(self, path):
+                self.path = path
+
+            def toLocalFile(self):
+                return self.path
+
+        class DropPathProbe:
+            _same_path = VideoPanel._same_path
+            _video_file_path = VideoPanel._video_file_path
+            _video_file_paths_from_urls = VideoPanel._video_file_paths_from_urls
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            first = tmp_path / 'first.mxf'
+            second = tmp_path / 'second.mp4'
+            invalid = tmp_path / 'memo.txt'
+            for path in (first, second, invalid):
+                path.write_bytes(b'test')
+            drop_paths = VideoPanel._video_file_paths_from_urls(
+                DropPathProbe(),
+                [DropUrl(str(first)), DropUrl(str(second)), DropUrl(str(invalid)), DropUrl(str(first))],
+            )
+            expected_drop_paths = [str(first), str(second)]
+            if drop_paths != expected_drop_paths:
+                errors.append(f"  FAIL multi-file drop path filter: {drop_paths} != {expected_drop_paths}")
+
         required_video_exts = {'.mxf', '.mp4'}
         missing_video_exts = sorted(required_video_exts - set(VIDEO_EXTS))
         if missing_video_exts:

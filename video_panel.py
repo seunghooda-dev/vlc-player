@@ -1580,6 +1580,21 @@ class VideoPanel(QWidget):
             pass
         return None
 
+    def _video_file_paths_from_urls(self, urls):
+        paths = []
+        for url in urls or []:
+            try:
+                raw = url.toLocalFile()
+            except Exception:
+                raw = str(url or '')
+            p = self._video_file_path(raw)
+            if not p:
+                continue
+            fp = str(p)
+            if not any(self._same_path(fp, existing) for existing in paths):
+                paths.append(fp)
+        return paths
+
     @staticmethod
     def _display_file_name(filepath, default='파일'):
         try:
@@ -4380,19 +4395,23 @@ class VideoPanel(QWidget):
             log.info('drop ignored while loading')
             e.ignore()
             return
-        accepted = False
-        for url in e.mimeData().urls():
-            p = self._video_file_path(url.toLocalFile())
-            if p:
-                fp = str(p)
-                self._add_file_to_list(fp)
-                self._refresh_clip_list()
-                self.load_file(fp)
-                accepted = True
-                e.acceptProposedAction()
-                break
-        if not accepted:
-            self.status_changed.emit('  ⚠ 지원하는 MXF/MP4 영상 파일을 드래그하세요')
+        paths = self._video_file_paths_from_urls(e.mimeData().urls())
+        if paths:
+            added = 0
+            for fp in paths:
+                if self._add_file_to_list(fp):
+                    added += 1
+            self._refresh_clip_list()
+            e.acceptProposedAction()
+            first = paths[0]
+            if len(paths) > 1:
+                self.status_changed.emit(
+                    f'  📥 드래그 파일 {len(paths)}개 추가'
+                    f'{f" / 신규 {added}개" if added else ""} — 첫 파일 CUE'
+                )
+            self.load_file(first)
+        else:
+            self.status_changed.emit('  ⚠ 지원하는 영상 파일을 드래그하세요')
             e.ignore()
 
     def keyPressEvent(self, e):
