@@ -549,7 +549,7 @@ def load_qc_status(filepath):
             "black_ranges": _decode_qc_ranges(getattr(clip, "qc_black_ranges", "")),
             "mute_ranges": _decode_qc_ranges(getattr(clip, "qc_mute_ranges", "")),
             "freeze_ranges": _decode_qc_ranges(getattr(clip, "qc_freeze_ranges", "")),
-            "summary": getattr(clip, "qc_summary", "") or qc_summary_from_status(black, mute, freeze),
+            "summary": qc_summary_from_status(black, mute, freeze),
             "updated_at": getattr(clip, "qc_updated_at", None),
         }
 

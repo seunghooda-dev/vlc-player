@@ -108,7 +108,7 @@ def check_core_logic():
     try:
         from right_panel import RightPanel
         from constants import DEFAULT_SETTINGS, VIDEO_EXTS, _normalize_settings
-        from db_models import frames_to_tc, is_df_fps, tc_to_frames
+        from db_models import frames_to_tc, is_df_fps, qc_summary_from_status, tc_to_frames
         from video_panel import AudioMixPlayer, DIRECT_VLC_EXTS
     except Exception as e:
         return [f"  FAIL core logic import: {e}"]
@@ -185,6 +185,16 @@ def check_core_logic():
             errors.append(f"  FAIL status summary black/mute count: {status_summary}")
         if "복합 문제 1" not in status_summary:
             errors.append(f"  FAIL status summary complex count: {status_summary}")
+        qc_summary_cases = [
+            (qc_summary_from_status('ok', 'ok', ''), '정상', 'black/mute ok'),
+            (qc_summary_from_status('found', 'ok', ''), '블랙 있음', 'black found'),
+            (qc_summary_from_status('found', 'found', ''), '블랙/무음 있음', 'black+mute found'),
+            (qc_summary_from_status('found', 'ok', 'found'), '블랙/프리즈 있음', 'black+freeze found'),
+            (qc_summary_from_status('ok', 'error', 'found'), '검사 오류', 'error priority'),
+        ]
+        for actual, expected, label in qc_summary_cases:
+            if actual != expected:
+                errors.append(f"  FAIL QC summary {label}: {actual} != {expected}")
 
         if DEFAULT_SETTINGS.get('audio_channels') != [1, 2]:
             errors.append(f"  FAIL default audio channels: {DEFAULT_SETTINGS.get('audio_channels')}")
