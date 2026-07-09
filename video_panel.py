@@ -170,6 +170,29 @@ class AudioMixPlayer(QObject):
         except Exception:
             return default
 
+    @staticmethod
+    def _file_name(filepath, default='-'):
+        try:
+            text = str(filepath or '').strip()
+            if text:
+                return Path(text).name or default
+        except Exception:
+            pass
+        return default
+
+    @staticmethod
+    def _media_file_path(filepath):
+        try:
+            text = str(filepath or '').strip()
+            if not text:
+                return None
+            path = Path(text)
+            if path.exists() and path.is_file():
+                return path
+        except Exception:
+            pass
+        return None
+
     def set_file(self, filepath, audio_stream_count=0, channel_count=2):
         self.filepath = filepath
         self.audio_stream_count = max(0, self._safe_int(audio_stream_count, 0))
@@ -194,7 +217,7 @@ class AudioMixPlayer(QObject):
         was_active = bool(self._playing or self._ffplay or self._ffmpeg)
         if was_active:
             self.log_diagnostic('audio child stopping')
-            record_state_event('audio-mix', 'stopping', file=Path(self.filepath or '').name, channels=self.channels)
+            record_state_event('audio-mix', 'stopping', file=self._file_name(self.filepath), channels=self.channels)
         started = time.monotonic()
         self._playing = False
         for proc, label in ((self._ffplay, 'audio mix ffplay'), (self._ffmpeg, 'audio mix ffmpeg')):
@@ -246,7 +269,7 @@ class AudioMixPlayer(QObject):
 
     def log_diagnostic(self, prefix='audio child status'):
         status = self.diagnostic_status()
-        file_name = Path(status.get('file') or '').name or '-'
+        file_name = self._file_name(status.get('file'))
         log.info(
             f"{prefix}: "
             f"playing={status.get('playing')} "
@@ -276,9 +299,11 @@ class AudioMixPlayer(QObject):
         return self.play(pos_sec, lead_sec=lead_sec)
 
     def play(self, pos_sec=0.0, lead_sec=None):
-        if not self.filepath or not Path(self.filepath).exists():
+        media_path = self._media_file_path(self.filepath)
+        if not media_path:
             self.last_error = '오디오 출력 파일을 찾을 수 없습니다.'
             return False
+        filepath = str(media_path)
         self.stop()
         self.last_error = ''
         missing = format_missing_runtime_tools(['FFmpeg', 'FFplay'])
@@ -291,7 +316,7 @@ class AudioMixPlayer(QObject):
         ffmpeg_cmd = [
             FFMPEG, '-hide_banner', '-loglevel', 'error',
             '-ss', f'{start_sec:.3f}',
-            '-i', self.filepath,
+            '-i', filepath,
             '-vn',
             '-f', 's16le',
             '-acodec', 'pcm_s16le',
@@ -352,7 +377,7 @@ class AudioMixPlayer(QObject):
             record_state_event(
                 'audio-mix',
                 'started',
-                file=Path(self.filepath or '').name,
+                file=self._file_name(filepath),
                 ffmpeg=self._ffmpeg.pid,
                 ffplay=self._ffplay.pid,
                 channels=self.channels,
