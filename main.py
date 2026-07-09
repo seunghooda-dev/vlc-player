@@ -34,10 +34,31 @@ APP_ICON_PATH = RESOURCE_DIR / "assets" / "mxf_qc_player.ico"
 _single_instance_handle = None
 
 
+def _as_dict_result(result, label):
+    if isinstance(result, dict):
+        return result
+    log.warning(f'{label} returned unexpected result type: {type(result).__name__}')
+    return {}
+
+
+def _safe_float(value, default=0.0):
+    try:
+        return float(value)
+    except Exception:
+        return default
+
+
+def _safe_int(value, default=0):
+    try:
+        return int(value)
+    except Exception:
+        return default
+
+
 def _final_child_cleanup(label='shutdown'):
     """Run a final two-pass child-process cleanup and log what remains."""
     try:
-        summary = cleanup_child_processes()
+        summary = _as_dict_result(cleanup_child_processes(), f'{label} child cleanup')
         log.info(
             f'{label} child cleanup pass1: '
             f"running_before={summary.get('running_before')} "
@@ -45,7 +66,7 @@ def _final_child_cleanup(label='shutdown'):
         )
         if summary.get('running_after'):
             time.sleep(0.25)
-            summary = cleanup_child_processes()
+            summary = _as_dict_result(cleanup_child_processes(), f'{label} child cleanup retry')
             log.warning(
                 f'{label} child cleanup pass2: '
                 f"running_before={summary.get('running_before')} "
@@ -288,21 +309,29 @@ class MainWindow(QMainWindow):
         self._warmup_thread = t
 
         def _done(result, thread=t):
+            result = _as_dict_result(result, 'runtime warmup')
+            tools = result.get('tools') or {}
+            if not isinstance(tools, dict):
+                log.warning(f"runtime warmup tools returned unexpected type: {type(tools).__name__}")
+                tools = {}
             tool_summary = ', '.join(
-                f"{name}={state.get('elapsed', 0):.3f}s"
-                for name, state in result.get('tools', {}).items()
+                f"{name}={_safe_float((state if isinstance(state, dict) else {}).get('elapsed', 0)):.3f}s"
+                for name, state in tools.items()
             )
             recent = result.get('recent_probe') or {}
+            if not isinstance(recent, dict):
+                log.warning(f"runtime warmup recent_probe returned unexpected type: {type(recent).__name__}")
+                recent = {}
             recent_summary = ''
             if recent:
                 recent_summary = (
                     f" recent={recent.get('file', '?')} "
                     f"ok={recent.get('ok')} "
                     f"source={recent.get('source', 'unknown')} "
-                    f"{recent.get('elapsed', 0):.3f}s"
+                    f"{_safe_float(recent.get('elapsed', 0)):.3f}s"
                 )
             log.info(
-                f"runtime warmup complete: total={result.get('elapsed', 0):.3f}s "
+                f"runtime warmup complete: total={_safe_float(result.get('elapsed', 0)):.3f}s "
                 f"tools=[{tool_summary}]{recent_summary}"
             )
 
@@ -939,18 +968,24 @@ class MainWindow(QMainWindow):
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return
-            result = cleanup_runtime_cache()
+            result = _as_dict_result(cleanup_runtime_cache(), 'cache cleanup')
             failed = result.get('failed', [])
+            if not isinstance(failed, list):
+                log.warning(f"cache cleanup failed list returned unexpected type: {type(failed).__name__}")
+                failed = []
+            deleted_entries = _safe_int(result.get('deleted_entries', 0))
+            deleted_files = _safe_int(result.get('deleted_files', 0))
+            freed_bytes = _safe_int(result.get('freed_bytes', 0))
             label = (
-                f"정리 완료: {result.get('deleted_entries', 0)}개 항목, "
-                f"{format_bytes(result.get('freed_bytes', 0))} 확보"
+                f"정리 완료: {deleted_entries}개 항목, "
+                f"{format_bytes(freed_bytes)} 확보"
             )
             if failed:
                 label += f" / 실패 {len(failed)}개"
             log.info(
-                f"cache cleanup: entries={result.get('deleted_entries', 0)} "
-                f"files={result.get('deleted_files', 0)} "
-                f"freed={format_bytes(result.get('freed_bytes', 0))} "
+                f"cache cleanup: entries={deleted_entries} "
+                f"files={deleted_files} "
+                f"freed={format_bytes(freed_bytes)} "
                 f"failed={len(failed)}"
             )
             _refresh_cache(label)
@@ -1412,22 +1447,32 @@ def _cleanup_tmp_files():
 
 def _cleanup_old_generated_files():
     try:
-        result = cleanup_old_generated_files(7)
-        deleted_count = int(result.get('deleted_count', 0) or 0)
-        freed = int(result.get('freed_bytes', 0) or 0)
+        result = _as_dict_result(cleanup_old_generated_files(7), 'old generated file cleanup')
+        deleted_count = _safe_int(result.get('deleted_count', 0))
+        freed = _safe_int(result.get('freed_bytes', 0))
+        deleted = result.get('deleted', [])
+        if not isinstance(deleted, list):
+            log.warning(f"old generated cleanup deleted list returned unexpected type: {type(deleted).__name__}")
+            deleted = []
+        failed = result.get('failed', [])
+        if not isinstance(failed, list):
+            log.warning(f"old generated cleanup failed list returned unexpected type: {type(failed).__name__}")
+            failed = []
         if deleted_count:
             log.info(
                 f"7일 경과 생성 파일 정리: {deleted_count}개 / {format_bytes(freed)} "
                 f"(cutoff={result.get('cutoff')})"
             )
-            for item in result.get('deleted', [])[:20]:
+            for item in deleted[:20]:
+                if not isinstance(item, dict):
+                    continue
                 log.info(
                     f"  cleaned[{item.get('section')}] {item.get('path')} "
-                    f"age={item.get('age_days')}d size={format_bytes(item.get('bytes', 0))}"
+                    f"age={item.get('age_days')}d size={format_bytes(_safe_int(item.get('bytes', 0)))}"
                 )
         else:
             log.info(f"7일 경과 생성 파일 정리: 대상 없음 (cutoff={result.get('cutoff')})")
-        for err in result.get('failed', [])[:10]:
+        for err in failed[:10]:
             log.warning(f'7일 경과 생성 파일 정리 실패: {err}')
     except Exception as e:
         log.warning(f'7일 경과 생성 파일 정리 오류: {e}')
@@ -1610,7 +1655,7 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
     QTimer.singleShot(250, _start)
     app.exec()
     try:
-        cleanup_result = cleanup_child_processes()
+        cleanup_result = _as_dict_result(cleanup_child_processes(), f'mxf {mode} test cleanup')
         if cleanup_result.get('running_after'):
             log.error(f'mxf {mode} test cleanup failed: {cleanup_result}')
             if result.get('code') == 0:
