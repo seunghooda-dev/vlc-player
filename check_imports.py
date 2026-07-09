@@ -1059,6 +1059,41 @@ def check_core_logic():
             if relink_probe.vp.refreshed != 1 or relink_probe.updated != 1:
                 errors.append("  FAIL relink missing-file refresh path")
 
+        current_relink_probe = RemoveProbe()
+        current_relink_probe.vp._files = [
+            {
+                'filepath': 'C:/missing/current_relink.mxf',
+                'name': 'current_relink.mxf',
+                'black': '',
+                'mute': '',
+                'freeze': '',
+            }
+        ]
+        current_relink_probe.vp.cur_file = 'C:/missing/current_relink.mxf'
+        current_relink_probe.vp.loaded = []
+
+        def _load_current_relink(path):
+            current_relink_probe.vp.loaded.append(path)
+            current_relink_probe.vp.cur_file = path
+
+        current_relink_probe.vp.load_file = _load_current_relink
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            relink_target = Path(tmp_dir) / 'current_relinked_target.mxf'
+            relink_target.write_bytes(b'test')
+            result = RightPanel._relink_file_record_path(
+                current_relink_probe,
+                'C:/missing/current_relink.mxf',
+                str(relink_target),
+            )
+            if result != 'relinked':
+                errors.append(f"  FAIL relink current-file result: {result}")
+            if current_relink_probe.vp.ejected != 1:
+                errors.append("  FAIL relink current-file eject")
+            if current_relink_probe.vp.loaded != [str(relink_target)]:
+                errors.append(f"  FAIL relink current-file reload: {current_relink_probe.vp.loaded}")
+            if current_relink_probe.vp.cur_file != str(relink_target):
+                errors.append(f"  FAIL relink current-file cur_file: {current_relink_probe.vp.cur_file}")
+
         duplicate_probe = RemoveProbe()
         with tempfile.TemporaryDirectory() as tmp_dir:
             duplicate_target = Path(tmp_dir) / 'already_listed.mxf'

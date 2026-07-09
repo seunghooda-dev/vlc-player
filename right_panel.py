@@ -2137,18 +2137,34 @@ class RightPanel(QWidget):
             self._remove_file_records_by_paths([old_path])
             return 'duplicate-removed'
 
+        current_was_target = self._same_path_text(getattr(self.vp, 'cur_file', ''), old_path)
         target['filepath'] = new_path
         target['name'] = new_p.name
         target['ext'] = new_p.suffix.upper().lstrip('.') or target.get('ext') or '-'
         target['size'] = _path_size(new_p)
-        if self._same_path_text(getattr(self.vp, 'cur_file', ''), old_path):
-            self.vp.cur_file = new_path
         self._persist_relinked_qc(target)
         try:
             self.vp._remember_recent_file(new_path)
         except Exception as e:
             log.debug(f'relinked recent save skipped: {e}')
-        self.vp._refresh_clip_list()
+        if current_was_target:
+            try:
+                if hasattr(self.vp, 'eject_clip'):
+                    self.vp.eject_clip()
+            except Exception as e:
+                log.debug(f'relinked current eject skipped: {e}')
+            try:
+                if hasattr(self.vp, 'load_file'):
+                    self.vp.load_file(new_path)
+                else:
+                    self.vp.cur_file = new_path
+                    self.vp._refresh_clip_list()
+            except Exception as e:
+                log.warning(f'relinked current reload failed file={self._path_name(new_path)}: {e}')
+                self.vp.cur_file = new_path
+                self.vp._refresh_clip_list()
+        else:
+            self.vp._refresh_clip_list()
         self._update_explorer(self.vp.cur_info, self.vp.cur_id or "")
         record_state_event('file-list', 'relinked', old=self._path_name(old_path), new=self._path_name(new_path))
         return 'relinked'
