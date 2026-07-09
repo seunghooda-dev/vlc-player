@@ -782,10 +782,44 @@ class RightPanel(QWidget):
     @staticmethod
     def _filter_counts(files):
         files = [f for f in (files or []) if isinstance(f, dict)]
-        return {
-            key: sum(1 for f in files if RightPanel._file_matches_filter_key(f, key))
-            for key in FILE_FILTER_KEYS
-        }
+        counts = {key: 0 for key in FILE_FILTER_KEYS}
+        for f in files:
+            counts['all'] += 1
+            unavailable = bool(RightPanel._file_unavailable_badge(f.get('filepath')))
+            if unavailable:
+                counts['issues'] += 1
+                counts['error'] += 1
+                continue
+
+            black = str(f.get('black') or '').lower()
+            mute = str(f.get('mute') or '').lower()
+            freeze = str(f.get('freeze') or '').lower()
+
+            if black in ('ok', 'found') and mute in ('ok', 'found'):
+                counts['done'] += 1
+            if black not in ('ok', 'found', 'error') or mute not in ('ok', 'found', 'error'):
+                counts['pending'] += 1
+
+            has_error = black == 'error' or mute == 'error' or freeze == 'error'
+            has_issue = (
+                has_error
+                or black == 'found'
+                or mute == 'found'
+                or freeze == 'found'
+            )
+            if has_issue:
+                counts['issues'] += 1
+            if has_error:
+                counts['error'] += 1
+            if black == 'found':
+                counts['black'] += 1
+            if mute == 'found':
+                counts['mute'] += 1
+            if freeze == 'found':
+                counts['freeze'] += 1
+            if black == 'ok' and mute == 'ok' and freeze not in ('found', 'error'):
+                counts['normal'] += 1
+        return counts
 
     @staticmethod
     def _filter_button_text(key, count, compact=False):

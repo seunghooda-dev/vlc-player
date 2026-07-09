@@ -259,6 +259,15 @@ def check_core_logic():
         for key, expected in expected_filter_counts.items():
             if filter_counts.get(key) != expected:
                 errors.append(f"  FAIL filter count {key}: {filter_counts.get(key)} != {expected}")
+            expected_by_filter = sum(
+                1 for record in filter_count_records
+                if RightPanel._file_matches_filter_key(record, key)
+            )
+            if filter_counts.get(key) != expected_by_filter:
+                errors.append(
+                    f"  FAIL filter count parity {key}: "
+                    f"{filter_counts.get(key)} != {expected_by_filter}"
+                )
         if RightPanel._filter_button_text('issues', 3) != '문제 3':
             errors.append("  FAIL filter button text issues")
         if RightPanel._filter_button_text('issues', 3, compact=True) != '문제3':
