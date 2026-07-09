@@ -1893,20 +1893,23 @@ class VideoPanel(QWidget):
             log.debug(f'recent file save: {e}')
 
     def _add_file_to_list(self, filepath):
+        return self._add_file_to_list_result(filepath) == 'added'
+
+    def _add_file_to_list_result(self, filepath):
         p = self._video_file_path(filepath)
         if not p:
-            return False
+            return 'invalid'
         filepath = str(p)
         already_exists = any(self._same_path(x.get("filepath"), filepath) for x in self._file_records())
         if not already_exists:
             self._files.append(self._new_file_record(filepath))
             self._remember_recent_file(filepath)
-            return True
+            return 'added'
         self._remember_recent_file(filepath)
-        return False
+        return 'duplicate'
 
     @staticmethod
-    def _file_add_feedback_text(total, added, *, action_hint='CUE 또는 더블클릭으로 원본 파일을 바로 재생합니다'):
+    def _file_add_feedback_text(total, added, invalid=0, *, action_hint='CUE 또는 더블클릭으로 원본 파일을 바로 재생합니다'):
         try:
             total = max(0, int(total))
         except Exception:
@@ -1915,16 +1918,30 @@ class VideoPanel(QWidget):
             added = max(0, int(added))
         except Exception:
             added = 0
+        try:
+            invalid = max(0, int(invalid))
+        except Exception:
+            invalid = 0
         added = min(added, total)
-        duplicate = max(0, total - added)
+        invalid = min(invalid, max(0, total - added))
+        duplicate = max(0, total - added - invalid)
         if total <= 0:
             return ''
-        if added <= 0:
+        parts = []
+        if added:
+            parts.append(f"파일 {added}개 추가")
+        if duplicate:
+            parts.append(f"중복 {duplicate}개")
+        if invalid:
+            parts.append(f"지원 안 함 {invalid}개")
+        if not parts:
+            return ''
+        if added <= 0 and duplicate and not invalid:
             base = f"↺ 이미 목록에 있는 파일 {duplicate}개"
-        elif duplicate:
-            base = f"✓ 파일 {added}개 추가 / 중복 {duplicate}개"
+        elif added:
+            base = f"✓ {' / '.join(parts)}"
         else:
-            base = f"✓ 파일 {added}개 추가"
+            base = f"⚠ {' / '.join(parts)}"
         return f"{base} — {action_hint}" if action_hint else base
 
     def _file_records(self):
@@ -2288,12 +2305,15 @@ class VideoPanel(QWidget):
             "Video Files (*.mxf *.mp4 *.mov *.mts *.m2ts *.mkv *.avi);;All Files (*)")
         if files:
             self._save_last_dir(str(Path(files[0]).parent))
-        new_files = []
+        added = invalid = 0
         for f in files:
-            if self._add_file_to_list(f):
-                new_files.append(f)
+            result = self._add_file_to_list_result(f)
+            if result == 'added':
+                added += 1
+            elif result == 'invalid':
+                invalid += 1
         self._refresh_clip_list()
-        feedback = self._file_add_feedback_text(len(files), len(new_files))
+        feedback = self._file_add_feedback_text(len(files), added, invalid)
         if feedback:
             self.ai_lbl.setText(feedback)
             self.status_changed.emit(f"  {feedback}")
@@ -4468,15 +4488,18 @@ class VideoPanel(QWidget):
         paths = self._cached_video_file_paths_from_urls(e.mimeData().urls())
         self._clear_drag_url_cache()
         if paths:
-            added = 0
+            added = invalid = 0
             for fp in paths:
-                if self._add_file_to_list(fp):
+                result = self._add_file_to_list_result(fp)
+                if result == 'added':
                     added += 1
+                elif result == 'invalid':
+                    invalid += 1
             self._refresh_clip_list()
             e.acceptProposedAction()
             first = paths[0]
             feedback = self._file_add_feedback_text(
-                len(paths), added,
+                len(paths), added, invalid,
                 action_hint='첫 파일 CUE',
             )
             if feedback:

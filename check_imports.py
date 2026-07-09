@@ -1194,6 +1194,12 @@ def check_core_logic():
         feedback_duplicate = VideoPanel._file_add_feedback_text(2, 0, action_hint='')
         if feedback_duplicate != '↺ 이미 목록에 있는 파일 2개':
             errors.append(f"  FAIL file add feedback duplicate: {feedback_duplicate}")
+        feedback_invalid_mixed = VideoPanel._file_add_feedback_text(4, 1, 2, action_hint='')
+        if feedback_invalid_mixed != '✓ 파일 1개 추가 / 중복 1개 / 지원 안 함 2개':
+            errors.append(f"  FAIL file add feedback invalid mixed: {feedback_invalid_mixed}")
+        feedback_invalid_only = VideoPanel._file_add_feedback_text(2, 0, 2, action_hint='')
+        if feedback_invalid_only != '⚠ 지원 안 함 2개':
+            errors.append(f"  FAIL file add feedback invalid only: {feedback_invalid_only}")
         hinted_layout = VideoPanel._provisional_audio_mix_layout({
             'metadata_hint': True,
             'audio_stream_count': 8,
