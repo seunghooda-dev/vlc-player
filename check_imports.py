@@ -107,7 +107,7 @@ def check_core_logic():
     """UI를 띄우지 않고 방송 QC 핵심 판정만 회귀 검사."""
     errors = []
     try:
-        from right_panel import RightPanel
+        from right_panel import FILE_FILTER_TIPS, RightPanel
         from constants import C, DEFAULT_SETTINGS, VIDEO_EXTS, _normalize_settings
         from db_models import frames_to_tc, is_df_fps, qc_summary_from_status, tc_to_frames
         from video_panel import AudioMixPlayer, DIRECT_VLC_EXTS, VideoPanel
@@ -362,6 +362,10 @@ def check_core_logic():
             errors.append("  FAIL filter button text zero-detail")
         if RightPanel._filter_button_text('all', 0) != '전체 0':
             errors.append("  FAIL filter button text all-zero")
+        if '메타 확인' not in FILE_FILTER_TIPS.get('attention', ''):
+            errors.append(f"  FAIL attention filter tooltip metadata scope: {FILE_FILTER_TIPS.get('attention')}")
+        if '확인 필요가 없는' not in FILE_FILTER_TIPS.get('normal', ''):
+            errors.append(f"  FAIL normal filter tooltip attention exclusion: {FILE_FILTER_TIPS.get('normal')}")
         if RightPanel._compact_filter_labels(429) is not True:
             errors.append("  FAIL compact filter width below threshold")
         if RightPanel._compact_filter_labels(430) is not False:
