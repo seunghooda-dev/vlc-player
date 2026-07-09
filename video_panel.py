@@ -2754,7 +2754,7 @@ class VideoPanel(QWidget):
         if not default_selected and first_enabled:
             first_enabled.setChecked(True)
             default_selected = [1]
-        self._selected_chs = default_selected or [1, 2]
+        self._selected_chs = default_selected if stream_count <= 0 else (default_selected or [1, 2])
         self.tc_dur.setText(self._frames_to_tc(self._duration_frames(), include_offset=False))
         self._apply_qc_markers()
         self._res_text.setPlainText(f"{w}\u00d7{h}" if w and h else "")
@@ -3610,7 +3610,7 @@ class VideoPanel(QWidget):
         if not default_selected and first_enabled:
             first_enabled.setChecked(True)
             default_selected = [1]
-        self._selected_chs = default_selected or [1, 2]
+        self._selected_chs = default_selected if stream_count <= 0 else (default_selected or [1, 2])
         self.tc_dur.setText(self._frames_to_tc(self._duration_frames(), include_offset=False))
         self._res_text.setPlainText(f"{w}\u00d7{h}" if w and h else "")
         mark_step('metadata_ui')
@@ -3806,7 +3806,8 @@ class VideoPanel(QWidget):
     # ── 재생 제어 ────────────────────────────────────────
     def _get_selected_ch_pair(self):
         # 레거시 경로용: 선택 채널을 인접 쌍으로 매핑
-        ch = self._get_selected_audio_channels()[0]
+        selected = self._get_selected_audio_channels()
+        ch = selected[0] if selected else 1
         if ch % 2 == 1:
             return (ch, min(ch + 1, 8))
         return (max(1, ch - 1), ch)
@@ -3814,7 +3815,16 @@ class VideoPanel(QWidget):
     def _get_selected_ch_pairs(self):
         return [self._get_selected_ch_pair()]
 
+    def _audio_selection_unavailable(self):
+        if self._metadata_hint_says_no_audio(getattr(self, 'cur_info', {})):
+            return True
+        if getattr(self, '_metadata_ready', False):
+            return self._audio_source_count_from_info(getattr(self, 'cur_info', {})) <= 0
+        return False
+
     def _get_selected_audio_channels(self):
+        if self._audio_selection_unavailable():
+            return []
         selected = [
             channel_no for cb, channel_no in self._ch_checks
             if cb.isChecked() and cb.isEnabled()

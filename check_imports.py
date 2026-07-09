@@ -1446,6 +1446,44 @@ def check_core_logic():
             AudioExpectedProbe(False, {'metadata_hint': True, 'audio_stream_count': 0, 'channels': 0})
         ):
             errors.append("  FAIL no-audio metadata hint should not expect fallback audio")
+        class FakeAudioCheck:
+            def __init__(self, checked, enabled):
+                self._checked = bool(checked)
+                self._enabled = bool(enabled)
+            def isChecked(self):
+                return self._checked
+            def isEnabled(self):
+                return self._enabled
+
+        class AudioSelectionProbe:
+            _audio_source_count_from_info = staticmethod(VideoPanel._audio_source_count_from_info)
+            _metadata_hint_says_no_audio = staticmethod(VideoPanel._metadata_hint_says_no_audio)
+            _audio_selection_unavailable = VideoPanel._audio_selection_unavailable
+            _get_selected_audio_channels = VideoPanel._get_selected_audio_channels
+
+            def __init__(self, metadata_ready, info, checks):
+                self._metadata_ready = metadata_ready
+                self.cur_info = dict(info or {})
+                self._ch_checks = list(checks or [])
+
+        if VideoPanel._get_selected_audio_channels(AudioSelectionProbe(
+            True,
+            {'audio_stream_count': 0, 'channels': 0},
+            [(FakeAudioCheck(False, False), 1), (FakeAudioCheck(False, False), 2)],
+        )) != []:
+            errors.append("  FAIL no-audio selected channels should be empty")
+        if VideoPanel._get_selected_audio_channels(AudioSelectionProbe(
+            False,
+            {},
+            [(FakeAudioCheck(False, False), 1), (FakeAudioCheck(False, False), 2)],
+        )) != [1, 2]:
+            errors.append("  FAIL unknown-audio selected channels fallback")
+        if VideoPanel._get_selected_audio_channels(AudioSelectionProbe(
+            True,
+            {'audio_stream_count': 2, 'channels': 1},
+            [(FakeAudioCheck(True, True), 1), (FakeAudioCheck(False, True), 2)],
+        )) != [1]:
+            errors.append("  FAIL enabled checked audio channel selection")
         if VideoPanel._metadata_audio_restart_required(
             audio_restart,
             {'audio_stream_count': 1, 'channels': 2},
