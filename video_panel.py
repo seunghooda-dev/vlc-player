@@ -28,6 +28,7 @@ from constants  import (
     register_child_process, terminate_child_process, load_settings, save_settings,
     friendly_error_text, friendly_error_title,
     format_missing_runtime_tools,
+    _hidden_subprocess_flags,
     record_state_event,
 )
 from db_models  import (
@@ -320,12 +321,13 @@ class AudioMixPlayer(QObject):
             '-volume', str(max(0, min(100, self._safe_int(self._safe_float(self.volume, 0.8) * 100, 80)))),
             '-i', '-',
         ]
+        creationflags = _hidden_subprocess_flags()
         try:
             self._ffmpeg = subprocess.Popen(
                 ffmpeg_cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
-                creationflags=0x08000000
+                creationflags=creationflags
             )
             register_child_process(self._ffmpeg, 'audio mix ffmpeg')
             self._ffplay = subprocess.Popen(
@@ -333,7 +335,7 @@ class AudioMixPlayer(QObject):
                 stdin=self._ffmpeg.stdout,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                creationflags=0x08000000
+                creationflags=creationflags
             )
             register_child_process(self._ffplay, 'audio mix ffplay')
             if self._ffmpeg.stdout:
