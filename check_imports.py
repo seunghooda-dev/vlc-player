@@ -1131,6 +1131,20 @@ def check_core_logic():
         transport_probe._metadata_ready = True
         if not VideoPanel._metadata_or_cue_ready(transport_probe):
             errors.append("  FAIL transport ready after metadata")
+        class MediaTransportProbe:
+            _metadata_or_cue_ready = VideoPanel._metadata_or_cue_ready
+            cur_file = ''
+            _metadata_ready = False
+            _cue_ready = False
+        media_transport_probe = MediaTransportProbe()
+        if VideoPanel._media_transport_ready(media_transport_probe):
+            errors.append("  FAIL media transport ready without file")
+        media_transport_probe.cur_file = 'C:/qc/sample.mxf'
+        if VideoPanel._media_transport_ready(media_transport_probe):
+            errors.append("  FAIL media transport ready before cue/metadata")
+        media_transport_probe._cue_ready = True
+        if not VideoPanel._media_transport_ready(media_transport_probe):
+            errors.append("  FAIL media transport ready with file and cue")
 
         required_video_exts = {'.mxf', '.mp4'}
         missing_video_exts = sorted(required_video_exts - set(VIDEO_EXTS))

@@ -1557,6 +1557,9 @@ class VideoPanel(QWidget):
             or getattr(self, '_cue_ready', False)
         )
 
+    def _media_transport_ready(self):
+        return bool(getattr(self, 'cur_file', None) and self._metadata_or_cue_ready())
+
     @staticmethod
     def _settings_entries(value):
         if isinstance(value, (str, bytes)):
@@ -4007,10 +4010,12 @@ class VideoPanel(QWidget):
         self.ai_lbl.setText(f'⚠ {user_msg} — LOG 확인')
 
     def _set_position(self, ms):
+        if not self.cur_file:
+            return False
         if self._is_busy_loading():
             self.status_changed.emit('  ⏳ CUE 준비 중입니다 — 잠시만 기다려주세요')
             return False
-        if self.cur_file and not self._metadata_or_cue_ready():
+        if not self._media_transport_ready():
             self.status_changed.emit('  ⏳ CUE 확인 전입니다 — 잠시만 기다려주세요')
             return False
         duration = self._safe_float_value(getattr(self, 'duration', 0.0), 0.0)
@@ -4034,10 +4039,12 @@ class VideoPanel(QWidget):
         self._set_position(self._frame_to_ms(frame))
 
     def _transport_allowed(self, action, cooldown_sec=0.18):
+        if not self.cur_file:
+            return False
         if getattr(self, '_loading', False):
             self.status_changed.emit('  ⏳ CUE 준비 중입니다 — 잠시만 기다려주세요')
             return False
-        if self.cur_file and not self._metadata_or_cue_ready():
+        if not self._media_transport_ready():
             self.status_changed.emit('  ⏳ CUE 확인 전입니다 — 잠시만 기다려주세요')
             return False
         now = time.monotonic()
@@ -4145,22 +4152,30 @@ class VideoPanel(QWidget):
 
     # ── IN / OUT ─────────────────────────────────────────
     def _set_in(self):
+        if not self._media_transport_ready():
+            self.status_changed.emit('  ⏳ CUE 후 IN 포인트를 지정할 수 있습니다')
+            return False
         self.in_pt = self._display_frame / self._media_fps()
         self.tc_in_l.setText(
             self._frames_to_tc(self._display_frame, include_offset=self._tc_include_offset())
         )
         self.tc_in_l.setStyleSheet(f"color:{C['yellow']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:13px;background:transparent;")
+        return True
 
     def _clr_in(self):
         self.in_pt=None; self.tc_in_l.setText("—")
         self.tc_in_l.setStyleSheet(f"color:{C['text0']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:13px;background:transparent;")
 
     def _set_out(self):
+        if not self._media_transport_ready():
+            self.status_changed.emit('  ⏳ CUE 후 OUT 포인트를 지정할 수 있습니다')
+            return False
         self.out_pt = self._display_frame / self._media_fps()
         self.tc_out_l.setText(
             self._frames_to_tc(self._display_frame, include_offset=self._tc_include_offset())
         )
         self.tc_out_l.setStyleSheet(f"color:{C['orange']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:13px;background:transparent;")
+        return True
 
     def _clr_out(self):
         self.out_pt=None; self.tc_out_l.setText("—")
