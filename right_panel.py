@@ -497,14 +497,17 @@ class RightPanel(QWidget):
         all_files = self._file_records()
         visible_files = self._filtered_file_records()
         issue_files = self._issue_file_records()
+        attention_files = self._attention_file_records()
         latest_report = self._latest_report_path()
         return {
             'all_files': all_files,
             'visible_files': visible_files,
             'issue_files': issue_files,
+            'attention_files': attention_files,
             'all_count': len(all_files),
             'visible_count': len(visible_files),
             'issue_count': len(issue_files),
+            'attention_count': len(attention_files),
             'latest_report': latest_report,
             'latest_report_name': self._path_name(latest_report, '최근 리포트 없음'),
             'show_visible': (
@@ -519,10 +522,10 @@ class RightPanel(QWidget):
         menu.setStyleSheet(self._menu_style())
         act_all = menu.addAction(f"▣   전체 리포트 저장 ({state['all_count']}개)")
         act_all.setEnabled(state['all_count'] > 0)
-        act_issues = menu.addAction(f"▣   문제 파일 리포트 저장 ({state['issue_count']}개)")
-        act_issues.setEnabled(state['issue_count'] > 0)
-        act_copy_issues = menu.addAction(f"⧉   문제 요약 복사 ({state['issue_count']}개)")
-        act_copy_issues.setEnabled(state['issue_count'] > 0)
+        act_issues = menu.addAction(f"▣   확인 필요 리포트 저장 ({state['attention_count']}개)")
+        act_issues.setEnabled(state['attention_count'] > 0)
+        act_copy_issues = menu.addAction(f"⧉   확인 필요 요약 복사 ({state['attention_count']}개)")
+        act_copy_issues.setEnabled(state['attention_count'] > 0)
         act_visible = None
         if state['show_visible']:
             act_visible = menu.addAction(f"▣   표시 목록 리포트 저장 ({state['visible_count']}개)")
@@ -543,9 +546,9 @@ class RightPanel(QWidget):
         if action == act_all:
             self._export_qc_report(state['all_files'], default_prefix='qc-report')
         elif action == act_issues:
-            self._export_qc_report(state['issue_files'], default_prefix='qc-issues')
+            self._export_qc_report(state['attention_files'], default_prefix='qc-attention')
         elif action == act_copy_issues:
-            self._copy_issue_summary(state['issue_files'])
+            self._copy_issue_summary(state['attention_files'])
         elif action == act_visible:
             self._export_qc_report(
                 state['visible_files'],
@@ -1162,6 +1165,28 @@ class RightPanel(QWidget):
         files = [
             f for f in self._file_records()
             if self._file_matches_filter_key(f, 'issues')
+        ]
+        return self._iter_report_files(files)
+
+    @staticmethod
+    def _file_needs_report_attention(f):
+        if not isinstance(f, dict):
+            return False
+        unavailable = RightPanel._file_unavailable_badge(f.get('filepath'))
+        if unavailable:
+            return True
+        black = str(f.get('black') or '').strip().lower()
+        mute = str(f.get('mute') or '').strip().lower()
+        freeze = str(f.get('freeze') or '').strip().lower()
+        if any(state in ('found', 'error') for state in (black, mute, freeze)):
+            return True
+        completed = ('ok', 'found', 'error')
+        return black not in completed or mute not in completed
+
+    def _attention_file_records(self):
+        files = [
+            f for f in self._file_records()
+            if self._file_needs_report_attention(f)
         ]
         return self._iter_report_files(files)
 
@@ -1938,16 +1963,16 @@ class RightPanel(QWidget):
             return False
 
     def _issue_summary_clipboard_text(self, files=None):
-        issue_files = self._iter_report_files(files) if files is not None else self._issue_file_records()
-        lines = ["MXF QC Player 문제 파일 요약"]
+        issue_files = self._iter_report_files(files) if files is not None else self._attention_file_records()
+        lines = ["MXF QC Player 확인 필요 파일 요약"]
         try:
             total = len(self._file_records()) if files is None else None
         except Exception:
             total = None
         if total is not None:
-            lines.append(f"전체 {total}개 / 문제 {len(issue_files)}개")
+            lines.append(f"전체 {total}개 / 확인 필요 {len(issue_files)}개")
         else:
-            lines.append(f"문제 {len(issue_files)}개")
+            lines.append(f"확인 필요 {len(issue_files)}개")
         if not issue_files:
             lines.append("확인 필요 파일 없음")
             return '\n'.join(lines)
@@ -1968,12 +1993,12 @@ class RightPanel(QWidget):
         try:
             text = self._issue_summary_clipboard_text(files)
             QApplication.clipboard().setText(text)
-            count = len(self._iter_report_files(files)) if files is not None else len(self._issue_file_records())
-            self.vp.status_changed.emit(f"  문제 요약 복사됨 — {count}개")
+            count = len(self._iter_report_files(files)) if files is not None else len(self._attention_file_records())
+            self.vp.status_changed.emit(f"  확인 필요 요약 복사됨 — {count}개")
             return True
         except Exception as e:
             log.warning(f'copy issue summary failed: {e}')
-            self.vp.status_changed.emit("  ⚠ 문제 요약 복사 실패")
+            self.vp.status_changed.emit("  ⚠ 확인 필요 요약 복사 실패")
             return False
 
     def _qc_issue_markers(self, record):

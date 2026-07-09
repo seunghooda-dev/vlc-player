@@ -406,6 +406,8 @@ def check_core_logic():
             _iter_report_files = RightPanel._iter_report_files
             _filtered_file_records = RightPanel._filtered_file_records
             _issue_file_records = RightPanel._issue_file_records
+            _attention_file_records = RightPanel._attention_file_records
+            _file_needs_report_attention = staticmethod(RightPanel._file_needs_report_attention)
             _file_matches_filter = RightPanel._file_matches_filter
             _report_menu_state = RightPanel._report_menu_state
             _path_name = staticmethod(RightPanel._path_name)
@@ -414,6 +416,7 @@ def check_core_logic():
             def _file_records(self):
                 return [
                     {'name': 'clean.mxf', 'black': 'ok', 'mute': 'ok', 'freeze': ''},
+                    {'name': 'pending.mxf', 'black': '', 'mute': '', 'freeze': ''},
                     {'name': 'bad-b.mxf', 'black': 'ok', 'mute': 'found', 'freeze': ''},
                     {'name': 'bad-a.mxf', 'black': 'found', 'mute': 'ok', 'freeze': ''},
                 ]
@@ -425,7 +428,7 @@ def check_core_logic():
             errors.append(f"  FAIL filtered report scope: {filtered_report_names}")
         report_probe = FilteredReportProbe()
         report_menu_state = RightPanel._report_menu_state(report_probe)
-        if report_menu_state.get('all_count') != 3 or report_menu_state.get('visible_count') != 2:
+        if report_menu_state.get('all_count') != 4 or report_menu_state.get('visible_count') != 2:
             errors.append(f"  FAIL report menu counts: {report_menu_state}")
         if report_menu_state.get('issue_count') != 2:
             errors.append(f"  FAIL report menu issue count: {report_menu_state}")
@@ -434,6 +437,13 @@ def check_core_logic():
         ]
         if issue_report_names != ['bad-a.mxf', 'bad-b.mxf']:
             errors.append(f"  FAIL report menu issue files: {issue_report_names}")
+        if report_menu_state.get('attention_count') != 3:
+            errors.append(f"  FAIL report menu attention count: {report_menu_state}")
+        attention_report_names = [
+            f.get('name') for f in report_menu_state.get('attention_files', [])
+        ]
+        if attention_report_names != ['bad-a.mxf', 'bad-b.mxf', 'pending.mxf']:
+            errors.append(f"  FAIL report menu attention files: {attention_report_names}")
         if getattr(report_probe, '_filter_key', '') != 'issues':
             errors.append(f"  FAIL report menu filter restore: {getattr(report_probe, '_filter_key', '')}")
         if not report_menu_state.get('show_visible'):
@@ -683,14 +693,26 @@ def check_core_logic():
                     'mute_count': 0,
                     'freeze_count': 0,
                 },
+                {
+                    'name': 'pending.mxf',
+                    'filepath': 'C:/qc/pending.mxf',
+                    'black': '',
+                    'mute': '',
+                    'freeze': '',
+                    'black_count': 0,
+                    'mute_count': 0,
+                    'freeze_count': 0,
+                },
             ],
         )
-        if 'MXF QC Player 문제 파일 요약' not in issue_summary_text or '문제 2개' not in issue_summary_text:
+        if 'MXF QC Player 확인 필요 파일 요약' not in issue_summary_text or '확인 필요 3개' not in issue_summary_text:
             errors.append(f"  FAIL issue summary copy header: {issue_summary_text}")
         if 'bad-a.mxf: 블랙 있음 / 블랙 있음 1 / 무음 정상 0 / 프리즈 미분석 / 첫문제 블랙 00:00:04;00' not in issue_summary_text:
             errors.append(f"  FAIL issue summary copy black detail: {issue_summary_text}")
         if 'bad-b.mxf: 검사 오류 / 블랙 정상 0 / 무음 오류 0 / 프리즈 미분석' not in issue_summary_text:
             errors.append(f"  FAIL issue summary copy error detail: {issue_summary_text}")
+        if 'pending.mxf: 미분석 / 블랙 미분석 / 무음 미분석 / 프리즈 미분석' not in issue_summary_text:
+            errors.append(f"  FAIL issue summary copy pending detail: {issue_summary_text}")
         if '프리즈 미분석 0' in issue_summary_text:
             errors.append(f"  FAIL issue summary copy unanalyzed count should be hidden: {issue_summary_text}")
         empty_issue_summary = RightPanel._issue_summary_clipboard_text(SummaryCopyProbe(), [])
