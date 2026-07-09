@@ -124,7 +124,7 @@ def _acquire_single_instance():
         kernel32.CreateMutexW.restype = ctypes.c_void_p
         kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
         ERROR_ALREADY_EXISTS = 183
-        deadline = time.monotonic() + 2.5
+        deadline = time.monotonic() + 6.0
         waited = False
         while True:
             handle = kernel32.CreateMutexW(None, False, APP_MUTEX_NAME)
