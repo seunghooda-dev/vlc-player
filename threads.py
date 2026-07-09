@@ -271,6 +271,7 @@ class TranscodeThread(QThread):
     def _run_ffmpeg(self, cmd, total_sec=0, emit_error=True):
         """FFmpeg 실행 + 진행률 파싱 + stderr 안전 처리"""
         import threading as _th, re as _re
+        total_sec = max(0.0, _safe_float(total_sec, 0.0))
         try:
             self._proc = register_child_process(subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -286,9 +287,11 @@ class TranscodeThread(QThread):
                         # time= HH:MM:SS.ms 파싱 → 진행률
                         m = _re.search(r'time=(\d+):(\d+):([\d.]+)', decoded)
                         if m and total_sec > 0:
-                            elapsed = (int(m.group(1))*3600
-                                       + int(m.group(2))*60
-                                       + float(m.group(3)))
+                            elapsed = (
+                                _safe_int(m.group(1), 0) * 3600
+                                + _safe_int(m.group(2), 0) * 60
+                                + _safe_float(m.group(3), 0.0)
+                            )
                             pct = min(99, int(elapsed / total_sec * 100))
                             self.progress.emit(pct)
                     except Exception as e: log.debug(f'progress parse: {e}')
@@ -839,7 +842,8 @@ class LoudnessAnalyzeThread(QThread):
                     creationflags=_analysis_flags()
                 ), 'loudness analyze ffmpeg')
 
-                assert self._proc.stderr is not None
+                if self._proc.stderr is None:
+                    raise RuntimeError('라우드니스 분석 stderr 파이프를 열지 못했습니다')
                 last_emit = 0.0
                 start = time.monotonic()
                 while True:
@@ -853,7 +857,7 @@ class LoudnessAnalyzeThread(QThread):
                             tail.pop(0)
                         m = re.search(r't:\s*([\d.]+)', line)
                         if m:
-                            pos = float(m.group(1))
+                            pos = _safe_float(m.group(1), 0.0)
                             now = time.monotonic()
                             if now - last_emit >= 1.0:
                                 last_emit = now
@@ -974,7 +978,8 @@ class BlackDetectThread(QThread):
                 ranges = []
                 seg = None
                 hit_count = 0
-                assert self._proc.stderr is not None
+                if self._proc.stderr is None:
+                    raise RuntimeError('블랙 검출 stderr 파이프를 열지 못했습니다')
                 for line in self._proc.stderr:
                     if self._abort:
                         self.abort()
@@ -982,9 +987,9 @@ class BlackDetectThread(QThread):
                     m = black_re.search(line)
                     if not m:
                         continue
-                    frame = int(m.group(1))
-                    pblack = int(m.group(2))
-                    t = float(m.group(3))
+                    frame = _safe_int(m.group(1), 0)
+                    pblack = max(0, min(100, _safe_int(m.group(2), 0)))
+                    t = _safe_float(m.group(3), 0.0)
                     hit_count += 1
 
                     if seg is None:
@@ -1113,14 +1118,15 @@ class FreezeDetectThread(QThread):
                 pending_start = None
                 pending_duration = None
                 hit_count = 0
-                assert self._proc.stderr is not None
+                if self._proc.stderr is None:
+                    raise RuntimeError('프리즈 검출 stderr 파이프를 열지 못했습니다')
                 for line in self._proc.stderr:
                     if self._abort:
                         self.abort()
                         return
                     m_start = start_re.search(line)
                     if m_start:
-                        pending_start = float(m_start.group(1))
+                        pending_start = _safe_float(m_start.group(1), 0.0)
                         pending_duration = None
                         hit_count += 1
                         if hit_count % 20 == 0:
@@ -1128,11 +1134,11 @@ class FreezeDetectThread(QThread):
                         continue
                     m_dur = dur_re.search(line)
                     if m_dur:
-                        pending_duration = float(m_dur.group(1))
+                        pending_duration = _safe_float(m_dur.group(1), None)
                         continue
                     m_end = end_re.search(line)
                     if m_end and pending_start is not None:
-                        end = float(m_end.group(1))
+                        end = _safe_float(m_end.group(1), pending_start)
                         duration = pending_duration if pending_duration is not None else end - pending_start
                         ranges.append(self._range_from_times(pending_start, end, duration))
                         self.progress.emit(f'프리즈 구간 {len(ranges)}개 검출 중... 최근 {self._tc_from_sec(pending_start)}')
