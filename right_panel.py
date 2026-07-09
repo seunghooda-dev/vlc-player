@@ -252,6 +252,14 @@ class RightPanel(QWidget):
         )
         tbl.addWidget(self.chk_auto_report)
 
+        self.btn_export = QPushButton("리포트")
+        self.btn_export.setFixedHeight(24)
+        self.btn_export.setToolTip("QC 리포트 저장 / 리포트 폴더 열기")
+        self.btn_export.setStyleSheet(_sort_btn_style)
+        self.btn_export.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_export.clicked.connect(self._show_report_menu)
+        tbl.addWidget(self.btn_export)
+
         l.addWidget(tb)
 
         # 경로 표시
@@ -446,6 +454,51 @@ class RightPanel(QWidget):
             self._settings = save_settings(recent_files=[], recent_dirs=[])
             self.vp._settings = load_settings()
             self.vp.status_changed.emit("  ↺ 최근 파일 / 폴더 목록을 비웠습니다")
+
+    def _report_menu_state(self):
+        all_files = self._file_records()
+        visible_files = self._filtered_file_records()
+        return {
+            'all_files': all_files,
+            'visible_files': visible_files,
+            'all_count': len(all_files),
+            'visible_count': len(visible_files),
+            'show_visible': (
+                getattr(self, '_filter_key', 'all') != 'all'
+                or len(visible_files) != len(all_files)
+            ),
+        }
+
+    def _show_report_menu(self):
+        state = self._report_menu_state()
+        menu = QMenu(self)
+        menu.setStyleSheet(self._menu_style())
+        act_all = menu.addAction(f"▣   전체 리포트 저장 ({state['all_count']}개)")
+        act_all.setEnabled(state['all_count'] > 0)
+        act_visible = None
+        if state['show_visible']:
+            act_visible = menu.addAction(f"▣   표시 목록 리포트 저장 ({state['visible_count']}개)")
+            act_visible.setEnabled(state['visible_count'] > 0)
+        menu.addSeparator()
+        act_folder = menu.addAction("📁   리포트 폴더 열기")
+
+        anchor = getattr(self, 'btn_export', self)
+        try:
+            popup_pos = anchor.mapToGlobal(anchor.rect().bottomLeft())
+        except Exception:
+            popup_pos = self.mapToGlobal(self.rect().center())
+        action = menu.exec(popup_pos)
+        if action is None:
+            return
+        if action == act_all:
+            self._export_qc_report(state['all_files'], default_prefix='qc-report')
+        elif action == act_visible:
+            self._export_qc_report(
+                state['visible_files'],
+                default_prefix=f"qc-visible-{getattr(self, '_filter_key', 'all')}",
+            )
+        elif action == act_folder:
+            self._open_report_folder()
 
     def _clean_recent_entries(self, settings):
         def _entries(key):
@@ -1355,6 +1408,25 @@ class RightPanel(QWidget):
         self.vp.status_changed.emit(f"  ⚠ 폴더 열기 실패 — {folder}")
         return False
 
+    def _open_report_folder(self):
+        try:
+            REPORT_DIR.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            log.warning(f'create report folder failed: {e}')
+            self.vp.status_changed.emit("  ⚠ 리포트 폴더를 만들 수 없습니다")
+            return False
+        folder = str(REPORT_DIR)
+        try:
+            ok = QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
+        except Exception as e:
+            log.warning(f'open report folder failed: {e}')
+            ok = False
+        if ok:
+            self.vp.status_changed.emit(f"  📁 리포트 폴더 열기 — {folder}")
+            return True
+        self.vp.status_changed.emit(f"  ⚠ 리포트 폴더 열기 실패 — {folder}")
+        return False
+
     def _copy_file_path(self, filepath):
         filepath = self._file_path_text(filepath)
         if not filepath:
@@ -1653,7 +1725,10 @@ class RightPanel(QWidget):
         if hasattr(self, 'btn_batch'):
             self.btn_batch.setEnabled(can_use_files)
         if hasattr(self, 'btn_export'):
-            self.btn_export.setEnabled(bool(all_files) and not bool(getattr(self, '_analysis_active', None)))
+            self.btn_export.setEnabled(
+                not bool(getattr(self.vp, '_loading', False))
+                and not bool(getattr(self, '_analysis_active', None))
+            )
         if hasattr(self, 'btn_batch_cancel'):
             self.btn_batch_cancel.setEnabled(bool(getattr(self, '_batch_active', False)))
         for key, btn in getattr(self, '_filter_btns', {}).items():
@@ -2117,7 +2192,6 @@ class RightPanel(QWidget):
     def _set_analysis_buttons_busy(self, kind=None, busy=False):
         has_file = bool(self._current_video_file())
         loading = bool(getattr(self.vp, '_loading', False))
-        has_records = bool(self._file_records())
         has_video_records = bool(self._video_file_records())
         black = getattr(self, 'btn_run_black', None)
         audio = getattr(self, 'btn_run_audio', None)
@@ -2140,7 +2214,7 @@ class RightPanel(QWidget):
         if cancel:
             cancel.setEnabled(bool(busy and kind == 'batch'))
         if export:
-            export.setEnabled(False if busy else has_records)
+            export.setEnabled(False if busy else not loading)
 
     def _set_transport_enabled(self, enabled):
         for name in (

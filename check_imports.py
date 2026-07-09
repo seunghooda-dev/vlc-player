@@ -306,7 +306,9 @@ def check_core_logic():
             _sort_asc = True
             _filter_key = 'issues'
             _iter_report_files = RightPanel._iter_report_files
+            _filtered_file_records = RightPanel._filtered_file_records
             _file_matches_filter = RightPanel._file_matches_filter
+            _report_menu_state = RightPanel._report_menu_state
             def _file_records(self):
                 return [
                     {'name': 'clean.mxf', 'black': 'ok', 'mute': 'ok', 'freeze': ''},
@@ -319,6 +321,11 @@ def check_core_logic():
         ]
         if filtered_report_names != ['bad-a.mxf', 'bad-b.mxf']:
             errors.append(f"  FAIL filtered report scope: {filtered_report_names}")
+        report_menu_state = RightPanel._report_menu_state(FilteredReportProbe())
+        if report_menu_state.get('all_count') != 3 or report_menu_state.get('visible_count') != 2:
+            errors.append(f"  FAIL report menu counts: {report_menu_state}")
+        if not report_menu_state.get('show_visible'):
+            errors.append(f"  FAIL report menu visible scope: {report_menu_state}")
 
         class SummaryCopyProbe:
             vp = type('VP', (), {'cur_file': ''})()
