@@ -2551,6 +2551,11 @@ def _probe_safe_count(value):
 
 def probe(filepath):
     try:
+        path = Path(str(filepath or "").strip())
+        if not path.exists() or not path.is_file():
+            log.debug(f'probe skipped invalid media path: {filepath}')
+            return {}
+        filepath = str(path)
         r = subprocess.run(
             [FFPROBE, "-v","quiet","-print_format","json",
              "-show_format","-show_streams", filepath],
