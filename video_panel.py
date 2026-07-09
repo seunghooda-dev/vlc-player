@@ -727,6 +727,8 @@ class VideoPanel(QWidget):
         self._transport_guard_until = 0.0
         self._transport_guard_action = ''
         self._last_meter_raise_at = 0.0
+        self._drag_url_cache_key = None
+        self._drag_url_cache_paths = []
         self.setAcceptDrops(True)
         self._frame_display_timer = QTimer(self)
         self._frame_display_timer.setTimerType(Qt.TimerType.PreciseTimer)
@@ -1580,13 +1582,22 @@ class VideoPanel(QWidget):
             pass
         return None
 
-    def _video_file_paths_from_urls(self, urls):
-        paths = []
+    @staticmethod
+    def _drop_url_texts(urls):
+        texts = []
         for url in urls or []:
             try:
                 raw = url.toLocalFile()
             except Exception:
                 raw = str(url or '')
+            text = str(raw or '').strip()
+            if text:
+                texts.append(text)
+        return texts
+
+    def _video_file_paths_from_texts(self, texts):
+        paths = []
+        for raw in texts or []:
             p = self._video_file_path(raw)
             if not p:
                 continue
@@ -1595,8 +1606,25 @@ class VideoPanel(QWidget):
                 paths.append(fp)
         return paths
 
+    def _video_file_paths_from_urls(self, urls):
+        return self._video_file_paths_from_texts(self._drop_url_texts(urls))
+
+    def _cached_video_file_paths_from_urls(self, urls):
+        texts = self._drop_url_texts(urls)
+        key = tuple(texts)
+        if getattr(self, '_drag_url_cache_key', None) == key:
+            return list(getattr(self, '_drag_url_cache_paths', []) or [])
+        paths = self._video_file_paths_from_texts(texts)
+        self._drag_url_cache_key = key
+        self._drag_url_cache_paths = list(paths)
+        return paths
+
+    def _clear_drag_url_cache(self):
+        self._drag_url_cache_key = None
+        self._drag_url_cache_paths = []
+
     def _has_video_file_urls(self, urls):
-        return bool(self._video_file_paths_from_urls(urls))
+        return bool(self._cached_video_file_paths_from_urls(urls))
 
     @staticmethod
     def _display_file_name(filepath, default='파일'):
@@ -4402,13 +4430,19 @@ class VideoPanel(QWidget):
     def dragMoveEvent(self, e):
         self.dragEnterEvent(e)
 
+    def dragLeaveEvent(self, e):
+        self._clear_drag_url_cache()
+        e.accept()
+
     def dropEvent(self, e):
         if self._is_busy_loading():
             self.status_changed.emit('  ⏳ 파일 로드 중입니다 — 완료 후 드래그하세요')
             log.info('drop ignored while loading')
             e.ignore()
+            self._clear_drag_url_cache()
             return
-        paths = self._video_file_paths_from_urls(e.mimeData().urls())
+        paths = self._cached_video_file_paths_from_urls(e.mimeData().urls())
+        self._clear_drag_url_cache()
         if paths:
             added = 0
             for fp in paths:

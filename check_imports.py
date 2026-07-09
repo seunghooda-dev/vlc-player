@@ -1310,7 +1310,11 @@ def check_core_logic():
         class DropPathProbe:
             _same_path = VideoPanel._same_path
             _video_file_path = VideoPanel._video_file_path
+            _drop_url_texts = staticmethod(VideoPanel._drop_url_texts)
+            _video_file_paths_from_texts = VideoPanel._video_file_paths_from_texts
             _video_file_paths_from_urls = VideoPanel._video_file_paths_from_urls
+            _cached_video_file_paths_from_urls = VideoPanel._cached_video_file_paths_from_urls
+            _clear_drag_url_cache = VideoPanel._clear_drag_url_cache
             _has_video_file_urls = VideoPanel._has_video_file_urls
 
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1331,6 +1335,27 @@ def check_core_logic():
                 errors.append("  FAIL supported drag urls should be accepted")
             if VideoPanel._has_video_file_urls(DropPathProbe(), [DropUrl(str(invalid))]):
                 errors.append("  FAIL unsupported-only drag urls should be ignored")
+            class DropCacheProbe(DropPathProbe):
+                def __init__(self):
+                    self.calls = 0
+
+                def _video_file_path(self, filepath):
+                    self.calls += 1
+                    return VideoPanel._video_file_path(self, filepath)
+
+            cache_probe = DropCacheProbe()
+            urls = [DropUrl(str(first)), DropUrl(str(second)), DropUrl(str(invalid))]
+            first_cached = VideoPanel._cached_video_file_paths_from_urls(cache_probe, urls)
+            calls_after_first = cache_probe.calls
+            second_cached = VideoPanel._cached_video_file_paths_from_urls(cache_probe, urls)
+            if first_cached != expected_drop_paths or second_cached != expected_drop_paths:
+                errors.append(f"  FAIL drag URL cache result: {first_cached}/{second_cached}")
+            if cache_probe.calls != calls_after_first:
+                errors.append("  FAIL drag URL cache reused paths should not rescan")
+            VideoPanel._clear_drag_url_cache(cache_probe)
+            VideoPanel._cached_video_file_paths_from_urls(cache_probe, urls)
+            if cache_probe.calls <= calls_after_first:
+                errors.append("  FAIL drag URL cache clear should allow rescan")
 
         required_video_exts = {'.mxf', '.mp4'}
         missing_video_exts = sorted(required_video_exts - set(VIDEO_EXTS))

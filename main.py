@@ -1215,6 +1215,9 @@ class MainWindow(QMainWindow):
     def dragMoveEvent(self, e):
         self.vp.dragMoveEvent(e)
 
+    def dragLeaveEvent(self, e):
+        self.vp.dragLeaveEvent(e)
+
     def dropEvent(self, e):
         self.vp.dropEvent(e)
 
