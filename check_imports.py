@@ -1613,6 +1613,26 @@ def check_core_logic():
             if resolved_dir != str(existing_root):
                 errors.append(f"  FAIL existing dir from file: {resolved_dir} != {existing_root}")
 
+            class ContextActionProbe:
+                _file_path_text = staticmethod(RightPanel._file_path_text)
+                _file_unavailable_badge = staticmethod(RightPanel._file_unavailable_badge)
+                _existing_dir_for_path = staticmethod(RightPanel._existing_dir_for_path)
+                _file_context_action_state = RightPanel._file_context_action_state
+
+            existing_mxf = existing_root / 'context-ok.mxf'
+            existing_mxf.write_bytes(b'test')
+            ok_state = RightPanel._file_context_action_state(ContextActionProbe(), str(existing_mxf))
+            if not ok_state.get('can_cue') or ok_state.get('can_relink') or not ok_state.get('can_open_location'):
+                errors.append(f"  FAIL context menu state valid file: {ok_state}")
+            missing_state = RightPanel._file_context_action_state(ContextActionProbe(), str(existing_root / 'missing.mxf'))
+            if missing_state.get('can_cue') or not missing_state.get('can_relink') or not missing_state.get('can_open_location'):
+                errors.append(f"  FAIL context menu state missing file: {missing_state}")
+            unsupported_file = existing_root / 'not-video.txt'
+            unsupported_file.write_text('text', encoding='utf-8')
+            unsupported_state = RightPanel._file_context_action_state(ContextActionProbe(), str(unsupported_file))
+            if unsupported_state.get('can_cue') or unsupported_state.get('unavailable') != '지원 안함':
+                errors.append(f"  FAIL context menu state unsupported file: {unsupported_state}")
+
         if DEFAULT_SETTINGS.get('audio_channels') != [1, 2]:
             errors.append(f"  FAIL default audio channels: {DEFAULT_SETTINGS.get('audio_channels')}")
         normalized = _normalize_settings({'audio_channels': [1, 2, 9, 16, 2, 'bad']})

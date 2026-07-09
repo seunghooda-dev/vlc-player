@@ -2098,6 +2098,17 @@ class RightPanel(QWidget):
         self.vp.status_changed.emit(f"  ⚠ 폴더 열기 실패 — {folder}")
         return False
 
+    def _file_context_action_state(self, filepath):
+        fp = self._file_path_text(filepath)
+        unavailable = self._file_unavailable_badge(fp)
+        return {
+            'filepath': fp,
+            'unavailable': unavailable,
+            'can_cue': bool(fp and not unavailable),
+            'can_relink': bool(fp and unavailable),
+            'can_open_location': bool(fp and self._existing_dir_for_path(fp)),
+        }
+
     def _open_report_folder(self):
         try:
             REPORT_DIR.mkdir(parents=True, exist_ok=True)
@@ -2544,14 +2555,21 @@ class RightPanel(QWidget):
         act_re_black = act_re_audio = act_re_freeze = act_re_need_cue = None
         act_export_visible = act_export_one = act_reset_qc = act_clean_unavailable = None
         record = self._file_record_for_path(fp)
+        action_state = self._file_context_action_state(fp) if fp else {}
         visible_files = self._filtered_file_records()
         all_files = self._file_records()
         if fp:
-            if self._file_unavailable_badge(fp):
+            if action_state.get('can_relink'):
                 act_relink = menu.addAction("↻   파일 다시 연결")
                 menu.addSeparator()
             act_cue = menu.addAction("▶   CUE  —  화면에 올리기")
+            if not action_state.get('can_cue'):
+                act_cue.setEnabled(False)
+                reason = action_state.get('unavailable') or '사용할 수 없음'
+                cue_hint = menu.addAction(f"ⓘ   CUE 불가 — {reason}")
+                cue_hint.setEnabled(False)
             act_open_location = menu.addAction("📁   폴더 열기")
+            act_open_location.setEnabled(bool(action_state.get('can_open_location')))
             act_copy_path = menu.addAction("⧉   경로 복사")
             if record:
                 act_copy_qc = menu.addAction("⧉   QC 요약 복사")
