@@ -1372,6 +1372,7 @@ def check_core_logic():
             errors.append(f"  FAIL ready metadata channel controls: {ready_channel_controls}")
         class ChannelDisplayProbe:
             _safe_int_value = staticmethod(VideoPanel._safe_int_value)
+            _audio_source_count_from_info = staticmethod(VideoPanel._audio_source_count_from_info)
             _audio_channel_display_text = VideoPanel._audio_channel_display_text
         display_probe = ChannelDisplayProbe()
         if VideoPanel._audio_channel_display_text(display_probe, {'audio_stream_count': 16, 'channels': 1}) != '8CH/16CH':
@@ -1380,6 +1381,10 @@ def check_core_logic():
             errors.append("  FAIL 8-channel display text")
         if VideoPanel._audio_channel_display_text(display_probe, {'audio_stream_count': 0, 'channels': 0}) != '0CH':
             errors.append("  FAIL no-audio channel display text")
+        if VideoPanel._audio_source_count_from_info({'audio_stream_count': 0, 'channels': 0}) != 0:
+            errors.append("  FAIL no-audio source count")
+        if VideoPanel._audio_source_count_from_info({'audio_stream_count': 4, 'channels': 1}) != 4:
+            errors.append("  FAIL multi-stream source count")
         provisional_display_info = VideoPanel._provisional_audio_display_info(
             {'audio_stream_count': 16, 'channels': 1},
             8,
@@ -1400,6 +1405,31 @@ def check_core_logic():
                 return list(self.selected)
 
         audio_restart = AudioRestartProbe([1, 2])
+        class AudioExpectedProbe:
+            _safe_int_value = staticmethod(VideoPanel._safe_int_value)
+            _audio_mix_expected = VideoPanel._audio_mix_expected
+
+            def __init__(self, metadata_ready, info, selected=None):
+                self.cur_file = 'C:/qc/audio_expected.mxf'
+                self._metadata_ready = metadata_ready
+                self.cur_info = dict(info or {})
+                self.selected = [1, 2] if selected is None else list(selected)
+
+            def _get_selected_audio_channels(self):
+                return list(self.selected)
+
+        if VideoPanel._audio_mix_expected(
+            AudioExpectedProbe(True, {'audio_stream_count': 0, 'channels': 0})
+        ):
+            errors.append("  FAIL no-audio metadata should not expect audio mix")
+        if not VideoPanel._audio_mix_expected(
+            AudioExpectedProbe(True, {'audio_stream_count': 1, 'channels': 2})
+        ):
+            errors.append("  FAIL audio metadata should expect audio mix")
+        if not VideoPanel._audio_mix_expected(
+            AudioExpectedProbe(False, {'audio_stream_count': 0, 'channels': 0})
+        ):
+            errors.append("  FAIL pending metadata should keep fallback audio expected")
         if VideoPanel._metadata_audio_restart_required(
             audio_restart,
             {'audio_stream_count': 1, 'channels': 2},

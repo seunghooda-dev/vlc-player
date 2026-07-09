@@ -1556,11 +1556,17 @@ class VideoPanel(QWidget):
             count = max(2, max((self._safe_int_value(ch, 0) for ch in selected), default=0))
         return max(0, min(8, count))
 
+    @staticmethod
+    def _audio_source_count_from_info(info):
+        info = info if isinstance(info, dict) else {}
+        return max(
+            max(0, VideoPanel._safe_int_value(info.get('audio_stream_count', 0), 0)),
+            max(0, VideoPanel._safe_int_value(info.get('channels', 0), 0)),
+        )
+
     def _audio_channel_display_text(self, info=None):
         info = info or getattr(self, 'cur_info', {}) or {}
-        streams = max(0, self._safe_int_value(info.get('audio_stream_count', 0), 0))
-        channels = max(0, self._safe_int_value(info.get('channels', 0), 0))
-        source_count = max(streams, channels)
+        source_count = self._audio_source_count_from_info(info)
         if source_count <= 0:
             return "0CH"
         visible_count = max(1, min(8, source_count))
@@ -1579,10 +1585,7 @@ class VideoPanel(QWidget):
     @staticmethod
     def _provisional_audio_display_info(info, provisional_count):
         info = info if isinstance(info, dict) else {}
-        source_count = max(
-            max(0, VideoPanel._safe_int_value(info.get('audio_stream_count', 0), 0)),
-            max(0, VideoPanel._safe_int_value(info.get('channels', 0), 0)),
-        )
+        source_count = VideoPanel._audio_source_count_from_info(info)
         visible_count = max(0, VideoPanel._safe_int_value(provisional_count, 0))
         if source_count > visible_count:
             return info
@@ -2745,10 +2748,13 @@ class VideoPanel(QWidget):
         QTimer.singleShot(2500, lambda: self.lbl_dbsaved.setText(""))
 
         self.ai_lbl.setText(f"⚠ {warnings[0]}" if warnings else "AI 분석 준비됨")
-        self.meter_ctrl.start_file(
-            filepath, meter_ch_count, self.player, (1, 2),
-            audio_streams
-        )
+        if self._audio_source_count_from_info(info) > 0:
+            self.meter_ctrl.start_file(
+                filepath, meter_ch_count, self.player, (1, 2),
+                audio_streams
+            )
+        else:
+            self.meter_ctrl.set_playing(False)
         self.audio_mix.set_file(
             filepath,
             audio_streams,
@@ -3607,10 +3613,13 @@ class VideoPanel(QWidget):
         self.ai_lbl.setText(f"⚠ {warnings[0]}" if warnings else "AI 분석 준비됨")
 
         # 실시간 오디오 미터 시작 (채널 수 전달)
-        self.meter_ctrl.start_file(
-            filepath, meter_ch_count, self.player, (1, 2),
-            audio_streams
-        )
+        if self._audio_source_count_from_info(info) > 0:
+            self.meter_ctrl.start_file(
+                filepath, meter_ch_count, self.player, (1, 2),
+                audio_streams
+            )
+        else:
+            self.meter_ctrl.set_playing(False)
         self.audio_mix.set_file(
             filepath,
             audio_streams,
@@ -3808,6 +3817,11 @@ class VideoPanel(QWidget):
             selected = self._get_selected_audio_channels()
         self._selected_chs = selected
         if self.cur_file:
+            if not self._audio_mix_expected():
+                self._cancel_audio_mix()
+                self.ai_lbl.setText("✓ 오디오 스트림 없음 — 영상만 재생")
+                record_state_event('audio-mix', 'channel selection ignored no audio', file=Path(self.cur_file).name)
+                return
             self.player.audio_set_volume(0)
             self.audio_mix.set_channels(selected)
             if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
@@ -3842,6 +3856,9 @@ class VideoPanel(QWidget):
             return
         if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
             return
+        if not self._audio_mix_expected():
+            self._cancel_audio_mix()
+            return
         pos = self.player.position() if pos_ms is None else self._safe_int_value(pos_ms, 0)
         self.player.audio_set_volume(0)
         self.audio_mix.set_file(
@@ -3864,6 +3881,9 @@ class VideoPanel(QWidget):
         if not self.cur_file:
             return
         if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+            return
+        if not self._audio_mix_expected():
+            self._cancel_audio_mix()
             return
         pos = self.player.position() if pos_ms is None else self._safe_int_value(pos_ms, 0)
         self.player.audio_set_volume(0)
@@ -4420,22 +4440,27 @@ class VideoPanel(QWidget):
                 metadata=self._metadata_ready,
                 cue=self._cue_ready,
             )
+            audio_expected = self._audio_mix_expected()
             if self.cur_file:
-                self.status_changed.emit(f"  ▶ 재생 중 — {Path(self.cur_file).name} | 오디오 믹스 준비")
+                audio_note = '오디오 믹스 준비' if audio_expected else '오디오 없음'
+                self.status_changed.emit(f"  ▶ 재생 중 — {Path(self.cur_file).name} | {audio_note}")
             self._reset_audio_recovery()
             self._frame_clock_active = True
             self._sync_frame_timer_interval()
             self._sync_frame_clock(self.player.position())
             self._frame_display_timer.start()
             self._start_playback_progress_watch()
-            if not self._audio_recovery_timer.isActive():
+            if audio_expected and not self._audio_recovery_timer.isActive():
                 self._audio_recovery_timer.start()
             self._led_timer.start()
             self.player.audio_set_volume(0)
-            if getattr(self, '_first_audio_start_after_cue', False):
-                self._schedule_audio_mix(delay_ms=20)
+            if audio_expected:
+                if getattr(self, '_first_audio_start_after_cue', False):
+                    self._schedule_audio_mix(delay_ms=20)
+                else:
+                    self._schedule_audio_mix(delay_ms=40)
             else:
-                self._schedule_audio_mix(delay_ms=40)
+                self._cancel_audio_mix()
             self._arm_play_start_watchdog('state')
         else:
             if self.cur_file:
@@ -4460,13 +4485,21 @@ class VideoPanel(QWidget):
             self._led_timer.stop()
             self.led.setStyleSheet(f"color:{C['text3']};font-size:10px;background:transparent;")
             self._led_on = False
-        if playing and self.cur_file:
+        meter_expected = (
+            playing
+            and self.cur_file
+            and (
+                not getattr(self, '_metadata_ready', False)
+                or self._audio_source_count_from_info(self.cur_info) > 0
+            )
+        )
+        if meter_expected:
             if not self.meter_ctrl._thread.isRunning():
                 self.meter_ctrl.start_file(
                     self.cur_file, self._meter_channel_count(), self.player, (1, 2),
                     self.cur_info.get('audio_stream_count', 0))
         else:
-            self.meter_ctrl.set_playing(playing)
+            self.meter_ctrl.set_playing(False)
 
     def _on_player_error(self, error, error_string):
         """QMediaPlayer 재생 오류 핸들러"""
