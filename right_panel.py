@@ -1139,6 +1139,43 @@ class RightPanel(QWidget):
             })
         return rows
 
+    @staticmethod
+    def _report_filename_token(value, fallback='file', max_len=60):
+        try:
+            text = str(value or '').strip()
+        except Exception:
+            text = ''
+        if not text:
+            return fallback
+        try:
+            text = Path(text).stem or text
+        except Exception:
+            pass
+        invalid = set('<>:"/\\|?*')
+        chars = []
+        for ch in text:
+            if ord(ch) < 32 or ch in invalid:
+                chars.append('_')
+            elif ch.isspace():
+                chars.append('-')
+            else:
+                chars.append(ch)
+        cleaned = ''.join(chars)
+        while '__' in cleaned:
+            cleaned = cleaned.replace('__', '_')
+        while '--' in cleaned:
+            cleaned = cleaned.replace('--', '-')
+        cleaned = cleaned.strip(' .-_')
+        if not cleaned:
+            cleaned = fallback
+        return cleaned[:max(8, _safe_int(max_len, 60))].rstrip(' .-_') or fallback
+
+    def _report_prefix_for_file(self, record, base='qc-selected'):
+        record = record or {}
+        name = record.get('name') or self._path_name(record.get('filepath'), 'file')
+        token = self._report_filename_token(name)
+        return f"{base}-{token}" if token else base
+
     def _write_qc_report_txt(self, path, rows):
         rows = [row for row in (rows or []) if isinstance(row, dict)]
         if not rows:
@@ -1728,7 +1765,7 @@ class RightPanel(QWidget):
             )
         elif action == act_export_one:
             if record:
-                self._export_qc_report([record], default_prefix='qc-selected')
+                self._export_qc_report([record], default_prefix=self._report_prefix_for_file(record))
         elif action == act_reset_qc:
             answer = QMessageBox.question(
                 self,

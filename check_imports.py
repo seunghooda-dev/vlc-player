@@ -343,6 +343,18 @@ def check_core_logic():
             empty_dir.mkdir()
             if RightPanel._latest_report_path_in(empty_dir) != '':
                 errors.append("  FAIL latest report empty folder")
+        if RightPanel._report_filename_token('bad <name>: 01?.mxf') != 'bad-_name_-01':
+            errors.append("  FAIL report filename token sanitizing")
+        class ReportPrefixProbe:
+            _path_name = staticmethod(RightPanel._path_name)
+            _report_filename_token = staticmethod(RightPanel._report_filename_token)
+            _report_prefix_for_file = RightPanel._report_prefix_for_file
+        prefix = RightPanel._report_prefix_for_file(
+            ReportPrefixProbe(),
+            {'name': 'long sample <bad>: 01.mxf'},
+        )
+        if prefix != 'qc-selected-long-sample-_bad_-01':
+            errors.append(f"  FAIL selected report prefix: {prefix}")
 
         class SummaryCopyProbe:
             vp = type('VP', (), {'cur_file': ''})()
