@@ -2287,7 +2287,7 @@ class VideoPanel(QWidget):
         self.cur_id = None
         self._metadata_ready = False
         self._file_loaded_emitted = False
-        self.fps = info.get("fps", 29.97)
+        self.fps = self._safe_float_value(info.get("fps", 29.97), 29.97)
         self.df = bool(info.get("df", True))
         self.tc_offset = 0.0
         self._tc_offset_frames = 0
@@ -2299,21 +2299,24 @@ class VideoPanel(QWidget):
         self._frame_clock_active = False
         self._frame_display_timer.stop()
         self._sync_frame_timer_interval()
-        self.duration = float(info.get("duration", 0) or 0)
+        self.duration = max(0.0, self._safe_float_value(info.get("duration", 0), 0.0))
         self._source_duration = self.duration
         self._using_preview = False
         self.lbl_fmt.setText(info.get("format_short", "—"))
         self.lbl_cod.setText(info.get("codec", "") or "—")
-        h = int(info.get("height", 0) or 0)
-        w = int(info.get("width", 0) or 0)
+        h = max(0, self._safe_int_value(info.get("height", 0), 0))
+        w = max(0, self._safe_int_value(info.get("width", 0), 0))
         res_str = ("4K" if w >= 3840 else "HD" if w >= 1920 else f"{h}p") if h else "—"
         self.lbl_res.setText(res_str)
-        self.lbl_fps.setText(f"{float(self.fps or 29.97):.2f}")
+        self.lbl_fps.setText(f"{self._media_fps():.2f}")
         self.lbl_df.setText("DF" if self._drop_frame_enabled() else "NDF")
         self.lbl_df.setStyleSheet(
             f"color:{C['teal']};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:11px;"
         )
-        hinted_ch = max(int(info.get("audio_stream_count", 0) or 0), int(info.get("channels", 0) or 0))
+        hinted_ch = max(
+            max(0, self._safe_int_value(info.get("audio_stream_count", 0), 0)),
+            max(0, self._safe_int_value(info.get("channels", 0), 0)),
+        )
         provisional_ch = max(1, min(8, hinted_ch)) if hinted_ch else (8 if p.suffix.lower() == ".mxf" else 2)
         self.lbl_ch.setText(f"{provisional_ch}CH")
         for cb, ch_no in self._ch_checks:
@@ -2324,7 +2327,7 @@ class VideoPanel(QWidget):
         self.audio_mix.set_channels(self._selected_chs)
         # Metadata is intentionally delayed for playback responsiveness, but
         # meters should still appear immediately with a sensible provisional rail.
-        provisional_streams = int(info.get("audio_stream_count", 0) or 0)
+        provisional_streams = max(0, self._safe_int_value(info.get("audio_stream_count", 0), 0))
         self.meter_ctrl.start_file(filepath, provisional_ch, self.player, (1, 2), provisional_streams)
         self.tc_dur.setText(self._frames_to_tc(self._duration_frames(), include_offset=False))
         self._apply_qc_markers()
@@ -2341,9 +2344,9 @@ class VideoPanel(QWidget):
             previous_selected = list(getattr(self, '_selected_chs', []) or [])
         self.cur_info = info
         self._metadata_ready = True
-        self.fps       = info.get("fps", 29.97)
+        self.fps       = self._safe_float_value(info.get("fps", 29.97), 29.97)
         self.df        = bool(info.get("df", False)) and self._nominal_fps() in (30, 60)
-        self.tc_offset = info.get("tc_offset", 0.0)
+        self.tc_offset = self._safe_float_value(info.get("tc_offset", 0.0), 0.0)
         self._tc_offset_frames = self._parse_tc_offset_frames(info.get("timecode", ""))
         self._display_frame = 0
         self._last_display_dur_frames = None
@@ -2353,24 +2356,25 @@ class VideoPanel(QWidget):
         self._frame_clock_active = False
         self._frame_display_timer.stop()
         self._sync_frame_timer_interval()
-        self.duration  = info.get("duration", 0)
+        self.duration  = max(0.0, self._safe_float_value(info.get("duration", 0), 0.0))
         self._source_duration = self.duration
         self._using_preview = False
 
         self.lbl_fmt.setText(info.get("format_short","—"))
         self.lbl_cod.setText(info.get("codec","—") or "—")
-        h = info.get("height",0)
-        w = info.get("width", 0)
+        h = max(0, self._safe_int_value(info.get("height", 0), 0))
+        w = max(0, self._safe_int_value(info.get("width", 0), 0))
         res_str = ("4K" if w >= 3840 else "HD" if w >= 1920 else f"{h}p") if h else "—"
         self.lbl_res.setText(res_str)
-        fps_str = f"{self.fps:.2f}"
+        fps_str = f"{self._media_fps():.2f}"
         self.lbl_fps.setText(fps_str)
         df_label = "DF" if self._drop_frame_enabled() else "NDF"
         df_color = C['teal'] if self._drop_frame_enabled() else C['text2']
         self.lbl_df.setText(df_label)
         self.lbl_df.setStyleSheet(f"color:{df_color};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:11px;")
-        ch_count = int(info.get('channels', 0) or 0)
-        stream_count = max(int(info.get('audio_stream_count', 0) or 0), ch_count)
+        ch_count = max(0, self._safe_int_value(info.get('channels', 0), 0))
+        audio_streams = max(0, self._safe_int_value(info.get('audio_stream_count', 0), 0))
+        stream_count = max(audio_streams, ch_count)
         self.lbl_ch.setText(f"{stream_count}CH")
         first_enabled = None
         for cb, ch_no in self._ch_checks:
@@ -2379,7 +2383,11 @@ class VideoPanel(QWidget):
             if enabled and first_enabled is None:
                 first_enabled = cb
         default_channels = [1, 2]
-        valid_previous = [ch for ch in previous_selected if 1 <= int(ch) <= stream_count]
+        valid_previous = []
+        for ch in previous_selected:
+            ch_num = self._safe_int_value(ch, 0)
+            if 1 <= ch_num <= stream_count:
+                valid_previous.append(ch_num)
         preferred_channels = valid_previous or default_channels
         for cb, _ in self._ch_checks:
             cb.setChecked(False)
@@ -2394,22 +2402,20 @@ class VideoPanel(QWidget):
         self._selected_chs = default_selected or [1, 2]
         self.tc_dur.setText(self._frames_to_tc(self._duration_frames(), include_offset=False))
         self._apply_qc_markers()
-        vw = info.get('width',0); vh_px = info.get('height',0)
-        self._res_text.setPlainText(f"{vw}\u00d7{vh_px}" if vw and vh_px else "")
+        self._res_text.setPlainText(f"{w}\u00d7{h}" if w and h else "")
 
         self.cur_id = save_clip(info)
         self.lbl_dbsaved.setText("✓ DB 저장됨")
         QTimer.singleShot(2500, lambda: self.lbl_dbsaved.setText(""))
 
         self.ai_lbl.setText(f"⚠ {warnings[0]}" if warnings else "AI 분석 준비됨")
-        ch_count = info.get('channels', 2)
         self.meter_ctrl.start_file(
-            filepath, ch_count, self.player, (1, 2),
-            info.get('audio_stream_count', 0)
+            filepath, ch_count or 2, self.player, (1, 2),
+            audio_streams
         )
         self.audio_mix.set_file(
             filepath,
-            info.get('audio_stream_count', 0),
+            audio_streams,
             ch_count
         )
         self.audio_mix.set_channels(self._selected_chs)
@@ -2474,12 +2480,8 @@ class VideoPanel(QWidget):
         self._retire_loudness_analysis()
         if not filepath or not Path(filepath).exists():
             return
-        try:
-            stream_count = int(self.cur_info.get('audio_stream_count', 0) or 0)
-            ch_count = int(self.cur_info.get('channels', 0) or 0)
-        except Exception:
-            stream_count = 0
-            ch_count = 0
+        stream_count = max(0, self._safe_int_value(self.cur_info.get('audio_stream_count', 0), 0))
+        ch_count = max(0, self._safe_int_value(self.cur_info.get('channels', 0), 0))
         if stream_count <= 0 and ch_count <= 0:
             self.meter_ctrl.set_loudness_analysis_error('NO AUD')
             return
@@ -2491,10 +2493,7 @@ class VideoPanel(QWidget):
             log.warning(f'loudness analysis blocked: {missing}')
             return
 
-        try:
-            duration = float(self.cur_info.get('duration', self.duration) or 0.0)
-        except Exception:
-            duration = 0.0
+        duration = max(0.0, self._safe_float_value(self.cur_info.get('duration', self.duration), 0.0))
         if duration > 300.0:
             self.meter_ctrl.set_loudness_analysis_pending('LIVE')
             log.info(
@@ -2518,7 +2517,7 @@ class VideoPanel(QWidget):
             filepath,
             stream_count,
             ch_count or 2,
-            self.cur_info.get('duration', self.duration),
+            duration,
         )
         self._loudness_thread = t
         file_at_start = filepath
@@ -2592,14 +2591,10 @@ class VideoPanel(QWidget):
                 btn.setEnabled(enabled)
         for btn in getattr(self, '_speed_btns', {}).values():
             btn.setEnabled(enabled)
-        stream_count = 0
-        try:
-            stream_count = max(
-                int(self.cur_info.get('audio_stream_count', 0) or 0),
-                int(self.cur_info.get('channels', 0) or 0),
-            )
-        except Exception:
-            stream_count = 0
+        stream_count = max(
+            max(0, self._safe_int_value(self.cur_info.get('audio_stream_count', 0), 0)),
+            max(0, self._safe_int_value(self.cur_info.get('channels', 0), 0)),
+        )
         for cb, ch_no in getattr(self, '_ch_checks', []):
             cb.setEnabled(enabled and stream_count > 0 and ch_no <= stream_count)
         has_file = bool(self.cur_file)
@@ -2847,8 +2842,8 @@ class VideoPanel(QWidget):
                 'FFprobe가 파일 구조를 읽지 못했습니다. 파일 손상, 권한, 또는 지원되지 않는 컨테이너인지 확인하세요.',
                 [],
             )
-        width = int(info.get('width', 0) or 0)
-        height = int(info.get('height', 0) or 0)
+        width = max(0, self._safe_int_value(info.get('width', 0), 0))
+        height = max(0, self._safe_int_value(info.get('height', 0), 0))
         codec = str(info.get('codec', '') or '').strip()
         if width <= 0 or height <= 0 or not codec:
             return (
@@ -2858,25 +2853,22 @@ class VideoPanel(QWidget):
                 [],
             )
         warnings = []
-        audio_streams = int(info.get('audio_stream_count', 0) or 0)
-        channels = int(info.get('channels', 0) or 0)
+        audio_streams = max(0, self._safe_int_value(info.get('audio_stream_count', 0), 0))
+        channels = max(0, self._safe_int_value(info.get('channels', 0), 0))
         if audio_streams <= 0 and channels <= 0:
             warnings.append('오디오 스트림 없음 — 영상만 재생됩니다')
-        try:
-            if float(info.get('duration', 0) or 0) <= 0:
-                warnings.append('길이 정보 없음 — 탐색/REM 표시가 제한될 수 있습니다')
-        except Exception:
+        duration = self._safe_float_value(info.get('duration', 0), None)
+        if duration is None:
             warnings.append('길이 정보 확인 실패 — 탐색/REM 표시가 제한될 수 있습니다')
+        elif duration <= 0:
+            warnings.append('길이 정보 없음 — 탐색/REM 표시가 제한될 수 있습니다')
         return True, '', '', warnings
 
     def _metadata_audio_restart_required(self, info, was_fallback_audio):
         if not was_fallback_audio:
             return True
-        try:
-            audio_streams = int(info.get('audio_stream_count', 0) or 0)
-            channels = int(info.get('channels', 0) or 0)
-        except Exception:
-            return True
+        audio_streams = max(0, self._safe_int_value(info.get('audio_stream_count', 0), 0))
+        channels = max(0, self._safe_int_value(info.get('channels', 0), 0))
         selected = self._get_selected_audio_channels()
         if not selected:
             return False
@@ -3139,9 +3131,9 @@ class VideoPanel(QWidget):
         self._set_loading_state(True, f"⏳ 2/4 CUE 준비 중 — {Path(filepath).name}")
         self._metadata_ready = True
         self.cur_info = info
-        self.fps       = info.get("fps", 29.97)
+        self.fps       = self._safe_float_value(info.get("fps", 29.97), 29.97)
         self.df        = bool(info.get("df", False)) and self._nominal_fps() in (30, 60)
-        self.tc_offset = info.get("tc_offset", 0.0)
+        self.tc_offset = self._safe_float_value(info.get("tc_offset", 0.0), 0.0)
         self._tc_offset_frames = self._parse_tc_offset_frames(info.get("timecode", ""))
         self._display_frame = 0
         self._last_display_dur_frames = None
@@ -3151,24 +3143,25 @@ class VideoPanel(QWidget):
         self._frame_clock_active = False
         self._frame_display_timer.stop()
         self._sync_frame_timer_interval()
-        self.duration  = info.get("duration", 0)
+        self.duration  = max(0.0, self._safe_float_value(info.get("duration", 0), 0.0))
         self._source_duration = self.duration
         self._using_preview = False
 
         self.lbl_fmt.setText(info.get("format_short","—"))
         self.lbl_cod.setText(info.get("codec","—") or "—")
-        h = info.get("height",0)
-        w = info.get("width", 0)
+        h = max(0, self._safe_int_value(info.get("height", 0), 0))
+        w = max(0, self._safe_int_value(info.get("width", 0), 0))
         res_str = ("4K" if w >= 3840 else "HD" if w >= 1920 else f"{h}p") if h else "—"
         self.lbl_res.setText(res_str)
-        fps_str = f"{self.fps:.2f}"
+        fps_str = f"{self._media_fps():.2f}"
         self.lbl_fps.setText(fps_str)
         df_label = "DF" if self._drop_frame_enabled() else "NDF"
         df_color = C['teal'] if self._drop_frame_enabled() else C['text2']
         self.lbl_df.setText(df_label)
         self.lbl_df.setStyleSheet(f"color:{df_color};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:11px;")
-        ch_count = int(info.get('channels', 0) or 0)
-        stream_count = max(int(info.get('audio_stream_count', 0) or 0), ch_count)
+        ch_count = max(0, self._safe_int_value(info.get('channels', 0), 0))
+        audio_streams = max(0, self._safe_int_value(info.get('audio_stream_count', 0), 0))
+        stream_count = max(audio_streams, ch_count)
         self.lbl_ch.setText(f"{stream_count}CH")
         # 파일 채널 수에 따라 체크박스 활성화/비활성화
         first_enabled = None
@@ -3191,8 +3184,7 @@ class VideoPanel(QWidget):
             default_selected = [1]
         self._selected_chs = default_selected or [1, 2]
         self.tc_dur.setText(self._frames_to_tc(self._duration_frames(), include_offset=False))
-        vw = info.get('width',0); vh_px = info.get('height',0)
-        self._res_text.setPlainText(f"{vw}\u00d7{vh_px}" if vw and vh_px else "")
+        self._res_text.setPlainText(f"{w}\u00d7{h}" if w and h else "")
         mark_step('metadata_ui')
 
         # DB 저장
@@ -3209,14 +3201,13 @@ class VideoPanel(QWidget):
         self.ai_lbl.setText(f"⚠ {warnings[0]}" if warnings else "AI 분석 준비됨")
 
         # 실시간 오디오 미터 시작 (채널 수 전달)
-        ch_count = info.get('channels', 2)
         self.meter_ctrl.start_file(
-            filepath, ch_count, self.player, (1, 2),
-            info.get('audio_stream_count', 0)
+            filepath, ch_count or 2, self.player, (1, 2),
+            audio_streams
         )
         self.audio_mix.set_file(
             filepath,
-            info.get('audio_stream_count', 0),
+            audio_streams,
             ch_count
         )
         self.audio_mix.set_channels(self._selected_chs)
@@ -3591,12 +3582,8 @@ class VideoPanel(QWidget):
             # MXF playback must keep video/audio together even while metadata
             # is still probing. A fallback first-audio-stream output is expected.
             return True
-        try:
-            audio_streams = int(self.cur_info.get('audio_stream_count', 0) or 0)
-            channels = int(self.cur_info.get('channels', 0) or 0)
-        except Exception:
-            audio_streams = 0
-            channels = 0
+        audio_streams = max(0, self._safe_int_value(self.cur_info.get('audio_stream_count', 0), 0))
+        channels = max(0, self._safe_int_value(self.cur_info.get('channels', 0), 0))
         return audio_streams > 0 or channels > 0
 
     def _reset_audio_recovery(self):
@@ -3764,8 +3751,8 @@ class VideoPanel(QWidget):
         audio_expected = bool(
             selected
             and (
-                int(self.cur_info.get('audio_stream_count', 0) or 0) > 0
-                or int(self.cur_info.get('channels', 0) or 0) > 0
+                self._safe_int_value(self.cur_info.get('audio_stream_count', 0), 0) > 0
+                or self._safe_int_value(self.cur_info.get('channels', 0), 0) > 0
             )
         )
         audio_status = self.audio_mix.process_status()
