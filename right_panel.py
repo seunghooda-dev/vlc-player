@@ -1746,7 +1746,10 @@ class RightPanel(QWidget):
         self._stop_analysis_timeout()
         if getattr(self, '_audio_thread', None) and not self._audio_thread.isRunning():
             self._audio_thread = None
-        mutes = sanitize_qc_ranges(result.get('mutes', []) if isinstance(result, dict) else [])
+        if not isinstance(result, dict):
+            log.warning(f'batch qc audio returned unexpected result type: {type(result).__name__}')
+            result = {}
+        mutes = sanitize_qc_ranges(result.get('mutes', []))
         if hasattr(self.vp, '_set_file_status'):
             self.vp._set_file_status(
                 fp,
@@ -2283,6 +2286,9 @@ class RightPanel(QWidget):
         self.btn_run_audio.setEnabled(True)
         if getattr(self, '_audio_thread', None) and not self._audio_thread.isRunning():
             self._audio_thread = None
+        if not isinstance(result, dict):
+            log.warning(f'audio analysis returned unexpected result type: {type(result).__name__}')
+            result = {}
         mutes    = sanitize_qc_ranges(result.get('mutes', []))
         if hasattr(self.vp, '_set_file_status'):
             fp = getattr(self, '_audio_file', self.vp.cur_file)

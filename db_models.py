@@ -372,9 +372,24 @@ def qc_summary_from_status(black_status="", mute_status="", freeze_status=""):
 
 def _sanitize_qc_ranges(ranges, limit=2000):
     cleaned = []
-    if not ranges:
+    if ranges is None:
         return cleaned
-    for item in ranges:
+    try:
+        max_items = max(0, int(limit))
+    except Exception:
+        max_items = 2000
+    if max_items <= 0:
+        return cleaned
+    if isinstance(ranges, dict):
+        items = (ranges,)
+    elif isinstance(ranges, (str, bytes)):
+        return cleaned
+    else:
+        try:
+            items = iter(ranges)
+        except TypeError:
+            return cleaned
+    for item in items:
         if not isinstance(item, dict):
             continue
         row = {}
@@ -406,7 +421,7 @@ def _sanitize_qc_ranges(ranges, limit=2000):
             continue
         if row:
             cleaned.append(row)
-        if len(cleaned) >= limit:
+        if len(cleaned) >= max_items:
             break
     return cleaned
 
