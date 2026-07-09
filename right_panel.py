@@ -133,6 +133,7 @@ class RightPanel(QWidget):
         self._analysis_timeout_label = ''
         self._analysis_timeout_seq = None
         self._analysis_progress_last = {}
+        self._analysis_cancel_buttons = []
         self._batch_active = False
         self._batch_queue = []
         self._batch_total = 0
@@ -273,13 +274,14 @@ class RightPanel(QWidget):
 
         self.btn_batch_cancel = QPushButton("취소")
         self.btn_batch_cancel.setFixedHeight(24)
-        self.btn_batch_cancel.setToolTip("진행 중인 일괄 검수를 중단")
+        self.btn_batch_cancel.setToolTip("진행 중인 검수 작업을 중단")
         self.btn_batch_cancel.setStyleSheet(
             _sort_btn_style.replace(f"color:{C['text2']};", f"color:{C['red']};")
         )
         self.btn_batch_cancel.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.btn_batch_cancel.setEnabled(False)
-        self.btn_batch_cancel.clicked.connect(self._cancel_batch_qc)
+        self.btn_batch_cancel.clicked.connect(self._cancel_current_analysis)
+        self._analysis_cancel_buttons.append(self.btn_batch_cancel)
         tbl.addWidget(self.btn_batch_cancel)
 
         self.chk_auto_report = QCheckBox("자동저장")
@@ -2310,7 +2312,10 @@ class RightPanel(QWidget):
                 and not bool(getattr(self, '_analysis_active', None))
             )
         if hasattr(self, 'btn_batch_cancel'):
-            self.btn_batch_cancel.setEnabled(bool(getattr(self, '_batch_active', False)))
+            self.btn_batch_cancel.setEnabled(
+                bool(getattr(self, '_analysis_active', None))
+                or bool(getattr(self, '_batch_active', False))
+            )
         self._update_filter_buttons(all_files, availability)
 
         # 경로 표시: CUE 파일 기준, 없으면 첫 번째 파일 기준
@@ -2414,6 +2419,23 @@ class RightPanel(QWidget):
             f"color:{meta_color};font-family:'Consolas','D2Coding';font-size:11px;background:transparent;"
         )
 
+    def _make_analysis_cancel_button(self):
+        btn = QPushButton("취소")
+        btn.setFixedHeight(30)
+        btn.setToolTip("진행 중인 검수 작업을 중단")
+        btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        btn.setEnabled(False)
+        btn.setStyleSheet(
+            f"QPushButton{{background:rgba(255,93,108,24);color:{C['red']};"
+            f"border:1px solid rgba(255,93,108,100);border-radius:6px;"
+            f"font-size:11px;font-weight:800;padding:0 10px;}}"
+            f"QPushButton:hover{{background:rgba(255,93,108,42);border-color:{C['red']};}}"
+            f"QPushButton:disabled{{background:#101218;color:#4b252b;border-color:#241317;}}"
+        )
+        btn.clicked.connect(self._cancel_current_analysis)
+        self._analysis_cancel_buttons.append(btn)
+        return btn
+
     def _build_black(self):
         w = QWidget()
         l = QVBoxLayout(w); l.setContentsMargins(0,0,0,0); l.setSpacing(0)
@@ -2462,6 +2484,7 @@ class RightPanel(QWidget):
         self.btn_run_black.clicked.connect(self._run_black_detect)
         self.black_amount.editingFinished.connect(self._save_detection_settings)
         self.black_threshold.editingFinished.connect(self._save_detection_settings)
+        self.btn_cancel_black = self._make_analysis_cancel_button()
 
         lbl_pre = QLabel("프리셋")
         lbl_pre.setStyleSheet(f"color:{C['text2']};font-size:11px;")
@@ -2470,7 +2493,7 @@ class RightPanel(QWidget):
         tbl.addWidget(lbl_amt); tbl.addWidget(self.black_amount)
         tbl.addSpacing(6)
         tbl.addWidget(lbl_thr); tbl.addWidget(self.black_threshold)
-        tbl.addStretch(); tbl.addWidget(self.btn_run_black)
+        tbl.addStretch(); tbl.addWidget(self.btn_run_black); tbl.addWidget(self.btn_cancel_black)
         l.addWidget(tb)
 
         self.black_status = QLabel("  파일을 로드하고 블랙 검출 버튼을 누르세요")
@@ -2814,9 +2837,11 @@ class RightPanel(QWidget):
         if batch:
             batch.setText("진행중" if busy and kind == 'batch' else "일괄")
             batch.setEnabled(False if busy else (has_video_records and not loading))
-        cancel = getattr(self, 'btn_batch_cancel', None)
-        if cancel:
-            cancel.setEnabled(bool(busy and kind == 'batch'))
+        for cancel in getattr(self, '_analysis_cancel_buttons', []):
+            try:
+                cancel.setEnabled(bool(busy))
+            except Exception:
+                pass
         if export:
             export.setEnabled(False if busy else not loading)
 
@@ -2896,18 +2921,27 @@ class RightPanel(QWidget):
             self._analysis_active = None
             self._analysis_paused_playback = False
             self._analysis_paused_meters = False
-            if hasattr(self, 'btn_batch_cancel'):
-                self.btn_batch_cancel.setEnabled(False)
+            for cancel in getattr(self, '_analysis_cancel_buttons', []):
+                try:
+                    cancel.setEnabled(False)
+                except Exception:
+                    pass
 
-    def _cancel_batch_qc(self):
-        if not getattr(self, '_batch_active', False):
+    def _cancel_current_analysis(self):
+        if not self._analysis_thread_running() and not getattr(self, '_analysis_active', None):
+            if hasattr(self.vp, 'status_changed'):
+                self.vp.status_changed.emit("  취소할 검수 작업이 없습니다")
             return
-        self.cancel_active_analysis('일괄 검수 취소')
+        reason = '일괄 검수 취소' if getattr(self, '_batch_active', False) else '검수 취소'
+        self.cancel_active_analysis(reason)
         self.refresh_explorer()
         try:
-            self.vp.ai_lbl.setText('⏹ 일괄 검수 취소됨')
+            self.vp.ai_lbl.setText(f"⏹ {reason}됨")
         except Exception:
             pass
+
+    def _cancel_batch_qc(self):
+        self._cancel_current_analysis()
 
     def _parse_detection_values(self):
         amount = _safe_int(self.black_amount.text(), 98)
@@ -3424,6 +3458,7 @@ class RightPanel(QWidget):
         self.btn_run_audio.clicked.connect(self._run_audio_analyze)
         self.spin_threshold.editingFinished.connect(self._save_detection_settings)
         self.spin_duration.editingFinished.connect(self._save_detection_settings)
+        self.btn_cancel_audio = self._make_analysis_cancel_button()
 
         lbl_pre = QLabel("프리셋")
         lbl_pre.setStyleSheet(f"color:{C['text2']};font-size:11px;")
@@ -3432,7 +3467,7 @@ class RightPanel(QWidget):
         tbl.addWidget(lbl_thr); tbl.addWidget(self.spin_threshold)
         tbl.addSpacing(6)
         tbl.addWidget(lbl_dur); tbl.addWidget(self.spin_duration)
-        tbl.addStretch(); tbl.addWidget(self.btn_run_audio)
+        tbl.addStretch(); tbl.addWidget(self.btn_run_audio); tbl.addWidget(self.btn_cancel_audio)
         l.addWidget(tb)
 
         # ── 상태 라벨 ──
@@ -3537,6 +3572,7 @@ class RightPanel(QWidget):
         self.btn_run_freeze.clicked.connect(self._run_freeze_detect)
         self.freeze_noise.editingFinished.connect(self._save_detection_settings)
         self.freeze_duration.editingFinished.connect(self._save_detection_settings)
+        self.btn_cancel_freeze = self._make_analysis_cancel_button()
 
         lbl_pre = QLabel("프리셋")
         lbl_pre.setStyleSheet(f"color:{C['text2']};font-size:11px;")
@@ -3545,7 +3581,7 @@ class RightPanel(QWidget):
         tbl.addWidget(lbl_noise); tbl.addWidget(self.freeze_noise)
         tbl.addSpacing(6)
         tbl.addWidget(lbl_dur); tbl.addWidget(self.freeze_duration)
-        tbl.addStretch(); tbl.addWidget(self.btn_run_freeze)
+        tbl.addStretch(); tbl.addWidget(self.btn_run_freeze); tbl.addWidget(self.btn_cancel_freeze)
         l.addWidget(tb)
 
         self.freeze_status = QLabel("  파일을 로드하고 프리즈 검출 버튼을 누르세요")

@@ -793,6 +793,52 @@ def check_core_logic():
         if cue_allowed_probe.loaded != ['C:/qc/current.mxf']:
             errors.append(f"  FAIL idle cue should load: {cue_allowed_probe.loaded}")
 
+        class AnalysisCancelProbe:
+            _cancel_current_analysis = RightPanel._cancel_current_analysis
+
+            def __init__(self, active='audio', batch=False):
+                self._analysis_active = active
+                self._batch_active = batch
+                self.cancelled = []
+                self.refreshed = 0
+                self.messages = []
+                self.ai_text = []
+                self.vp = type('VP', (), {})()
+                self.vp.status_changed = type(
+                    'Signal',
+                    (),
+                    {'emit': lambda _, msg: self.messages.append(msg)},
+                )()
+                self.vp.ai_lbl = type(
+                    'Label',
+                    (),
+                    {'setText': lambda _, msg: self.ai_text.append(msg)},
+                )()
+
+            def _analysis_thread_running(self):
+                return bool(self._analysis_active or self._batch_active)
+
+            def cancel_active_analysis(self, reason):
+                self.cancelled.append(reason)
+
+            def refresh_explorer(self):
+                self.refreshed += 1
+
+        cancel_probe = AnalysisCancelProbe(active='audio', batch=False)
+        RightPanel._cancel_current_analysis(cancel_probe)
+        if cancel_probe.cancelled != ['검수 취소'] or cancel_probe.refreshed != 1:
+            errors.append(f"  FAIL single analysis cancel: {cancel_probe.cancelled}/{cancel_probe.refreshed}")
+
+        batch_cancel_probe = AnalysisCancelProbe(active='batch', batch=True)
+        RightPanel._cancel_current_analysis(batch_cancel_probe)
+        if batch_cancel_probe.cancelled != ['일괄 검수 취소']:
+            errors.append(f"  FAIL batch analysis cancel: {batch_cancel_probe.cancelled}")
+
+        idle_cancel_probe = AnalysisCancelProbe(active=None, batch=False)
+        RightPanel._cancel_current_analysis(idle_cancel_probe)
+        if idle_cancel_probe.cancelled or not idle_cancel_probe.messages:
+            errors.append(f"  FAIL idle analysis cancel message: {idle_cancel_probe.cancelled}/{idle_cancel_probe.messages}")
+
         class RemoveProbe(Probe):
             _is_video_file_path = staticmethod(RightPanel._is_video_file_path)
             _same_path_text = staticmethod(RightPanel._same_path_text)
