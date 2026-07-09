@@ -669,6 +669,8 @@ class VideoPanel(QWidget):
         self._file_loaded_emitted = False
         self._loudness_thread = None
         self._loudness_cache = {}
+        self._loudness_cache_order = []
+        self._loudness_cache_limit = 32
         self._loudness_seq = 0
         self._dead_threads = []   # abort된 스레드 보관 (GC 소멸 방지)
         self._tc_cache = {}
@@ -2350,6 +2352,34 @@ class VideoPanel(QWidget):
         except Exception:
             return str(filepath)
 
+    def _touch_loudness_cache(self, key):
+        if not key:
+            return
+        cache = getattr(self, '_loudness_cache', {})
+        order = [
+            item for item in getattr(self, '_loudness_cache_order', [])
+            if item in cache and item != key
+        ]
+        if key in cache:
+            order.append(key)
+        self._loudness_cache_order = order
+
+    def _store_loudness_cache(self, key, result):
+        if not key or not isinstance(result, dict):
+            return
+        if not hasattr(self, '_loudness_cache'):
+            self._loudness_cache = {}
+        self._loudness_cache[key] = dict(result)
+        self._touch_loudness_cache(key)
+        try:
+            limit = max(1, int(getattr(self, '_loudness_cache_limit', 32) or 32))
+        except Exception:
+            limit = 32
+        while len(self._loudness_cache_order) > limit:
+            old = self._loudness_cache_order.pop(0)
+            self._loudness_cache.pop(old, None)
+            log.debug('loudness cache evicted oldest entry')
+
     def _normalize_loudness_result(self, result):
         if not isinstance(result, dict):
             log.warning(f'loudness result ignored: unexpected type {type(result).__name__}')
@@ -2403,6 +2433,7 @@ class VideoPanel(QWidget):
         key = self._loudness_cache_key(filepath)
         cached = self._loudness_cache.get(key)
         if cached:
+            self._touch_loudness_cache(key)
             self._apply_loudness_result(filepath, cached, from_cache=True)
             return
 
@@ -2441,7 +2472,7 @@ class VideoPanel(QWidget):
                     self.meter_ctrl.set_loudness_analysis_error('ERR')
                     self.status_changed.emit(f'  ⚠ 라우드니스 결과 오류 — {Path(fp).name}')
                 return
-            self._loudness_cache[cache_key] = normalized
+            self._store_loudness_cache(cache_key, normalized)
             self._apply_loudness_result(fp, normalized)
 
         def _error(err, fp=file_at_start, thread=t, s=seq):
