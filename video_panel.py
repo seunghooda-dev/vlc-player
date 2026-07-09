@@ -4219,11 +4219,20 @@ class VideoPanel(QWidget):
             log.info('drop ignored while loading')
             e.ignore()
             return
+        accepted = False
         for url in e.mimeData().urls():
-            fp = url.toLocalFile()
-            if Path(fp).suffix.lower() in VIDEO_EXTS:
+            p = self._video_file_path(url.toLocalFile())
+            if p:
+                fp = str(p)
                 self._add_file_to_list(fp)
-                self._refresh_clip_list(); self.load_file(fp); break
+                self._refresh_clip_list()
+                self.load_file(fp)
+                accepted = True
+                e.acceptProposedAction()
+                break
+        if not accepted:
+            self.status_changed.emit('  ⚠ 지원하는 MXF/MP4 영상 파일을 드래그하세요')
+            e.ignore()
 
     def keyPressEvent(self, e):
         k=e.key()
