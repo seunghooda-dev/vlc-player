@@ -724,6 +724,13 @@ class RightPanel(QWidget):
         return any(abs(fps - target) <= tolerance for target, tolerance in targets)
 
     @staticmethod
+    def _frame_mode_label(fps, df):
+        fps = _safe_float(fps, 0.0)
+        if not fps:
+            return ''
+        return 'DF' if bool(df) else 'NDF'
+
+    @staticmethod
     def _is_standard_playback_resolution(width, height):
         width = _safe_int(width, 0)
         height = _safe_int(height, 0)
@@ -932,7 +939,7 @@ class RightPanel(QWidget):
             height = _safe_int(info.get('height', 0), 0)
             channels = _safe_count(info.get('channels', 0))
             streams = _safe_count(info.get('audio_stream_count', 0))
-            frame_mode = 'DF' if fps and info.get('df') else 'NDF' if fps else ''
+            frame_mode = self._frame_mode_label(fps, info.get('df'))
             meta_status, meta_issues = self._metadata_qc_summary(info, fp)
             rows.append({
                 '앱버전': 'MXF QC Player V.1.0',
@@ -1259,8 +1266,9 @@ class RightPanel(QWidget):
         fps = _safe_float(info.get("fps", 0), 0.0)
         duration = _safe_float(info.get("duration", 0), 0.0)
         channels = _safe_count(info.get("channels", 0))
+        frame_mode = self._frame_mode_label(fps, info.get("df"))
         self.meta_labels["res"].setText(f"{w}×{h}" if w and h else "—")
-        self.meta_labels["fps"].setText(f"{fps:.3f}" if fps else "—")
+        self.meta_labels["fps"].setText(f"{fps:.3f} {frame_mode}".strip() if fps else "—")
         self.meta_labels["channels"].setText(f"{channels}CH" if channels else "—")
         self.meta_labels["duration"].setText(
             sec_to_tc(duration, fps or 29.97, info.get("df")) if duration else "—"
