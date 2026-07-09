@@ -472,6 +472,30 @@ class AudioAnalyzeThread(QThread):
             return f'[0:a:0][0:a:1]amerge=inputs=2[{out_label}]', 2
         return f'[0:a:0]anull[{out_label}]', 1
 
+    @staticmethod
+    def _audio_streams_from_probe_output(stdout, returncode=0, stderr=''):
+        if _safe_int(returncode, 0) != 0:
+            detail = str(stderr or '').strip().replace('\n', ' ')
+            suffix = f': {detail[-240:]}' if detail else ''
+            raise RuntimeError(f'오디오 스트림 확인 실패{suffix}')
+        text = stdout if isinstance(stdout, str) else ''
+        if not text.strip():
+            raise RuntimeError('오디오 스트림 확인 실패: FFprobe 출력 없음')
+        try:
+            probe_data = json.loads(text)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f'오디오 스트림 확인 실패: FFprobe JSON 오류 pos={e.pos}') from e
+        streams = probe_data.get('streams', []) if isinstance(probe_data, dict) else []
+        if not isinstance(streams, list):
+            return []
+        audio_streams = []
+        for st in streams:
+            if not isinstance(st, dict):
+                continue
+            if st.get('codec_type') == 'audio':
+                audio_streams.append(max(1, _safe_int(st.get('channels', 1), 1)))
+        return audio_streams
+
     def _cache_path(self, source_ch_count, basis):
         file_size = _path_size(self.fp)
         file_mtime_ns = _path_mtime_ns(self.fp)
@@ -673,7 +697,6 @@ class AudioAnalyzeThread(QThread):
         })
 
     def run(self):
-        import re as _re, json as _json
         try:
             self.fp = _require_media_file(self.fp)
             self.progress.emit('오디오 분석 준비 중...')
@@ -693,18 +716,11 @@ class AudioAnalyzeThread(QThread):
                 errors="replace",
                 timeout=30,
                 creationflags=_hidden_flags())
-            audio_streams = []
-            try:
-                probe_data = _json.loads(pr.stdout or "{}")
-                streams = probe_data.get('streams', []) if isinstance(probe_data, dict) else []
-                if not isinstance(streams, list):
-                    streams = []
-                for st in streams:
-                    if not isinstance(st, dict):
-                        continue
-                    if st.get('codec_type') == 'audio':
-                        audio_streams.append(max(1, _safe_int(st.get('channels', 1), 1)))
-            except Exception as e: log.debug(f'audio ch parse: {e}')
+            audio_streams = self._audio_streams_from_probe_output(
+                pr.stdout,
+                pr.returncode,
+                pr.stderr,
+            )
             if not audio_streams:
                 self.progress.emit('오디오 스트림 없음 — 뮤트 검출 생략')
                 log.info('AudioAnalyze 완료: 오디오 스트림 없음, mute analysis skipped')

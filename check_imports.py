@@ -111,6 +111,7 @@ def check_core_logic():
         from constants import C, DEFAULT_SETTINGS, VIDEO_EXTS, _normalize_settings
         import db_models as dbm
         from db_models import frames_to_tc, is_df_fps, qc_summary_from_status, tc_to_frames
+        from threads import AudioAnalyzeThread
         from video_panel import AudioMixPlayer, DIRECT_VLC_EXTS, VideoPanel
     except Exception as e:
         return [f"  FAIL core logic import: {e}"]
@@ -187,6 +188,23 @@ def check_core_logic():
                 if tmp_path:
                     Path(tmp_path).unlink(missing_ok=True)
             except Exception:
+                pass
+
+        parse_audio_streams = AudioAnalyzeThread._audio_streams_from_probe_output
+        audio_probe_json = '{"streams":[{"codec_type":"video"},{"codec_type":"audio","channels":2},{"codec_type":"audio","channels":1}]}'
+        if parse_audio_streams(audio_probe_json, 0, '') != [2, 1]:
+            errors.append("  FAIL audio analyze probe stream parse")
+        if parse_audio_streams('{"streams":[]}', 0, '') != []:
+            errors.append("  FAIL audio analyze empty audio stream parse")
+        for stdout, returncode, stderr, label in (
+            (None, 0, '', 'empty stdout'),
+            ('{bad json', 0, '', 'invalid json'),
+            ('{}', 1, 'bad input', 'ffprobe failure'),
+        ):
+            try:
+                parse_audio_streams(stdout, returncode, stderr)
+                errors.append(f"  FAIL audio analyze probe guard did not raise: {label}")
+            except RuntimeError:
                 pass
 
         status, issues = RightPanel._metadata_qc_summary(Probe(), {}, 'C:/sample/bad.mxf')
