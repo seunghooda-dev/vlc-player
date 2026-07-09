@@ -30,7 +30,6 @@ from db_models import (
 )
 
 _BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
-_WARMUP_RECENT_PROBE_MAX_BYTES = 2 * 1024 * 1024 * 1024
 _AUDIO_INDEX_CACHE_MAX_BYTES = 16 * 1024 * 1024
 
 def _hidden_flags():
@@ -171,23 +170,13 @@ class RuntimeWarmupThread(QThread):
                             'source': 'db-hint',
                         }
                         break
-                    file_size = _path_size(p)
-                    if file_size > _WARMUP_RECENT_PROBE_MAX_BYTES:
-                        skipped_recent = {
-                            'file': p.name,
-                            'ok': False,
-                            'elapsed': time.monotonic() - probe_started,
-                            'source': 'skipped-large',
-                        }
-                        continue
-                    info = probe_media(str(p))
-                    result['recent_probe'] = {
+                    skipped_recent = {
                         'file': p.name,
-                        'ok': bool(info),
+                        'ok': False,
                         'elapsed': time.monotonic() - probe_started,
-                        'source': 'ffprobe',
+                        'source': 'skipped-no-db-hint',
                     }
-                    break
+                    continue
                 except Exception as e:
                     result['recent_probe'] = {
                         'file': str(fp),
