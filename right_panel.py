@@ -690,6 +690,38 @@ class RightPanel(QWidget):
             f"&nbsp;&nbsp;&nbsp;{self._file_status_detail_html(f)}{self._file_first_issue_hint_html(f)}</div>"
         )
 
+    def _empty_file_item_text(self, total_count=0):
+        total_count = _safe_count(total_count)
+        if total_count:
+            return f"표시할 파일이 없습니다\n현재 필터: {self._filter_label()} / 전체 {total_count}개"
+        return "파일을 추가하세요\n영상 파일을 추가하면 QC 상태가 여기에 표시됩니다"
+
+    def _empty_file_item_html(self, total_count=0):
+        total_count = _safe_count(total_count)
+        if total_count:
+            title = "표시할 파일이 없습니다"
+            detail = f"현재 필터 {self._filter_label()} / 전체 {total_count}개"
+        else:
+            title = "파일을 추가하세요"
+            detail = "영상 파일을 추가하면 QC 상태가 여기에 표시됩니다"
+        return (
+            f"<div style=\"font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';"
+            f"font-size:12px;color:{C['text2']};font-weight:800;\">{escape(title)}</div>"
+            f"<div style=\"font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';"
+            f"font-size:11px;color:{C['text3']};font-weight:500;\">{escape(detail)}</div>"
+        )
+
+    def _add_empty_file_item(self, total_count=0):
+        item_text = self._empty_file_item_text(total_count)
+        item = QListWidgetItem(item_text)
+        item.setData(FILE_ITEM_PLAIN_ROLE, item_text)
+        item.setData(FILE_ITEM_HTML_ROLE, self._empty_file_item_html(total_count))
+        item.setData(Qt.ItemDataRole.UserRole, '')
+        item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+        item.setSizeHint(QSize(0, self._file_item_height(item_text)))
+        self.exp_list.addItem(item)
+        return item
+
     def _file_matches_filter(self, f):
         return self._file_matches_filter_key(f, getattr(self, '_filter_key', 'all'))
 
@@ -2204,6 +2236,10 @@ class RightPanel(QWidget):
         # 'added' 는 원래 순서 유지 (reverse만 적용)
         elif sort_key == 'added':
             files = files if sort_asc else list(reversed(files))
+
+        if not files:
+            self._add_empty_file_item(len(all_files))
+            return
 
         for f in files:
             fp = self._file_path_text(f.get("filepath", ""))

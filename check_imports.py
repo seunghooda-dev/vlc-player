@@ -265,6 +265,18 @@ def check_core_logic():
             errors.append("  FAIL filter button text zero-detail")
         if RightPanel._filter_button_text('all', 0) != '전체 0':
             errors.append("  FAIL filter button text all-zero")
+        class EmptyFileListProbe(Probe):
+            _filter_key = 'issues'
+            _filter_label = RightPanel._filter_label
+        empty_filter_text = RightPanel._empty_file_item_text(EmptyFileListProbe(), 5)
+        if '표시할 파일이 없습니다' not in empty_filter_text or '현재 필터: 문제 / 전체 5개' not in empty_filter_text:
+            errors.append(f"  FAIL empty filtered file item text: {empty_filter_text}")
+        empty_all_text = RightPanel._empty_file_item_text(EmptyFileListProbe(), 0)
+        if '파일을 추가하세요' not in empty_all_text or '영상 파일을 추가하면' not in empty_all_text:
+            errors.append(f"  FAIL empty file item text: {empty_all_text}")
+        empty_filter_html = RightPanel._empty_file_item_html(EmptyFileListProbe(), 5)
+        if '표시할 파일이 없습니다' not in empty_filter_html or '현재 필터 문제 / 전체 5개' not in empty_filter_html:
+            errors.append(f"  FAIL empty filtered file item html: {empty_filter_html}")
         qc_summary_cases = [
             (qc_summary_from_status('ok', 'ok', ''), '블랙/무음 정상', 'black/mute ok without freeze'),
             (qc_summary_from_status('ok', 'ok', 'ok'), '정상', 'black/mute/freeze ok'),
