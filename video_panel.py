@@ -2123,9 +2123,14 @@ class VideoPanel(QWidget):
                 log.debug(f'preconvert cancel: {e}')
 
     def _preconvert(self, filepath):
+        p = self._video_file_path(filepath)
+        if not p:
+            log.debug(f'preconvert skipped invalid file: {self._display_file_name(filepath, "?")}')
+            return
+        filepath = str(p)
         # VLC 원본 재생 경로에서는 사전 변환이 첫 재생 반응성을 해친다.
-        if Path(filepath).suffix.lower() in DIRECT_VLC_EXTS:
-            log.info(f'skip preconvert for VLC direct playback: {Path(filepath).name}')
+        if p.suffix.lower() in DIRECT_VLC_EXTS:
+            log.info(f'skip preconvert for VLC direct playback: {p.name}')
             return
         # 비-MXF 호환 경로에서만 백그라운드 변환 캐시를 사용한다.
 
@@ -2147,7 +2152,7 @@ class VideoPanel(QWidget):
                 self._preconvert_threads.remove(thread)
             if hasattr(self, '_preconvert_jobs'):
                 self._preconvert_jobs.pop(fp, None)
-            self.ai_lbl.setText(f"✓ 사전변환 완료: {Path(fp).name}")
+            self.ai_lbl.setText(f"✓ 사전변환 완료: {self._display_file_name(fp)}")
 
         def _on_err(err, fp=filepath, thread=t):
             if hasattr(self, '_tc_cache') and fp in self._tc_cache:
@@ -2160,7 +2165,7 @@ class VideoPanel(QWidget):
         def _on_finished(fp=filepath, thread=t):
             if hasattr(self, '_preconvert_threads') and thread in self._preconvert_threads:
                 self._preconvert_threads.remove(thread)
-                log.debug(f'preconvert thread cleanup on finished: {Path(fp).name}')
+                log.debug(f'preconvert thread cleanup on finished: {self._display_file_name(fp)}')
             if hasattr(self, '_preconvert_jobs') and self._preconvert_jobs.get(fp) is thread:
                 self._preconvert_jobs.pop(fp, None)
             if hasattr(self, '_tc_cache') and self._tc_cache.get(fp) is None:
@@ -2174,7 +2179,7 @@ class VideoPanel(QWidget):
         self._preconvert_threads.append(t)
         self._preconvert_jobs[filepath] = t
         t.start()
-        self.ai_lbl.setText(f"⏳ 백그라운드 변환 중: {Path(filepath).name}")
+        self.ai_lbl.setText(f"⏳ 백그라운드 변환 중: {self._display_file_name(filepath)}")
 
     def add_files(self, start_dir=None):
         if self._is_busy_loading():
@@ -2609,8 +2614,11 @@ class VideoPanel(QWidget):
 
     def _start_loudness_analysis(self, filepath):
         self._retire_loudness_analysis()
-        if not filepath or not Path(filepath).exists():
+        p = self._video_file_path(filepath)
+        if not p:
             return
+        filepath = str(p)
+        file_name = p.name
         stream_count = max(0, self._safe_int_value(self.cur_info.get('audio_stream_count', 0), 0))
         ch_count = max(0, self._safe_int_value(self.cur_info.get('channels', 0), 0))
         if stream_count <= 0 and ch_count <= 0:
@@ -2629,9 +2637,9 @@ class VideoPanel(QWidget):
             self.meter_ctrl.set_loudness_analysis_pending('LIVE')
             log.info(
                 f'loudness full-file auto scan skipped for long file: '
-                f'{Path(filepath).name} duration={duration:.1f}s'
+                f'{file_name} duration={duration:.1f}s'
             )
-            record_state_event('loudness', 'full scan skipped', file=Path(filepath).name, duration=f'{duration:.1f}s')
+            record_state_event('loudness', 'full scan skipped', file=file_name, duration=f'{duration:.1f}s')
             return
 
         key = self._loudness_cache_key(filepath)
@@ -2666,7 +2674,7 @@ class VideoPanel(QWidget):
 
         def _done(result, fp=file_at_start, cache_key=key, thread=t, s=seq):
             if s != self._loudness_seq:
-                log.debug(f'stale loudness result ignored: {Path(fp).name}')
+                log.debug(f'stale loudness result ignored: {self._display_file_name(fp)}')
                 return
             if self._loudness_thread is thread:
                 self._loudness_thread = None
@@ -2674,28 +2682,28 @@ class VideoPanel(QWidget):
             if normalized is None:
                 if fp == self.cur_file:
                     self.meter_ctrl.set_loudness_analysis_error('ERR')
-                    self.status_changed.emit(f'  ⚠ 라우드니스 결과 오류 — {Path(fp).name}')
+                    self.status_changed.emit(f'  ⚠ 라우드니스 결과 오류 — {self._display_file_name(fp)}')
                 return
             self._store_loudness_cache(cache_key, normalized)
             self._apply_loudness_result(fp, normalized)
 
         def _error(err, fp=file_at_start, thread=t, s=seq):
             if s != self._loudness_seq:
-                log.debug(f'stale loudness error ignored: {Path(fp).name}')
+                log.debug(f'stale loudness error ignored: {self._display_file_name(fp)}')
                 return
             if self._loudness_thread is thread:
                 self._loudness_thread = None
             if fp == self.cur_file:
                 self.meter_ctrl.set_loudness_analysis_error('ERR')
                 self.status_changed.emit(
-                    f'  ⚠ {friendly_error_title("loudness", err, fp)} — {Path(fp).name}')
+                    f'  ⚠ {friendly_error_title("loudness", err, fp)} — {self._display_file_name(fp)}')
             log.error(f'LoudnessAnalyze UI error: {err}')
 
         t.progress.connect(_progress)
         t.finished.connect(_done)
         t.error.connect(_error)
         t.start()
-        log.info(f'loudness auto analysis started: {Path(filepath).name}')
+        log.info(f'loudness auto analysis started: {file_name}')
 
     def _apply_loudness_result(self, filepath, result, from_cache=False):
         if filepath != self.cur_file:
@@ -2703,7 +2711,7 @@ class VideoPanel(QWidget):
         result = self._normalize_loudness_result(result)
         if result is None:
             self.meter_ctrl.set_loudness_analysis_error('ERR')
-            self.status_changed.emit(f'  ⚠ 라우드니스 결과 오류 — {Path(filepath).name}')
+            self.status_changed.emit(f'  ⚠ 라우드니스 결과 오류 — {self._display_file_name(filepath)}')
             return
         integrated = result.get('integrated')
         self.meter_ctrl.set_loudness_analysis_result(integrated)
