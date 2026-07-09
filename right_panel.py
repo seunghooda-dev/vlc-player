@@ -1734,14 +1734,26 @@ class RightPanel(QWidget):
         return f"{base}-{token}" if token else base
 
     @staticmethod
+    def _qc_report_unavailable_reason(row):
+        row = row if isinstance(row, dict) else {}
+        summary = str(row.get('QC요약') or row.get('QC상태') or '').strip()
+        unavailable_states = ('파일 없음', '파일 아님', '지원 안함', '접근 불가')
+        if str(row.get('파일존재') or '').upper() == 'N':
+            return summary if summary in unavailable_states else '파일 없음'
+        if summary in unavailable_states:
+            return summary
+        return ''
+
+    @staticmethod
     def _qc_report_issue_parts(row):
         row = row if isinstance(row, dict) else {}
         parts = []
         summary = str(row.get('QC요약') or row.get('QC상태') or '').strip()
         black_state = str(row.get('블랙상태') or '').strip()
         mute_state = str(row.get('무음상태') or '').strip()
-        if str(row.get('파일존재') or '').upper() == 'N' or summary.startswith('파일'):
-            parts.append('파일 없음')
+        unavailable = RightPanel._qc_report_unavailable_reason(row)
+        if unavailable:
+            parts.append(unavailable)
         elif summary == '검사 오류':
             parts.append('검사 오류')
         elif summary == '미분석' or black_state == '미분석' or mute_state == '미분석':
@@ -1804,7 +1816,7 @@ class RightPanel(QWidget):
             if found_count >= 2:
                 counts['complex'] += 1
 
-            if str(row.get('파일존재') or '').upper() == 'N' or summary.startswith('파일'):
+            if RightPanel._qc_report_unavailable_reason(row):
                 counts['missing'] += 1
                 counts['issue_files'] += 1
             elif summary == '검사 오류':
@@ -1834,7 +1846,7 @@ class RightPanel(QWidget):
                 f"검수요약: 확인필요 {counts['attention']} / 정상 {counts['normal']} / "
                 f"블랙·무음 정상 {counts['partial_normal']} / "
                 f"문제파일 {counts['issue_files']} / 오류 {counts['error']} / "
-                f"미분석 {counts['pending']} / 파일없음 {counts['missing']}"
+                f"미분석 {counts['pending']} / 파일접근 {counts['missing']}"
             ),
             (
                 f"검출요약: 블랙 {counts['black']} / 무음 {counts['mute']} / "

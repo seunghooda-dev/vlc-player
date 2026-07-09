@@ -857,39 +857,50 @@ def check_core_logic():
                 '프리즈상태': '정상',
                 '메타정합성': '',
             },
+            {
+                '파일명': 'unsupported.txt',
+                'QC요약': '지원 안함',
+                '파일존재': 'Y',
+                '블랙상태': '정상',
+                '무음상태': '정상',
+                '프리즈상태': '정상',
+                '메타정합성': '',
+            },
             {'QC요약': '미분석', '파일존재': 'Y', '메타정합성': ''},
         ]
         report_counts = RightPanel._qc_report_summary_counts(report_rows)
         expected_report_counts = {
-            'total': 6,
-            'attention': 4,
+            'total': 7,
+            'attention': 5,
             'normal': 1,
             'partial_normal': 1,
-            'issue_files': 3,
+            'issue_files': 4,
             'black': 1,
             'mute': 0,
             'freeze': 1,
             'complex': 1,
             'error': 1,
             'pending': 1,
-            'missing': 1,
+            'missing': 2,
             'metadata_warn': 2,
         }
         for key, expected in expected_report_counts.items():
             if report_counts.get(key) != expected:
                 errors.append(f"  FAIL report summary count {key}: {report_counts.get(key)} != {expected}")
         report_lines = RightPanel._qc_report_summary_lines(report_rows)
-        if not any('확인필요 4' in line and '문제파일 3' in line and '파일없음 1' in line for line in report_lines):
+        if not any('확인필요 5' in line and '문제파일 4' in line and '파일접근 2' in line for line in report_lines):
             errors.append(f"  FAIL report summary line issues: {report_lines}")
         if not any('복합문제 1' in line for line in report_lines):
             errors.append(f"  FAIL report summary line complex: {report_lines}")
         attention_lines = RightPanel._qc_report_attention_lines(report_rows)
-        if '확인 필요 파일: 4개' not in attention_lines:
+        if '확인 필요 파일: 5개' not in attention_lines:
             errors.append(f"  FAIL report attention count: {attention_lines}")
         if not any('issue.mxf: 블랙 2, 프리즈 1, 메타 확인' in line for line in attention_lines):
             errors.append(f"  FAIL report attention issue detail: {attention_lines}")
         if not any('missing.mxf: 파일 없음' in line for line in attention_lines):
             errors.append(f"  FAIL report attention missing detail: {attention_lines}")
+        if not any('unsupported.txt: 지원 안함' in line for line in attention_lines):
+            errors.append(f"  FAIL report attention unsupported detail: {attention_lines}")
         if not any('파일: 미분석' in line for line in attention_lines):
             errors.append(f"  FAIL report attention pending detail: {attention_lines}")
         clean_attention = RightPanel._qc_report_attention_lines([report_rows[0], report_rows[1]])
@@ -918,6 +929,9 @@ def check_core_logic():
         })
         if pending_fields != {'확인필요': 'Y', '확인사유': '미분석'}:
             errors.append(f"  FAIL report attention fields pending: {pending_fields}")
+        unsupported_fields = RightPanel._qc_report_attention_fields(report_rows[5])
+        if unsupported_fields != {'확인필요': 'Y', '확인사유': '지원 안함'}:
+            errors.append(f"  FAIL report attention fields unsupported: {unsupported_fields}")
         freeze_pending_only_fields = RightPanel._qc_report_attention_fields(report_rows[1])
         if freeze_pending_only_fields != {'확인필요': 'N', '확인사유': ''}:
             errors.append(f"  FAIL report attention fields freeze-only pending: {freeze_pending_only_fields}")
