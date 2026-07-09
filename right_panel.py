@@ -633,6 +633,16 @@ class RightPanel(QWidget):
         return '미분석'
 
     @staticmethod
+    def _qc_status_has_count(value):
+        return str(value or '').lower() in ('ok', 'found', 'error')
+
+    def _qc_piece_text(self, label, state, count):
+        text = self._qc_status_text(state, label)
+        if self._qc_status_has_count(state):
+            return f"{label} {text} {_safe_count(count)}"
+        return f"{label} {text}"
+
+    @staticmethod
     def _availability_for_record(f, availability=None):
         if isinstance(availability, dict):
             cached = availability.get(id(f), None)
@@ -676,19 +686,20 @@ class RightPanel(QWidget):
         black_count = _safe_count(f.get("black_count", 0))
         mute_count = _safe_count(f.get("mute_count", 0))
         freeze_count = _safe_count(f.get("freeze_count", 0))
-        black = self._qc_status_text(f.get("black"), "black")
-        mute = self._qc_status_text(f.get("mute"), "mute")
-        freeze = self._qc_status_text(f.get("freeze"), "freeze")
-        return f"블랙 {black} {black_count} / 무음 {mute} {mute_count} / 프리즈 {freeze} {freeze_count}"
+        black = self._qc_piece_text("블랙", f.get("black"), black_count)
+        mute = self._qc_piece_text("무음", f.get("mute"), mute_count)
+        freeze = self._qc_piece_text("프리즈", f.get("freeze"), freeze_count)
+        return f"{black} / {mute} / {freeze}"
 
     def _qc_piece_html(self, label, state, count):
         text = self._qc_status_text(state, label)
         raw_state = str(state or '').lower()
         color = C['red'] if raw_state in ('found', 'error') else C['text0']
         weight = 800 if raw_state in ('found', 'error') else 500
+        count_suffix = f" {_safe_count(count)}" if self._qc_status_has_count(state) else ""
         return (
             f"<span style='color:{color};font-weight:{weight};'>"
-            f"{escape(label)} {escape(text)} {_safe_count(count)}"
+            f"{escape(label)} {escape(text)}{count_suffix}"
             "</span>"
         )
 

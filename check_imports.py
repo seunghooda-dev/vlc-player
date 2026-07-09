@@ -580,6 +580,11 @@ def check_core_logic():
             def _qc_status_text(self, value, kind):
                 return RightPanel._qc_status_text(self, value, kind)
 
+            _qc_status_has_count = staticmethod(RightPanel._qc_status_has_count)
+
+            def _qc_piece_text(self, label, state, count):
+                return RightPanel._qc_piece_text(self, label, state, count)
+
             def _file_status_detail(self, f):
                 return RightPanel._file_status_detail(self, f)
 
@@ -611,8 +616,10 @@ def check_core_logic():
         )
         if '파일명: copy-me.mxf' not in summary_text or 'QC상태: 블랙 있음' not in summary_text:
             errors.append(f"  FAIL QC summary copy header: {summary_text}")
-        if '상세: 블랙 있음 1 / 무음 정상 0 / 프리즈 미분석 0' not in summary_text:
+        if '상세: 블랙 있음 1 / 무음 정상 0 / 프리즈 미분석' not in summary_text:
             errors.append(f"  FAIL QC summary copy detail: {summary_text}")
+        if '프리즈 미분석 0' in summary_text:
+            errors.append(f"  FAIL QC summary copy unanalyzed count should be hidden: {summary_text}")
         if '첫문제: 블랙 00:00:01;00' not in summary_text:
             errors.append(f"  FAIL QC summary copy first issue: {summary_text}")
         if '블랙구간: 00:00:01;00>00:00:02;00(1.000s)' not in summary_text:
@@ -647,10 +654,12 @@ def check_core_logic():
         )
         if 'MXF QC Player 문제 파일 요약' not in issue_summary_text or '문제 2개' not in issue_summary_text:
             errors.append(f"  FAIL issue summary copy header: {issue_summary_text}")
-        if 'bad-a.mxf: 블랙 있음 / 블랙 있음 1 / 무음 정상 0 / 프리즈 미분석 0 / 첫문제 블랙 00:00:04;00' not in issue_summary_text:
+        if 'bad-a.mxf: 블랙 있음 / 블랙 있음 1 / 무음 정상 0 / 프리즈 미분석 / 첫문제 블랙 00:00:04;00' not in issue_summary_text:
             errors.append(f"  FAIL issue summary copy black detail: {issue_summary_text}")
-        if 'bad-b.mxf: 검사 오류 / 블랙 정상 0 / 무음 오류 0 / 프리즈 미분석 0' not in issue_summary_text:
+        if 'bad-b.mxf: 검사 오류 / 블랙 정상 0 / 무음 오류 0 / 프리즈 미분석' not in issue_summary_text:
             errors.append(f"  FAIL issue summary copy error detail: {issue_summary_text}")
+        if '프리즈 미분석 0' in issue_summary_text:
+            errors.append(f"  FAIL issue summary copy unanalyzed count should be hidden: {issue_summary_text}")
         empty_issue_summary = RightPanel._issue_summary_clipboard_text(SummaryCopyProbe(), [])
         if '확인 필요 파일 없음' not in empty_issue_summary:
             errors.append(f"  FAIL issue summary copy empty: {empty_issue_summary}")
