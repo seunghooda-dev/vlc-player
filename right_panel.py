@@ -2587,8 +2587,10 @@ class RightPanel(QWidget):
         target['name'] = new_p.name
         target['ext'] = new_p.suffix.upper().lstrip('.') or target.get('ext') or '-'
         target['size'] = _path_size(new_p)
+        target['mtime_ns'] = _path_mtime_ns(new_p)
         self._persist_relinked_qc(target)
         try:
+            self._prune_recent_files_by_paths([old_path])
             self.vp._remember_recent_file(new_path)
         except Exception as e:
             log.debug(f'relinked recent save skipped: {e}')

@@ -1573,10 +1573,11 @@ def check_core_logic():
                 self.vp.cur_id = ''
                 self.vp.refreshed = 0
                 self.vp.ejected = 0
+                self.vp.remembered_recent = []
                 self.vp._settings = dict(self._settings)
                 self.vp._refresh_clip_list = lambda: setattr(self.vp, 'refreshed', self.vp.refreshed + 1)
                 self.vp.eject_clip = lambda: setattr(self.vp, 'ejected', self.vp.ejected + 1)
-                self.vp._remember_recent_file = lambda path: None
+                self.vp._remember_recent_file = lambda path: self.vp.remembered_recent.append(path)
 
             def _update_explorer(self, info, clip_id):
                 self.updated += 1
@@ -1640,6 +1641,13 @@ def check_core_logic():
                     errors.append(f"  FAIL QC reset ranges {key}: {reset_changes.get(key)!r}")
 
         relink_probe = RemoveProbe()
+        relink_probe._settings = {
+            'recent_files': [
+                'C:/missing/relink_me.mxf',
+                'C:/keep/keep_me.mxf',
+            ]
+        }
+        relink_probe.vp._settings = dict(relink_probe._settings)
         relink_probe.vp._files = [
             {
                 'filepath': 'C:/missing/relink_me.mxf',
@@ -1662,10 +1670,14 @@ def check_core_logic():
                 errors.append(f"  FAIL relink missing-file result: {result}")
             if record.get('filepath') != str(relink_target) or record.get('name') != relink_target.name:
                 errors.append(f"  FAIL relink missing-file target fields: {record}")
-            if record.get('ext') != 'MXF' or record.get('size') != 4:
+            if record.get('ext') != 'MXF' or record.get('size') != 4 or not record.get('mtime_ns'):
                 errors.append(f"  FAIL relink missing-file metadata fields: {record}")
             if relink_probe.vp.refreshed != 1 or relink_probe.updated != 1:
                 errors.append("  FAIL relink missing-file refresh path")
+            if relink_probe.saved_recent != ['C:/keep/keep_me.mxf']:
+                errors.append(f"  FAIL relink old recent prune: {relink_probe.saved_recent}")
+            if relink_probe.vp.remembered_recent != [str(relink_target)]:
+                errors.append(f"  FAIL relink new recent remember: {relink_probe.vp.remembered_recent}")
 
         current_relink_probe = RemoveProbe()
         current_relink_probe.vp._files = [
