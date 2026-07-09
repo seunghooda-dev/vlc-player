@@ -985,6 +985,15 @@ class RightPanel(QWidget):
             value = row.get(key)
             return value if value not in (None, '') else default
 
+        def fps_cell(row):
+            fps = row.get('FPS') or '-'
+            df = row.get('DF')
+            if df == 'Y':
+                return f'{fps}fps DF'
+            if df == 'N':
+                return f'{fps}fps NDF'
+            return f'{fps}fps'
+
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         tmp = target.with_name(f'.{target.name}.{time.time_ns()}.tmp')
@@ -997,7 +1006,7 @@ class RightPanel(QWidget):
         for idx, row in enumerate(rows, 1):
             lines.append(f"{idx:03d}. {cell(row, '파일명')}")
             lines.append(f"     상태: {cell(row, 'QC상태')} / {cell(row, 'QC요약')}")
-            lines.append(f"     미디어: {row.get('해상도') or '-'} / {row.get('FPS') or '-'}fps / {row.get('오디오채널') or '-'}CH / {row.get('길이_TC') or '-'}")
+            lines.append(f"     미디어: {row.get('해상도') or '-'} / {fps_cell(row)} / {row.get('오디오채널') or '-'}CH / {row.get('길이_TC') or '-'}")
             lines.append(f"     정합성: {row.get('메타정합성') or '-'} / {row.get('메타확인사항') or '-'}")
             if row.get('소스타임코드'):
                 lines.append(f"     소스TC: {row['소스타임코드']}")
