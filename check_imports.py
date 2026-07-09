@@ -114,6 +114,17 @@ def check_core_logic():
     except Exception as e:
         return [f"  FAIL core logic import: {e}"]
 
+    try:
+        main_source = read_source('main.py')
+        if "('정지',           'S')" in main_source:
+            errors.append("  FAIL stale S stop shortcut remains in help")
+        if "('검수 취소',       'Esc')" not in main_source:
+            errors.append("  FAIL Esc analysis cancel shortcut missing from help")
+        if 'QShortcut(QKeySequence(Qt.Key.Key_Escape)' not in main_source:
+            errors.append("  FAIL Esc analysis cancel shortcut missing")
+    except Exception as e:
+        errors.append(f"  FAIL shortcut source check: {e}")
+
     class Probe:
         vp = type('VP', (), {'cur_file': ''})()
         _file_path_text = staticmethod(lambda value: str(value or ''))

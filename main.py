@@ -13,7 +13,10 @@ from PyQt6.QtWidgets import (
     QComboBox, QLineEdit, QFileDialog, QSizePolicy,
 )
 from PyQt6.QtCore    import Qt, QTimer, QUrl
-from PyQt6.QtGui     import QColor, QPalette, QFont, QFontDatabase, QIcon, QDesktopServices
+from PyQt6.QtGui     import (
+    QColor, QPalette, QFont, QFontDatabase, QIcon, QDesktopServices,
+    QShortcut, QKeySequence,
+)
 from PyQt6.QtMultimedia import QMediaPlayer
 
 from constants    import (
@@ -172,6 +175,25 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(STYLE)
         self.setAcceptDrops(True)
         self._build_ui()
+        self._install_shortcuts()
+
+    def _install_shortcuts(self):
+        self._shortcut_cancel_analysis = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
+        self._shortcut_cancel_analysis.setContext(Qt.ShortcutContext.WindowShortcut)
+        self._shortcut_cancel_analysis.activated.connect(self._cancel_analysis_shortcut)
+
+    def _cancel_analysis_shortcut(self):
+        rp = getattr(self, 'rp', None)
+        if not rp:
+            return
+        try:
+            active = bool(getattr(rp, '_analysis_active', None)) or bool(rp._analysis_thread_running())
+        except Exception:
+            active = bool(getattr(rp, '_analysis_active', None))
+        if not active:
+            return
+        if hasattr(rp, '_cancel_current_analysis'):
+            rp._cancel_current_analysis()
 
     def _build_ui(self):
         central = QWidget()
@@ -1215,7 +1237,6 @@ class MainWindow(QMainWindow):
         lay.addWidget(title)
         shortcuts = [
             ('재생 / 일시정지', 'Space'),
-            ('정지',           'S'),
             ('IN 설정',        'I'),
             ('OUT 설정',       'O'),
             ('앞 프레임',      '→'),
@@ -1224,6 +1245,7 @@ class MainWindow(QMainWindow):
             ('10초 뒤로',      'Shift + ←'),
             ('처음으로',       'Home'),
             ('끝으로',         'End'),
+            ('검수 취소',       'Esc'),
             ('이 도움말',      '?  /  /'),
         ]
         for action, key in shortcuts:
