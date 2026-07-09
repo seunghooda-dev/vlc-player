@@ -1210,7 +1210,10 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def dragEnterEvent(self, e):
-        if e.mimeData().hasUrls(): e.accept()
+        self.vp.dragEnterEvent(e)
+
+    def dragMoveEvent(self, e):
+        self.vp.dragMoveEvent(e)
 
     def dropEvent(self, e):
         self.vp.dropEvent(e)

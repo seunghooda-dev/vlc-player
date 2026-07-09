@@ -1595,6 +1595,9 @@ class VideoPanel(QWidget):
                 paths.append(fp)
         return paths
 
+    def _has_video_file_urls(self, urls):
+        return bool(self._video_file_paths_from_urls(urls))
+
     @staticmethod
     def _display_file_name(filepath, default='파일'):
         try:
@@ -4387,7 +4390,17 @@ class VideoPanel(QWidget):
             self._led_on = False
 
     def dragEnterEvent(self, e):
-        if e.mimeData().hasUrls(): e.accept()
+        if (
+            not self._is_busy_loading()
+            and e.mimeData().hasUrls()
+            and self._has_video_file_urls(e.mimeData().urls())
+        ):
+            e.acceptProposedAction()
+        else:
+            e.ignore()
+
+    def dragMoveEvent(self, e):
+        self.dragEnterEvent(e)
 
     def dropEvent(self, e):
         if self._is_busy_loading():

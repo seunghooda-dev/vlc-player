@@ -1311,6 +1311,7 @@ def check_core_logic():
             _same_path = VideoPanel._same_path
             _video_file_path = VideoPanel._video_file_path
             _video_file_paths_from_urls = VideoPanel._video_file_paths_from_urls
+            _has_video_file_urls = VideoPanel._has_video_file_urls
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
@@ -1326,6 +1327,10 @@ def check_core_logic():
             expected_drop_paths = [str(first), str(second)]
             if drop_paths != expected_drop_paths:
                 errors.append(f"  FAIL multi-file drop path filter: {drop_paths} != {expected_drop_paths}")
+            if not VideoPanel._has_video_file_urls(DropPathProbe(), [DropUrl(str(invalid)), DropUrl(str(first))]):
+                errors.append("  FAIL supported drag urls should be accepted")
+            if VideoPanel._has_video_file_urls(DropPathProbe(), [DropUrl(str(invalid))]):
+                errors.append("  FAIL unsupported-only drag urls should be ignored")
 
         required_video_exts = {'.mxf', '.mp4'}
         missing_video_exts = sorted(required_video_exts - set(VIDEO_EXTS))
