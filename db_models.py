@@ -152,20 +152,41 @@ def _check_db_integrity():
 _check_db_integrity()
 
 # ── 유틸 ──────────────────────────────────────────────────
+def _safe_float(value, default=0.0):
+    try:
+        parsed = float(value)
+        return parsed if math.isfinite(parsed) else default
+    except Exception:
+        return default
+
+def _safe_int(value, default=0):
+    try:
+        parsed = float(value)
+        if math.isfinite(parsed):
+            return int(parsed)
+    except Exception:
+        pass
+    return default
+
+def _safe_count(value):
+    return max(0, _safe_int(value, 0))
+
+def _safe_text(value, default=""):
+    text = str(value or "").strip()
+    return text if text else default
+
 def is_df_fps(fps):
     # DF 프레임레이트: 29.97, 59.94, 23.976 등 소수점 fps
+    fps = _safe_float(fps, 29.97)
     return abs(fps - round(fps)) > 0.01
 
 def _nominal_fps(fps):
-    try:
-        return max(1, int(round(float(fps or 29.97))))
-    except Exception:
-        return 30
+    return max(1, int(round(_safe_float(fps, 29.97))))
 
 def _is_drop_frame_tc(fps, df=None):
     nom = _nominal_fps(fps)
     if df is None:
-        df = nom in (30, 60) and is_df_fps(float(fps or 29.97))
+        df = nom in (30, 60) and is_df_fps(fps)
     return bool(df) and nom in (30, 60)
 
 def _drop_frames_per_minute(fps, df=None):
@@ -196,7 +217,7 @@ def tc_to_frames(tc, fps=29.97, df=None):
 def frames_to_tc(frame, fps=29.97, df=None, offset_frames=0):
     """Convert a real frame count to display TC, including optional source TC offset."""
     nom = _nominal_fps(fps)
-    total_f = max(0, int(round(frame or 0))) + max(0, int(offset_frames or 0))
+    total_f = max(0, int(round(_safe_float(frame, 0.0)))) + max(0, int(round(_safe_float(offset_frames, 0.0))))
     drop = _drop_frames_per_minute(fps, df)
     if drop:
         frames_per_10min = nom * 60 * 10 - drop * 9
@@ -214,15 +235,13 @@ def frames_to_tc(frame, fps=29.97, df=None, offset_frames=0):
 
 def sec_to_tc(sec, fps=29.97, df=None, offset_frames=0):
     # Player display timecode. DF uses SMPTE drop-frame numbering for 29.97/59.94.
-    if sec is None or sec < 0:
-        sec = 0.0
-    try:
-        frame = round(float(sec) * float(fps or 29.97))
-    except Exception:
-        frame = 0
+    sec = max(0.0, _safe_float(sec, 0.0))
+    fps = _safe_float(fps, 29.97)
+    frame = round(sec * fps)
     return frames_to_tc(frame, fps, df, offset_frames)
 
 def sec_fmt(s):
+    s = max(0.0, _safe_float(s, 0.0))
     return f"{int(s//60):02d}:{int(s%60):02d}"
 
 def _probe_cache_key(filepath):
@@ -289,33 +308,50 @@ def probe(filepath):
             errors="replace",
             timeout=15)
         if r.returncode != 0: return {}
-        d = json.loads(r.stdout or "{}"); fmt = d.get("format",{})
+        d = json.loads(r.stdout or "{}")
+        if not isinstance(d, dict):
+            return {}
+        fmt = d.get("format",{})
+        if not isinstance(fmt, dict):
+            fmt = {}
         try:
             mtime_ns = int(Path(filepath).stat().st_mtime_ns)
         except Exception:
             mtime_ns = 0
         info = {"filename":Path(filepath).name,"filepath":filepath,
-                "duration":float(fmt.get("duration",0)),"size":int(fmt.get("size",0)),
+                "duration":_safe_float(fmt.get("duration",0), 0.0),"size":_safe_count(fmt.get("size",0)),
                 "mtime_ns":mtime_ns,
-                "bit_rate":int(fmt.get("bit_rate",0) or 0),
+                "bit_rate":_safe_count(fmt.get("bit_rate",0)),
                 "fps":29.97,"width":0,"height":0,"codec":"","channels":0,
                 "audio_stream_count":0,
                 "timecode":"","format_short":Path(filepath).suffix.upper().lstrip(".")}
-        for s in d.get("streams",[]):
+        streams = d.get("streams", [])
+        if not isinstance(streams, list):
+            streams = []
+        for s in streams:
+            if not isinstance(s, dict):
+                continue
             if s.get("codec_type")=="video":
-                info["codec"]=s.get("codec_name","").upper()
-                info["width"]=s.get("width",0); info["height"]=s.get("height",0)
+                info["codec"]=_safe_text(s.get("codec_name","")).upper()
+                info["width"]=_safe_count(s.get("width",0)); info["height"]=_safe_count(s.get("height",0))
                 try:
                     n,dv=s.get("r_frame_rate","30/1").split("/")
-                    fps_raw = int(n)/int(dv)
-                    info["fps"]=round(fps_raw, 3)
+                    fps_raw = _safe_int(n, 0)/_safe_int(dv, 1)
+                    if math.isfinite(fps_raw) and fps_raw > 0:
+                        info["fps"]=round(fps_raw, 3)
                 except Exception as e: log.debug(f'fps parse: {e}')
-                tc=s.get("tags",{}).get("timecode","")
+                tags = s.get("tags", {})
+                if not isinstance(tags, dict):
+                    tags = {}
+                tc=_safe_text(tags.get("timecode",""))
                 if tc: info["timecode"]=tc
             elif s.get("codec_type")=="audio":
-                info["channels"] += int(s.get("channels",0) or 0)
+                info["channels"] += _safe_count(s.get("channels",0))
                 info["audio_stream_count"] += 1
-        if not info["timecode"]: info["timecode"]=fmt.get("tags",{}).get("timecode","")
+        fmt_tags = fmt.get("tags", {})
+        if not isinstance(fmt_tags, dict):
+            fmt_tags = {}
+        if not info["timecode"]: info["timecode"]=_safe_text(fmt_tags.get("timecode",""))
         # DF/NDF 자동 판별
         fps = info["fps"]
         info["df"] = is_df_fps(fps)
@@ -455,9 +491,9 @@ def load_qc_status(filepath):
             "black": black,
             "mute": mute,
             "freeze": freeze,
-            "black_count": int(getattr(clip, "qc_black_count", 0) or 0),
-            "mute_count": int(getattr(clip, "qc_mute_count", 0) or 0),
-            "freeze_count": int(getattr(clip, "qc_freeze_count", 0) or 0),
+            "black_count": _safe_count(getattr(clip, "qc_black_count", 0)),
+            "mute_count": _safe_count(getattr(clip, "qc_mute_count", 0)),
+            "freeze_count": _safe_count(getattr(clip, "qc_freeze_count", 0)),
             "black_ranges": _decode_qc_ranges(getattr(clip, "qc_black_ranges", "")),
             "mute_ranges": _decode_qc_ranges(getattr(clip, "qc_mute_ranges", "")),
             "freeze_ranges": _decode_qc_ranges(getattr(clip, "qc_freeze_ranges", "")),
@@ -482,36 +518,36 @@ def load_clip_metadata_hint(filepath):
             clip = s.get(Clip, cid)
             if not clip:
                 return {}
-            stored_size = int(getattr(clip, "file_size", 0) or 0)
+            stored_size = _safe_count(getattr(clip, "file_size", 0))
             if stored_size and current_size and stored_size != current_size:
                 log.debug(f"metadata hint ignored size mismatch: {p.name}")
                 return {}
-            stored_mtime_ns = int(getattr(clip, "file_mtime_ns", 0) or 0)
+            stored_mtime_ns = _safe_count(getattr(clip, "file_mtime_ns", 0))
             if stored_mtime_ns and current_mtime_ns and stored_mtime_ns != current_mtime_ns:
                 log.debug(f"metadata hint ignored modified-time mismatch: {p.name}")
                 return {}
-            duration = float(getattr(clip, "duration", 0) or 0)
-            width = int(getattr(clip, "width", 0) or 0)
-            height = int(getattr(clip, "height", 0) or 0)
+            duration = _safe_float(getattr(clip, "duration", 0), 0.0)
+            width = _safe_count(getattr(clip, "width", 0))
+            height = _safe_count(getattr(clip, "height", 0))
             if duration <= 0 and not width and not height:
                 return {}
-            fps = float(getattr(clip, "fps", 0) or 29.97)
+            fps = _safe_float(getattr(clip, "fps", 0), 29.97)
             ext = p.suffix.upper().lstrip(".")
             return {
-                "filename": getattr(clip, "filename", "") or p.name,
+                "filename": _safe_text(getattr(clip, "filename", ""), p.name),
                 "filepath": str(filepath),
                 "duration": duration,
                 "size": stored_size or current_size,
                 "mtime_ns": stored_mtime_ns or current_mtime_ns,
-                "bit_rate": int(getattr(clip, "bit_rate", 0) or 0),
+                "bit_rate": _safe_count(getattr(clip, "bit_rate", 0)),
                 "fps": fps,
                 "width": width,
                 "height": height,
-                "codec": getattr(clip, "codec", "") or "",
-                "channels": int(getattr(clip, "channels", 0) or 0),
-                "audio_stream_count": int(getattr(clip, "audio_stream_count", 0) or 0),
-                "timecode": getattr(clip, "timecode", "") or "",
-                "format_short": getattr(clip, "format_short", "") or ("XDCAM" if ext == "MXF" else ext),
+                "codec": _safe_text(getattr(clip, "codec", "")),
+                "channels": _safe_count(getattr(clip, "channels", 0)),
+                "audio_stream_count": _safe_count(getattr(clip, "audio_stream_count", 0)),
+                "timecode": _safe_text(getattr(clip, "timecode", "")),
+                "format_short": _safe_text(getattr(clip, "format_short", ""), "XDCAM" if ext == "MXF" else ext),
                 "df": is_df_fps(fps),
                 "tc_offset": 0.0,
                 "metadata_hint": True,
@@ -549,20 +585,11 @@ def update_clip_qc(
         if freeze is not None:
             clip.qc_freeze_status = _normalize_qc_status(freeze)
         if black_count is not None:
-            try:
-                clip.qc_black_count = max(0, int(black_count))
-            except Exception:
-                clip.qc_black_count = 0
+            clip.qc_black_count = _safe_count(black_count)
         if mute_count is not None:
-            try:
-                clip.qc_mute_count = max(0, int(mute_count))
-            except Exception:
-                clip.qc_mute_count = 0
+            clip.qc_mute_count = _safe_count(mute_count)
         if freeze_count is not None:
-            try:
-                clip.qc_freeze_count = max(0, int(freeze_count))
-            except Exception:
-                clip.qc_freeze_count = 0
+            clip.qc_freeze_count = _safe_count(freeze_count)
         if black_ranges is not None:
             clip.qc_black_ranges = _encode_qc_ranges(black_ranges)
         if mute_ranges is not None:
@@ -577,9 +604,9 @@ def update_clip_qc(
             "black": clip.qc_black_status,
             "mute": clip.qc_mute_status,
             "freeze": clip.qc_freeze_status,
-            "black_count": int(clip.qc_black_count or 0),
-            "mute_count": int(clip.qc_mute_count or 0),
-            "freeze_count": int(clip.qc_freeze_count or 0),
+            "black_count": _safe_count(clip.qc_black_count),
+            "mute_count": _safe_count(clip.qc_mute_count),
+            "freeze_count": _safe_count(clip.qc_freeze_count),
             "black_ranges": _decode_qc_ranges(getattr(clip, "qc_black_ranges", "")),
             "mute_ranges": _decode_qc_ranges(getattr(clip, "qc_mute_ranges", "")),
             "freeze_ranges": _decode_qc_ranges(getattr(clip, "qc_freeze_ranges", "")),
@@ -588,35 +615,37 @@ def update_clip_qc(
         }
 
 def save_clip(info):
-    cid = _clip_id_for_path(info["filepath"])
+    if not isinstance(info, dict):
+        return ""
+    filepath = _safe_text(info.get("filepath", ""))
+    if not filepath:
+        return ""
+    cid = _clip_id_for_path(filepath)
     now = datetime.now()
     mtime_ns = 0
     try:
-        mtime_ns = int(Path(info["filepath"]).stat().st_mtime_ns)
+        mtime_ns = _safe_count(Path(filepath).stat().st_mtime_ns)
     except Exception:
-        try:
-            mtime_ns = int(info.get("mtime_ns", 0) or 0)
-        except Exception:
-            mtime_ns = 0
+        mtime_ns = _safe_count(info.get("mtime_ns", 0))
     with Session(engine) as s:
         clip = s.get(Clip, cid)
         if not clip:
             clip = Clip(id=cid, created_at=now)
             s.add(clip)
-        clip.filename = info["filename"]
-        clip.filepath = info["filepath"]
-        clip.format_short = info.get("format_short","")
-        clip.codec = info.get("codec","")
-        clip.width = info.get("width",0)
-        clip.height = info.get("height",0)
-        clip.fps = info.get("fps",29.97)
-        clip.duration = info.get("duration",0)
-        clip.file_size = info.get("size",0)
+        clip.filename = _safe_text(info.get("filename", ""), Path(filepath).name)
+        clip.filepath = filepath
+        clip.format_short = _safe_text(info.get("format_short",""))
+        clip.codec = _safe_text(info.get("codec",""))
+        clip.width = _safe_count(info.get("width",0))
+        clip.height = _safe_count(info.get("height",0))
+        clip.fps = _safe_float(info.get("fps",29.97), 29.97)
+        clip.duration = max(0.0, _safe_float(info.get("duration",0), 0.0))
+        clip.file_size = _safe_count(info.get("size",0))
         clip.file_mtime_ns = mtime_ns
-        clip.bit_rate = info.get("bit_rate",0)
-        clip.channels = info.get("channels",0)
-        clip.audio_stream_count = info.get("audio_stream_count",0)
-        clip.timecode = info.get("timecode","")
+        clip.bit_rate = _safe_count(info.get("bit_rate",0))
+        clip.channels = _safe_count(info.get("channels",0))
+        clip.audio_stream_count = _safe_count(info.get("audio_stream_count",0))
+        clip.timecode = _safe_text(info.get("timecode",""))
         clip.updated_at = now
         s.commit()
     return cid
