@@ -109,6 +109,7 @@ def check_core_logic():
     try:
         from right_panel import FILE_FILTER_TIPS, RightPanel
         from constants import C, DEFAULT_SETTINGS, VIDEO_EXTS, _normalize_settings
+        import db_models as dbm
         from db_models import frames_to_tc, is_df_fps, qc_summary_from_status, tc_to_frames
         from video_panel import AudioMixPlayer, DIRECT_VLC_EXTS, VideoPanel
     except Exception as e:
@@ -143,6 +144,51 @@ def check_core_logic():
             self._filter_key = key
 
     try:
+        class FakeProbeLog:
+            def __init__(self):
+                self.warnings = []
+
+            def warning(self, msg):
+                self.warnings.append(str(msg))
+
+            def debug(self, msg):
+                pass
+
+        class FakeRunResult:
+            def __init__(self, stdout='', stderr='', returncode=0):
+                self.stdout = stdout
+                self.stderr = stderr
+                self.returncode = returncode
+
+        original_run = dbm.subprocess.run
+        original_log = dbm.log
+        tmp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix='.mxf', delete=False) as tmp_media:
+                tmp_path = tmp_media.name
+                tmp_media.write(b'not real media')
+            fake_log = FakeProbeLog()
+            dbm.log = fake_log
+            dbm._PROBE_CACHE.clear()
+            dbm._PROBE_CACHE_ORDER.clear()
+            dbm.subprocess.run = lambda *a, **k: FakeRunResult(stdout=None, stderr='')
+            if dbm.probe(tmp_path) != {} or not any('empty json' in msg for msg in fake_log.warnings):
+                errors.append(f"  FAIL probe empty json guard: {fake_log.warnings}")
+            fake_log.warnings.clear()
+            dbm.subprocess.run = lambda *a, **k: FakeRunResult(stdout='{bad json', stderr='')
+            if dbm.probe(tmp_path) != {} or not any('invalid json' in msg for msg in fake_log.warnings):
+                errors.append(f"  FAIL probe invalid json guard: {fake_log.warnings}")
+        finally:
+            dbm.subprocess.run = original_run
+            dbm.log = original_log
+            dbm._PROBE_CACHE.clear()
+            dbm._PROBE_CACHE_ORDER.clear()
+            try:
+                if tmp_path:
+                    Path(tmp_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+
         status, issues = RightPanel._metadata_qc_summary(Probe(), {}, 'C:/sample/bad.mxf')
         if status != '확인 필요' or issues != ['메타데이터 확인 실패']:
             errors.append(f"  FAIL empty metadata summary: {status} / {issues}")

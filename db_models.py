@@ -371,8 +371,21 @@ def probe(filepath):
             errors="replace",
             timeout=15,
             creationflags=_hidden_subprocess_flags())
-        if r.returncode != 0: return {}
-        d = json.loads(r.stdout or "{}")
+        if r.returncode != 0:
+            log.warning(
+                f'probe ffprobe failed rc={r.returncode}: '
+                f'{_safe_text((r.stderr or "")[-300:], "stderr 없음")}'
+            )
+            return {}
+        stdout = r.stdout if isinstance(r.stdout, str) else ""
+        if not stdout.strip():
+            log.warning(f'probe ffprobe returned empty json: {Path(filepath).name}')
+            return {}
+        try:
+            d = json.loads(stdout)
+        except json.JSONDecodeError as e:
+            log.warning(f'probe ffprobe returned invalid json: {Path(filepath).name} pos={e.pos}')
+            return {}
         if not isinstance(d, dict):
             return {}
         fmt = d.get("format",{})
