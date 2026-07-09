@@ -3,6 +3,7 @@ main.py — 진입점
 MainWindow + 전역 예외 처리 + 앱 실행
 """
 import sys
+import math
 import time
 import subprocess
 from pathlib import Path
@@ -43,16 +44,20 @@ def _as_dict_result(result, label):
 
 def _safe_float(value, default=0.0):
     try:
-        return float(value)
+        parsed = float(value)
+        return parsed if math.isfinite(parsed) else default
     except Exception:
         return default
 
 
 def _safe_int(value, default=0):
     try:
-        return int(value)
+        parsed = float(value)
+        if math.isfinite(parsed):
+            return int(parsed)
     except Exception:
-        return default
+        pass
+    return default
 
 
 def _final_child_cleanup(label='shutdown'):
@@ -147,10 +152,9 @@ class MainWindow(QMainWindow):
         if APP_ICON_PATH.exists():
             self.setWindowIcon(QIcon(str(APP_ICON_PATH)))
         size = self._settings.get('window_size', [1400, 980])
-        try:
-            self.resize(int(size[0]), int(size[1]))
-        except Exception:
-            self.resize(1400, 980)
+        width = _safe_int(size[0] if isinstance(size, (list, tuple)) and len(size) > 0 else 1400, 1400)
+        height = _safe_int(size[1] if isinstance(size, (list, tuple)) and len(size) > 1 else 980, 980)
+        self.resize(max(640, width), max(480, height))
         self.setMinimumSize(1100, 760)
         self.setStyleSheet(STYLE)
         self.setAcceptDrops(True)
@@ -279,10 +283,15 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         splitter_sizes = self._settings.get('splitter_sizes', [980, 420])
-        try:
-            splitter.setSizes([int(splitter_sizes[0]), int(splitter_sizes[1])])
-        except Exception:
-            splitter.setSizes([980, 420])
+        left_size = _safe_int(
+            splitter_sizes[0] if isinstance(splitter_sizes, (list, tuple)) and len(splitter_sizes) > 0 else 980,
+            980,
+        )
+        right_size = _safe_int(
+            splitter_sizes[1] if isinstance(splitter_sizes, (list, tuple)) and len(splitter_sizes) > 1 else 420,
+            420,
+        )
+        splitter.setSizes([max(100, left_size), max(100, right_size)])
         root.addWidget(splitter, 1)
         self._splitter = splitter
 

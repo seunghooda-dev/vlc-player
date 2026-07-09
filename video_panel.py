@@ -970,10 +970,7 @@ class VideoPanel(QWidget):
         # 미터 컨트롤러
         self.meter_ctrl = MeterController(self.vlc_side_left, self.vlc_side_right, self.vlc_loud_meter)
         self.audio_mix = AudioMixPlayer()
-        try:
-            self._playback_rate = float(self._settings.get('playback_rate', 1.0))
-        except Exception:
-            self._playback_rate = 1.0
+        self._playback_rate = max(0.5, min(2.0, self._safe_float_value(self._settings.get('playback_rate', 1.0), 1.0)))
         self._audio_mix_seq = 0
         self._audio_recovery_timer = QTimer(self)
         self._audio_recovery_timer.setInterval(900)
@@ -991,7 +988,7 @@ class VideoPanel(QWidget):
         self.player = VlcPlayerAdapter(self.video_view.viewport())
         self.player.audio_set_volume(0)
         self.player.setPlaybackRate(self._playback_rate)
-        volume = max(0, min(100, int(self._settings.get('volume', 80))))
+        volume = max(0, min(100, self._safe_int_value(self._settings.get('volume', 80), 80)))
         self.audio_mix.set_volume(volume / 100.0)
         self.player.positionChanged.connect(self._on_pos)
         self.player.durationChanged.connect(self._on_dur)
@@ -1219,7 +1216,7 @@ class VideoPanel(QWidget):
         vol_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.vol_slider = QSlider(Qt.Orientation.Horizontal)
         self.vol_slider.setRange(0, 100)
-        volume = max(0, min(100, int(self._settings.get('volume', 80))))
+        volume = max(0, min(100, self._safe_int_value(self._settings.get('volume', 80), 80)))
         self.vol_slider.setValue(volume)
         self.vol_slider.setFixedWidth(122)
         self.vol_slider.setFixedHeight(26)
@@ -1726,19 +1723,24 @@ class VideoPanel(QWidget):
     def _new_file_record(self, filepath):
         p = Path(filepath)
         qc = load_qc_status(filepath)
+        try:
+            size = p.stat().st_size
+        except OSError as e:
+            size = 0
+            log.warning(f'file size unavailable for list record: {p.name} | {e}')
         return {
             "name": p.name,
             "filepath": filepath,
-            "size": p.stat().st_size,
+            "size": size,
             "ext": p.suffix.upper().lstrip("."),
             "cue": False,
             "playing": False,
             "black": qc.get("black") or None,   # None | ok | found | error
             "mute": qc.get("mute") or None,     # None | ok | found | error
             "freeze": qc.get("freeze") or None, # None | ok | found | error
-            "black_count": int(qc.get("black_count", 0) or 0),
-            "mute_count": int(qc.get("mute_count", 0) or 0),
-            "freeze_count": int(qc.get("freeze_count", 0) or 0),
+            "black_count": max(0, self._safe_int_value(qc.get("black_count", 0), 0)),
+            "mute_count": max(0, self._safe_int_value(qc.get("mute_count", 0), 0)),
+            "freeze_count": max(0, self._safe_int_value(qc.get("freeze_count", 0), 0)),
             "black_ranges": list(qc.get("black_ranges") or []),
             "mute_ranges": list(qc.get("mute_ranges") or []),
             "freeze_ranges": list(qc.get("freeze_ranges") or []),
@@ -1810,9 +1812,9 @@ class VideoPanel(QWidget):
                     entry["black"] = saved.get("black") or None
                     entry["mute"] = saved.get("mute") or None
                     entry["freeze"] = saved.get("freeze") or None
-                    entry["black_count"] = int(saved.get("black_count", 0) or 0)
-                    entry["mute_count"] = int(saved.get("mute_count", 0) or 0)
-                    entry["freeze_count"] = int(saved.get("freeze_count", 0) or 0)
+                    entry["black_count"] = max(0, self._safe_int_value(saved.get("black_count", 0), 0))
+                    entry["mute_count"] = max(0, self._safe_int_value(saved.get("mute_count", 0), 0))
+                    entry["freeze_count"] = max(0, self._safe_int_value(saved.get("freeze_count", 0), 0))
                     entry["black_ranges"] = list(saved.get("black_ranges") or [])
                     entry["mute_ranges"] = list(saved.get("mute_ranges") or [])
                     entry["freeze_ranges"] = list(saved.get("freeze_ranges") or [])
@@ -3437,7 +3439,7 @@ class VideoPanel(QWidget):
             return
         if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
             return
-        pos = self.player.position() if pos_ms is None else int(pos_ms)
+        pos = self.player.position() if pos_ms is None else self._safe_int_value(pos_ms, 0)
         self.player.audio_set_volume(0)
         self.audio_mix.set_file(
             self.cur_file,
@@ -3460,7 +3462,7 @@ class VideoPanel(QWidget):
             return
         if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
             return
-        pos = self.player.position() if pos_ms is None else int(pos_ms)
+        pos = self.player.position() if pos_ms is None else self._safe_int_value(pos_ms, 0)
         self.player.audio_set_volume(0)
         self.audio_mix.set_file(
             self.cur_file,
@@ -3669,12 +3671,12 @@ class VideoPanel(QWidget):
             log.debug(f'playback progress read failed: {e}')
             return
 
-        last_ms = int(getattr(self, '_playback_progress_last_ms', pos_ms) or 0)
-        last_frame = int(getattr(self, '_playback_progress_last_frame', frame) or 0)
+        last_ms = self._safe_int_value(getattr(self, '_playback_progress_last_ms', pos_ms), pos_ms)
+        last_frame = self._safe_int_value(getattr(self, '_playback_progress_last_frame', frame), frame)
         moved_ms = pos_ms - last_ms
         moved_frames = frame - last_frame
         now = time.monotonic()
-        started = float(getattr(self, '_playback_progress_started_at', now) or now)
+        started = self._safe_float_value(getattr(self, '_playback_progress_started_at', now), now)
         near_end = bool(self.duration and pos_ms >= int(max(0, self.duration * 1000 - 900)))
 
         if now - started < 2.0 or near_end:
