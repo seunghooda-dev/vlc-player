@@ -107,8 +107,8 @@ def check_core_logic():
     errors = []
     try:
         from right_panel import RightPanel
-        from constants import DEFAULT_SETTINGS, _normalize_settings
-        from video_panel import AudioMixPlayer
+        from constants import DEFAULT_SETTINGS, VIDEO_EXTS, _normalize_settings
+        from video_panel import AudioMixPlayer, DIRECT_VLC_EXTS
     except Exception as e:
         return [f"  FAIL core logic import: {e}"]
 
@@ -164,6 +164,23 @@ def check_core_logic():
         audio_mix.set_channels([8, 7])
         if audio_mix.channels != [8, 7]:
             errors.append(f"  FAIL audio mix channel upper bound: {audio_mix.channels}")
+
+        required_video_exts = {'.mxf', '.mp4'}
+        missing_video_exts = sorted(required_video_exts - set(VIDEO_EXTS))
+        if missing_video_exts:
+            errors.append(f"  FAIL required video extensions missing: {missing_video_exts}")
+        missing_direct_exts = sorted(required_video_exts - set(DIRECT_VLC_EXTS))
+        if missing_direct_exts:
+            errors.append(f"  FAIL direct VLC extensions missing: {missing_direct_exts}")
+        extra_direct_exts = sorted(set(DIRECT_VLC_EXTS) - set(VIDEO_EXTS))
+        if extra_direct_exts:
+            errors.append(f"  FAIL direct VLC extensions not supported: {extra_direct_exts}")
+        malformed_exts = sorted(
+            ext for ext in set(VIDEO_EXTS) | set(DIRECT_VLC_EXTS)
+            if not isinstance(ext, str) or not ext.startswith('.') or ext != ext.lower()
+        )
+        if malformed_exts:
+            errors.append(f"  FAIL malformed video extensions: {malformed_exts}")
     except Exception as e:
         errors.append(f"  FAIL core logic check: {e}")
     return errors
@@ -207,7 +224,7 @@ def main():
         all_ok = False
         for e in logic_errors: print(e)
     else:
-        print("  OK metadata QC and audio channel rules")
+        print("  OK metadata QC, audio channel, and video extension rules")
 
     print()
     print("=" * 55)
