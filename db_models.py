@@ -207,9 +207,9 @@ def _safe_resolved_path_text(filepath):
         return str(Path(filepath or ""))
 
 def is_df_fps(fps):
-    # DF 프레임레이트: 29.97, 59.94, 23.976 등 소수점 fps
-    fps = _safe_float(fps, 29.97)
-    return abs(fps - round(fps)) > 0.01
+    # SMPTE drop-frame numbering is used for NTSC 29.97/59.94, not exact 30/60.
+    fps = _safe_float(fps, 0.0)
+    return abs(fps - (30000 / 1001)) < 0.01 or abs(fps - (60000 / 1001)) < 0.02
 
 def _nominal_fps(fps):
     return max(1, int(round(_safe_float(fps, 29.97))))
@@ -275,6 +275,35 @@ def sec_fmt(s):
     s = max(0.0, _safe_float(s, 0.0))
     return f"{int(s//60):02d}:{int(s%60):02d}"
 
+def _parse_rate_text(value):
+    text = _safe_text(value)
+    if not text or text in ("0/0", "N/A"):
+        return 0.0
+    try:
+        if "/" in text:
+            n, d = text.split("/", 1)
+            numerator = _safe_float(n, 0.0)
+            denominator = _safe_float(d, 0.0)
+            if denominator <= 0:
+                return 0.0
+            parsed = numerator / denominator
+        else:
+            parsed = _safe_float(text, 0.0)
+        return parsed if math.isfinite(parsed) and parsed > 0 else 0.0
+    except Exception:
+        return 0.0
+
+def _stream_fps(stream):
+    if not isinstance(stream, dict):
+        return 0.0
+    # avg_frame_rate is the actual media cadence for most CFR files.
+    # r_frame_rate can be only a codec/container nominal value, so use it as fallback.
+    for key in ("avg_frame_rate", "r_frame_rate"):
+        fps = _parse_rate_text(stream.get(key))
+        if fps > 0:
+            return round(fps, 3)
+    return 0.0
+
 def _probe_cache_key(filepath):
     snapshot = _safe_file_snapshot(filepath)
     if not snapshot["size"] and not snapshot["mtime_ns"]:
@@ -323,7 +352,7 @@ def probe(filepath):
             return cached
         probe_entries = (
             "format=duration,size,bit_rate:format_tags=timecode:"
-            "stream=index,codec_type,codec_name,width,height,r_frame_rate,channels:"
+            "stream=index,codec_type,codec_name,width,height,r_frame_rate,avg_frame_rate,channels:"
             "stream_tags=timecode"
         )
         r = subprocess.run(
@@ -367,12 +396,9 @@ def probe(filepath):
             if s.get("codec_type")=="video":
                 info["codec"]=_safe_text(s.get("codec_name","")).upper()
                 info["width"]=_safe_count(s.get("width",0)); info["height"]=_safe_count(s.get("height",0))
-                try:
-                    n,dv=s.get("r_frame_rate","30/1").split("/")
-                    fps_raw = _safe_int(n, 0)/_safe_int(dv, 1)
-                    if math.isfinite(fps_raw) and fps_raw > 0:
-                        info["fps"]=round(fps_raw, 3)
-                except Exception as e: log.debug(f'fps parse: {e}')
+                fps_raw = _stream_fps(s)
+                if fps_raw > 0:
+                    info["fps"] = fps_raw
                 tags = s.get("tags", {})
                 if not isinstance(tags, dict):
                     tags = {}
@@ -385,14 +411,8 @@ def probe(filepath):
         if not isinstance(fmt_tags, dict):
             fmt_tags = {}
         if not info["timecode"]: info["timecode"]=_safe_text(fmt_tags.get("timecode",""))
-        # DF/NDF 자동 판별
         fps = info["fps"]
         info["df"] = is_df_fps(fps)
-        # 해상도별 기본 FPS 보정 (4K UHD=59.94, HD=29.97)
-        if info["width"] >= 3840 and abs(fps - 60) < 1:
-            info["fps"] = 59.94; info["df"] = True
-        elif info["width"] >= 1920 and abs(fps - 30) < 1:
-            info["fps"] = 29.97; info["df"] = True
         # 임베디드 타임코드 → 시작 오프셋(초) 계산
         info["tc_offset"] = 0.0
         if info["timecode"]:

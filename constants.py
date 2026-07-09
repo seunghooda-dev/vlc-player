@@ -2517,7 +2517,8 @@ def _log_exc(label, exc=None):
 
 # ── 유틸 함수 ─────────────────────────────────────────────
 def is_df_fps(fps):
-    return abs(fps - round(fps)) > 0.01
+    fps = _probe_safe_float(fps, 0.0)
+    return abs(fps - (30000 / 1001)) < 0.01 or abs(fps - (60000 / 1001)) < 0.02
 
 def sec_to_tc(sec, fps=29.97, df=None):
     if sec is None or sec < 0: sec = 0.0
@@ -2560,6 +2561,33 @@ def _probe_safe_int(value, default=0):
 
 def _probe_safe_count(value):
     return max(0, _probe_safe_int(value, 0))
+
+def _probe_parse_rate(value):
+    text = str(value or "").strip()
+    if not text or text in ("0/0", "N/A"):
+        return 0.0
+    try:
+        if "/" in text:
+            n, d = text.split("/", 1)
+            numerator = _probe_safe_float(n, 0.0)
+            denominator = _probe_safe_float(d, 0.0)
+            if denominator <= 0:
+                return 0.0
+            parsed = numerator / denominator
+        else:
+            parsed = _probe_safe_float(text, 0.0)
+        return parsed if math.isfinite(parsed) and parsed > 0 else 0.0
+    except Exception:
+        return 0.0
+
+def _probe_stream_fps(stream):
+    if not isinstance(stream, dict):
+        return 0.0
+    for key in ("avg_frame_rate", "r_frame_rate"):
+        fps = _probe_parse_rate(stream.get(key))
+        if fps > 0:
+            return round(fps, 3)
+    return 0.0
 
 def probe(filepath):
     try:
@@ -2606,13 +2634,9 @@ def probe(filepath):
                 info["codec"]  = s.get("codec_name", "").upper()
                 info["width"]  = _probe_safe_count(s.get("width", 0))
                 info["height"] = _probe_safe_count(s.get("height", 0))
-                try:
-                    n, dv = s.get("r_frame_rate","30/1").split("/")
-                    divisor = _probe_safe_int(dv, 1) or 1
-                    fps_raw = _probe_safe_int(n, 0) / divisor
-                    if fps_raw > 0 and math.isfinite(fps_raw):
-                        info["fps"] = round(fps_raw, 3)
-                except Exception as e: log.debug(f'fps parse: {e}')
+                fps_raw = _probe_stream_fps(s)
+                if fps_raw > 0:
+                    info["fps"] = fps_raw
                 tags = s.get("tags", {})
                 if not isinstance(tags, dict):
                     tags = {}
@@ -2628,10 +2652,6 @@ def probe(filepath):
             info["timecode"] = tags.get("timecode", "")
         fps = info["fps"]
         info["df"] = is_df_fps(fps)
-        if info["width"] >= 3840 and abs(fps-60) < 1:
-            info["fps"] = 59.94; info["df"] = True
-        elif info["width"] >= 1920 and abs(fps-30) < 1:
-            info["fps"] = 29.97; info["df"] = True
         info["tc_offset"] = 0.0
         if info["timecode"]:
             try:
