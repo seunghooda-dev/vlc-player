@@ -236,6 +236,33 @@ def check_core_logic():
             errors.append(f"  FAIL QC detail html pending count: {detail_html}")
         if f"color:{C['text2']}" not in detail_html:
             errors.append(f"  FAIL QC detail html pending color: {detail_html}")
+        class FileItemHtmlProbe(HtmlStatusProbe):
+            _path_name = staticmethod(RightPanel._path_name)
+            _breakable_name_html = RightPanel._breakable_name_html
+            _file_item_html = RightPanel._file_item_html
+            _file_first_issue_hint_html = RightPanel._file_first_issue_hint_html
+            _file_meta_issue_hint_html = RightPanel._file_meta_issue_hint_html
+            _first_qc_issue_text = RightPanel._first_qc_issue_text
+            _qc_issue_markers = RightPanel._qc_issue_markers
+            _metadata_issue_text = staticmethod(RightPanel._metadata_issue_text)
+
+        meta_item_html = RightPanel._file_item_html(
+            FileItemHtmlProbe(),
+            {
+                'name': 'meta.mxf',
+                'filepath': 'C:/qc/meta.mxf',
+                'black': 'ok',
+                'mute': 'ok',
+                'freeze': '',
+                'meta_status': '확인 필요',
+                'meta_issues': ['DF 타임코드 아님'],
+            },
+            '',
+            '블랙/무음 정상',
+            C['green'],
+        )
+        if f"color:{C['yellow']}" not in meta_item_html or '메타 확인: DF 타임코드 아님' not in meta_item_html:
+            errors.append(f"  FAIL file item metadata warning html: {meta_item_html}")
         badge_cases = [
             ({'black': 'ok', 'mute': 'ok', 'freeze': ''}, '블랙/무음 정상', 'partial badge'),
             ({'black': 'ok', 'mute': 'ok', 'freeze': 'ok'}, '정상', 'normal badge'),

@@ -779,7 +779,8 @@ class RightPanel(QWidget):
             or str(f.get("mute") or '').lower() in ('found', 'error')
             or str(f.get("freeze") or '').lower() in ('found', 'error')
         )
-        badge_color = C['red'] if issue else badge_color
+        meta_issue = bool(RightPanel._metadata_issue_text(f))
+        badge_color = C['red'] if issue else C['yellow'] if meta_issue else badge_color
         name = self._breakable_name_html(f.get('name') or self._path_name(f.get('filepath')))
         return (
             f"<div style=\"font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';"
