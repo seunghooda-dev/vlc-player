@@ -881,8 +881,11 @@ class RightPanel(QWidget):
             'freeze_duration': _value('freeze_duration', 'freeze_duration', '1.0'),
         }
 
-    def _iter_report_files(self):
-        files = self._file_records()
+    def _iter_report_files(self, files=None):
+        if files is None:
+            files = self._file_records()
+        else:
+            files = [f for f in (files or []) if isinstance(f, dict)]
         sort_key = getattr(self, '_sort_key', 'name')
         sort_asc = getattr(self, '_sort_asc', True)
         if sort_key == 'name':
@@ -998,10 +1001,10 @@ class RightPanel(QWidget):
             if self._is_video_file_path(f.get('filepath'))
         ]
 
-    def _qc_report_rows(self):
+    def _qc_report_rows(self, files=None):
         rows = []
         criteria = self._qc_criteria()
-        for f in self._iter_report_files():
+        for f in self._iter_report_files(files):
             fp = self._file_path_text(f.get('filepath', ''))
             p_name = self._path_name(fp, _safe_text(f.get('name'), '파일'))
             p_ext = ''
@@ -1188,8 +1191,8 @@ class RightPanel(QWidget):
         record_state_event('qc-report', 'auto exported', path=str(out), files=len(rows))
         return out
 
-    def _export_qc_report(self):
-        rows = self._qc_report_rows()
+    def _export_qc_report(self, files=None, default_prefix='qc-report'):
+        rows = self._qc_report_rows(files)
         if not rows:
             QMessageBox.information(self, 'QC 리포트', '파일 목록에 리포트로 저장할 영상 파일이 없습니다.')
             return
@@ -1197,7 +1200,7 @@ class RightPanel(QWidget):
             REPORT_DIR.mkdir(parents=True, exist_ok=True)
         except Exception:
             pass
-        default = REPORT_DIR / f"qc-report-{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        default = REPORT_DIR / f"{default_prefix}-{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
         path, selected = QFileDialog.getSaveFileName(
             self,
             'QC 결과 리포트 저장',
@@ -1437,7 +1440,8 @@ class RightPanel(QWidget):
             return
         menu = QMenu(self.exp_list)
         menu.setStyleSheet(self._menu_style())
-        act_cue = act_del = act_relink = act_open_location = act_copy_path = act_reset_qc = act_clean_unavailable = None
+        act_cue = act_del = act_relink = act_open_location = act_copy_path = None
+        act_export_one = act_reset_qc = act_clean_unavailable = None
         record = self._file_record_for_path(fp)
         if fp:
             if self._file_unavailable_badge(fp):
@@ -1446,6 +1450,8 @@ class RightPanel(QWidget):
             act_cue = menu.addAction("▶   CUE  —  화면에 올리기")
             act_open_location = menu.addAction("📁   폴더 열기")
             act_copy_path = menu.addAction("⧉   경로 복사")
+            if record:
+                act_export_one = menu.addAction("▣   선택 파일 리포트 저장")
             if self._has_qc_result(record):
                 act_reset_qc = menu.addAction("↺   QC 결과 초기화")
             menu.addSeparator()
@@ -1478,6 +1484,9 @@ class RightPanel(QWidget):
             self._open_file_location(fp)
         elif action == act_copy_path:
             self._copy_file_path(fp)
+        elif action == act_export_one:
+            if record:
+                self._export_qc_report([record], default_prefix='qc-selected')
         elif action == act_reset_qc:
             answer = QMessageBox.question(
                 self,

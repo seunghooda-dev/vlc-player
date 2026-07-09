@@ -278,6 +278,29 @@ def check_core_logic():
         if RightPanel._metadata_for_report(MissingFileProbe(), 'C:/missing/sample.mxf', 'sample.mxf') != ({}, ''):
             errors.append("  FAIL report metadata missing-file guard")
 
+        class ReportIterProbe(Probe):
+            _sort_key = 'name'
+            _sort_asc = True
+            def _file_records(self):
+                return [
+                    {'name': 'all-b.mxf', 'filepath': 'C:/all-b.mxf'},
+                    {'name': 'all-a.mxf', 'filepath': 'C:/all-a.mxf'},
+                ]
+
+        all_report_names = [
+            f.get('name') for f in RightPanel._iter_report_files(ReportIterProbe())
+        ]
+        if all_report_names != ['all-a.mxf', 'all-b.mxf']:
+            errors.append(f"  FAIL report full-list sort: {all_report_names}")
+        selected_report_names = [
+            f.get('name') for f in RightPanel._iter_report_files(
+                ReportIterProbe(),
+                [{'name': 'selected-only.mxf', 'filepath': 'C:/selected-only.mxf'}],
+            )
+        ]
+        if selected_report_names != ['selected-only.mxf']:
+            errors.append(f"  FAIL selected report scope: {selected_report_names}")
+
         class RemoveProbe(Probe):
             _is_video_file_path = staticmethod(RightPanel._is_video_file_path)
             _same_path_text = staticmethod(RightPanel._same_path_text)
