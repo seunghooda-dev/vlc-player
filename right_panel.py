@@ -835,6 +835,30 @@ class RightPanel(QWidget):
         except Exception:
             return False
 
+    def _current_video_file(self):
+        fp = self._file_path_text(getattr(self.vp, 'cur_file', ''))
+        return fp if self._is_video_file_path(fp) else ''
+
+    def _block_invalid_current_file(self, status_label=None, tab_widget=None, kind='분석'):
+        fp = self._file_path_text(getattr(self.vp, 'cur_file', ''))
+        title = '현재 CUE 파일을 찾을 수 없습니다'
+        if tab_widget is not None:
+            try:
+                self.tabs.setCurrentWidget(tab_widget.parentWidget())
+            except Exception:
+                pass
+        if status_label is not None:
+            try:
+                status_label.setText(f"  ⚠ {title}")
+            except Exception:
+                pass
+        try:
+            self.vp.ai_lbl.setText(f"⚠ {title}")
+        except Exception:
+            pass
+        log.warning(f'{kind} blocked invalid current file: {fp or "-"}')
+        return ''
+
     def _file_records(self):
         records = []
         for f in (getattr(self.vp, '_files', []) or []):
@@ -1288,7 +1312,7 @@ class RightPanel(QWidget):
 
     def _reset_black_tab(self):
         try:
-            self.btn_run_black.setEnabled(bool(self.vp.cur_file))
+            self.btn_run_black.setEnabled(bool(self._current_video_file()))
             self.black_status.setText("  1프레임 이상 / 화면 98% 이상 검정 기준")
             self.black_list.clear()
         except Exception as e: log.warning(f'black tab reset: {e}')
@@ -1559,7 +1583,7 @@ class RightPanel(QWidget):
             self.exp_list.setEnabled(enabled)
         if getattr(self, '_analysis_active', None):
             return
-        has_file = bool(getattr(self.vp, 'cur_file', None))
+        has_file = bool(self._current_video_file())
         if hasattr(self, 'btn_run_black'):
             self.btn_run_black.setEnabled(enabled and has_file)
         if hasattr(self, 'btn_run_audio'):
@@ -1568,7 +1592,7 @@ class RightPanel(QWidget):
             self.btn_run_freeze.setEnabled(enabled and has_file)
 
     def _set_analysis_buttons_busy(self, kind=None, busy=False):
-        has_file = bool(getattr(self.vp, 'cur_file', None))
+        has_file = bool(self._current_video_file())
         loading = bool(getattr(self.vp, '_loading', False))
         black = getattr(self, 'btn_run_black', None)
         audio = getattr(self, 'btn_run_audio', None)
@@ -1643,7 +1667,7 @@ class RightPanel(QWidget):
     def _finish_analysis_mode(self):
         self._set_transport_enabled(True)
         self._set_analysis_buttons_busy(None, False)
-        if self.vp.cur_file:
+        if self._current_video_file():
             try:
                 self.btn_run_black.setEnabled(True)
                 self.btn_run_audio.setEnabled(True)
@@ -1655,10 +1679,11 @@ class RightPanel(QWidget):
             except Exception as e:
                 log.debug(f'analysis buttons restore: {e}')
         try:
-            if self._analysis_paused_meters and self.vp.cur_file:
+            current_file = self._current_video_file()
+            if self._analysis_paused_meters and current_file:
                 ch_count = self.vp.cur_info.get('channels', 2)
                 self.vp.meter_ctrl.start_file(
-                    self.vp.cur_file, ch_count, self.vp.player, (1, 2),
+                    current_file, ch_count, self.vp.player, (1, 2),
                     self.vp.cur_info.get('audio_stream_count', 0))
             if self._analysis_paused_playback and hasattr(self.vp, 'status_changed'):
                 self.vp.status_changed.emit("  ⏸ 분석 완료 — 재생 버튼을 눌러 이어서 확인하세요")
@@ -1955,7 +1980,10 @@ class RightPanel(QWidget):
         )
 
     def _run_black_detect(self):
-        if not self.vp.cur_file:
+        current_file = self._current_video_file()
+        if not current_file:
+            if getattr(self.vp, 'cur_file', None):
+                self._block_invalid_current_file(self.black_status, self.black_list, 'black detect')
             return
         missing = format_missing_runtime_tools(['FFmpeg'])
         if missing:
@@ -1983,7 +2011,7 @@ class RightPanel(QWidget):
         self.btn_run_black.setEnabled(False)
         self.black_list.clear()
         self.black_status.setText("  ⏳ 블랙 프레임 검출 중...")
-        self._black_file = self.vp.cur_file
+        self._black_file = current_file
         seq = self._next_analysis_seq('black', self._black_file)
         if hasattr(self.vp, '_set_file_status'):
             self.vp._set_file_status(self._black_file, analysis="black")
@@ -1996,7 +2024,7 @@ class RightPanel(QWidget):
             log.debug(f'black ai state: {e}')
 
         self._black_thread = BlackDetectThread(
-            self.vp.cur_file,
+            current_file,
             self.vp.fps,
             amount,
             threshold,
@@ -2240,7 +2268,7 @@ class RightPanel(QWidget):
 
     def _reset_audio_tab(self):
         try:
-            self.btn_run_audio.setEnabled(bool(self.vp.cur_file))
+            self.btn_run_audio.setEnabled(bool(self._current_video_file()))
             self.audio_status.setText("  1/2CH 100ms 레벨 인덱스 캐시로 무음 구간을 검출합니다")
             self.mute_list.clear(); self.peak_table.setRowCount(0)
             if hasattr(self.vp, 'ai_time_lbl'):
@@ -2334,14 +2362,18 @@ class RightPanel(QWidget):
 
     def _reset_freeze_tab(self):
         try:
-            self.btn_run_freeze.setEnabled(bool(self.vp.cur_file))
+            self.btn_run_freeze.setEnabled(bool(self._current_video_file()))
             self.freeze_status.setText("  프레임 차이 -60dB / 1초 이상 정지 화면 기준")
             self.freeze_list.clear()
         except Exception as e:
             log.warning(f'freeze tab reset: {e}')
 
     def _run_audio_analyze(self):
-        if not self.vp.cur_file: return
+        current_file = self._current_video_file()
+        if not current_file:
+            if getattr(self.vp, 'cur_file', None):
+                self._block_invalid_current_file(self.audio_status, self.mute_list, 'audio analyze')
+            return
         missing = format_missing_runtime_tools(['FFmpeg', 'FFprobe'])
         if missing:
             self.tabs.setCurrentWidget(self.mute_list.parentWidget())
@@ -2367,7 +2399,7 @@ class RightPanel(QWidget):
         self.btn_run_audio.setEnabled(False)
         self.mute_list.clear(); self.peak_table.setRowCount(0)
         self.audio_status.setText(f"  ⏳ 1/2CH 레벨 인덱스 확인 중... ({dur:.1f}초 이상)")
-        self._audio_file = self.vp.cur_file
+        self._audio_file = current_file
         seq = self._next_analysis_seq('audio', self._audio_file)
         if hasattr(self.vp, '_set_file_status'):
             self.vp._set_file_status(self._audio_file, analysis="mute")
@@ -2386,7 +2418,7 @@ class RightPanel(QWidget):
             log.debug(f'audio ai state: {e}')
 
         self._audio_thread = AudioAnalyzeThread(
-            self.vp.cur_file,
+            current_file,
             self.vp.fps,
             thr,
             dur,
@@ -2490,7 +2522,10 @@ class RightPanel(QWidget):
         log.error(f'AudioAnalyze UI error: {err}')
 
     def _run_freeze_detect(self):
-        if not self.vp.cur_file:
+        current_file = self._current_video_file()
+        if not current_file:
+            if getattr(self.vp, 'cur_file', None):
+                self._block_invalid_current_file(self.freeze_status, self.freeze_list, 'freeze detect')
             return
         missing = format_missing_runtime_tools(['FFmpeg'])
         if missing:
@@ -2520,7 +2555,7 @@ class RightPanel(QWidget):
         self.btn_run_freeze.setEnabled(False)
         self.freeze_list.clear()
         self.freeze_status.setText(f"  ⏳ 프리즈 프레임 검출 중... ({duration:.1f}초 이상)")
-        self._freeze_file = self.vp.cur_file
+        self._freeze_file = current_file
         seq = self._next_analysis_seq('freeze', self._freeze_file)
         if hasattr(self.vp, '_set_file_status'):
             self.vp._set_file_status(self._freeze_file, analysis="freeze")
@@ -2534,7 +2569,7 @@ class RightPanel(QWidget):
             log.debug(f'freeze ai state: {e}')
 
         self._freeze_thread = FreezeDetectThread(
-            self.vp.cur_file,
+            current_file,
             self.vp.fps,
             noise,
             duration,
