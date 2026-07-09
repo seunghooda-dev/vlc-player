@@ -2553,7 +2553,8 @@ def probe(filepath):
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=15)
+            timeout=15,
+            creationflags=_hidden_subprocess_flags())
         if r.returncode != 0: return {}
         d   = json.loads(r.stdout or "{}")
         fmt = d.get("format", {})

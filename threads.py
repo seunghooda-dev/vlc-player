@@ -331,7 +331,8 @@ class TranscodeThread(QThread):
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                timeout=15
+                timeout=15,
+                creationflags=_hidden_flags(),
             )
             audio_streams = []
             if pr.returncode == 0:
@@ -373,7 +374,8 @@ class TranscodeThread(QThread):
                     text=True,
                     encoding="utf-8",
                     errors="replace",
-                    timeout=10)
+                    timeout=10,
+                    creationflags=_hidden_flags())
                 if pr2.returncode == 0:
                     data = _j2.loads(pr2.stdout or "{}")
                     fmt = data.get('format', {}) if isinstance(data, dict) else {}

@@ -23,6 +23,7 @@ from constants    import (
     cleanup_child_processes, cleanup_orphan_audio_processes, runtime_child_process_status,
     cache_summary, cleanup_runtime_cache, cleanup_old_generated_files, format_bytes, format_cache_summary,
     create_diagnostic_report, load_settings, save_settings,
+    _hidden_subprocess_flags,
 )
 from video_panel  import VideoPanel
 from right_panel  import RightPanel
@@ -532,14 +533,13 @@ class MainWindow(QMainWindow):
             if not (root / '.git').exists():
                 continue
             try:
-                flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if sys.platform.startswith('win') else 0
                 result = subprocess.run(
                     ['git', 'rev-parse', '--short', 'HEAD'],
                     cwd=str(root),
                     capture_output=True,
                     text=True,
                     timeout=2,
-                    creationflags=flags,
+                    creationflags=_hidden_subprocess_flags(),
                 )
                 if result.returncode == 0 and result.stdout.strip():
                     return result.stdout.strip()
