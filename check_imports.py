@@ -370,6 +370,48 @@ def check_core_logic():
         if '경로: C:/qc/copy-me.mxf' not in summary_text:
             errors.append(f"  FAIL QC summary copy path: {summary_text}")
 
+        class ReanalyzeProbe:
+            _file_path_text = staticmethod(RightPanel._file_path_text)
+            _same_path_text = staticmethod(RightPanel._same_path_text)
+            _path_name = staticmethod(RightPanel._path_name)
+            _is_video_file_path = staticmethod(lambda value: bool(value))
+            _can_reanalyze_current_file = RightPanel._can_reanalyze_current_file
+            _run_context_reanalyze = RightPanel._run_context_reanalyze
+
+            def __init__(self):
+                self.calls = []
+                self.messages = []
+                self._analysis_active = None
+                self.vp = type('VP', (), {})()
+                self.vp.cur_file = 'C:/qc/current.mxf'
+                self.vp._loading = False
+                self.vp.status_changed = type(
+                    'Signal',
+                    (),
+                    {'emit': lambda _, msg: self.messages.append(msg)},
+                )()
+
+            def _run_black_detect(self):
+                self.calls.append('black')
+
+            def _run_audio_analyze(self):
+                self.calls.append('audio')
+
+            def _run_freeze_detect(self):
+                self.calls.append('freeze')
+
+        reanalyze_probe = ReanalyzeProbe()
+        if not RightPanel._can_reanalyze_current_file(reanalyze_probe, 'C:/qc/current.mxf'):
+            errors.append("  FAIL context reanalyze current-file enabled")
+        if RightPanel._can_reanalyze_current_file(reanalyze_probe, 'C:/qc/other.mxf'):
+            errors.append("  FAIL context reanalyze other-file disabled")
+        if not RightPanel._run_context_reanalyze(reanalyze_probe, 'audio', 'C:/qc/current.mxf'):
+            errors.append("  FAIL context reanalyze run result")
+        if reanalyze_probe.calls != ['audio']:
+            errors.append(f"  FAIL context reanalyze runner call: {reanalyze_probe.calls}")
+        if RightPanel._run_context_reanalyze(reanalyze_probe, 'black', 'C:/qc/other.mxf'):
+            errors.append("  FAIL context reanalyze non-cue blocked")
+
         class RemoveProbe(Probe):
             _is_video_file_path = staticmethod(RightPanel._is_video_file_path)
             _same_path_text = staticmethod(RightPanel._same_path_text)

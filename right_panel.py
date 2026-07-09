@@ -1406,6 +1406,36 @@ class RightPanel(QWidget):
             self.vp.status_changed.emit(f"  ⚠ QC 요약 복사 실패 — {self._path_name(record.get('filepath'))}")
             return False
 
+    def _can_reanalyze_current_file(self, filepath):
+        fp = self._file_path_text(filepath)
+        if not fp:
+            return False
+        if not self._same_path_text(fp, getattr(self.vp, 'cur_file', '')):
+            return False
+        if bool(getattr(self.vp, '_loading', False)) or bool(getattr(self, '_analysis_active', None)):
+            return False
+        return self._is_video_file_path(fp)
+
+    def _run_context_reanalyze(self, kind, filepath):
+        fp = self._file_path_text(filepath)
+        if not self._same_path_text(fp, getattr(self.vp, 'cur_file', '')):
+            self.vp.status_changed.emit(f"  ⏳ 재검수는 CUE 후 가능합니다 — {self._path_name(fp)}")
+            return False
+        if not self._can_reanalyze_current_file(fp):
+            self.vp.status_changed.emit(f"  ⏳ 지금은 재검수를 시작할 수 없습니다 — {self._path_name(fp)}")
+            return False
+        runners = {
+            'black': self._run_black_detect,
+            'audio': self._run_audio_analyze,
+            'freeze': self._run_freeze_detect,
+        }
+        runner = runners.get(kind)
+        if runner is None:
+            return False
+        runner()
+        record_state_event('file-list', 'context reanalyze', kind=kind, file=self._path_name(fp))
+        return True
+
     def _persist_relinked_qc(self, record):
         if not isinstance(record, dict):
             return
@@ -1486,6 +1516,7 @@ class RightPanel(QWidget):
         menu = QMenu(self.exp_list)
         menu.setStyleSheet(self._menu_style())
         act_cue = act_del = act_relink = act_open_location = act_copy_path = act_copy_qc = None
+        act_re_black = act_re_audio = act_re_freeze = act_re_need_cue = None
         act_export_visible = act_export_one = act_reset_qc = act_clean_unavailable = None
         record = self._file_record_for_path(fp)
         visible_files = self._filtered_file_records()
@@ -1508,6 +1539,18 @@ class RightPanel(QWidget):
                 act_export_one = menu.addAction("▣   선택 파일 리포트 저장")
             if self._has_qc_result(record):
                 act_reset_qc = menu.addAction("↺   QC 결과 초기화")
+            if record and not self._file_unavailable_badge(fp):
+                menu.addSeparator()
+                if self._same_path_text(fp, getattr(self.vp, 'cur_file', '')):
+                    reanalyze_enabled = self._can_reanalyze_current_file(fp)
+                    act_re_black = menu.addAction("⬛   현재 파일 블랙 재검수")
+                    act_re_audio = menu.addAction("🔇   현재 파일 무음 재검수")
+                    act_re_freeze = menu.addAction("⏸   현재 파일 프리즈 재검수")
+                    for action_item in (act_re_black, act_re_audio, act_re_freeze):
+                        action_item.setEnabled(reanalyze_enabled)
+                else:
+                    act_re_need_cue = menu.addAction("ⓘ   재검수는 CUE 후 가능")
+                    act_re_need_cue.setEnabled(False)
             menu.addSeparator()
             act_del = menu.addAction("✕   목록에서 제거")
         if unavailable:
@@ -1540,6 +1583,12 @@ class RightPanel(QWidget):
             self._copy_file_path(fp)
         elif action == act_copy_qc:
             self._copy_qc_summary(record)
+        elif action == act_re_black:
+            self._run_context_reanalyze('black', fp)
+        elif action == act_re_audio:
+            self._run_context_reanalyze('audio', fp)
+        elif action == act_re_freeze:
+            self._run_context_reanalyze('freeze', fp)
         elif action == act_export_visible:
             self._export_qc_report(
                 visible_files,
