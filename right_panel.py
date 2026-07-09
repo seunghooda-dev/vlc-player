@@ -28,7 +28,7 @@ from constants   import (
 )
 from db_models   import (
     probe, sec_to_tc, tc_to_frames, sanitize_qc_ranges,
-    qc_summary_from_status, load_clip_metadata_hint,
+    load_clip_metadata_hint,
 )
 from threads     import AudioAnalyzeThread, BlackDetectThread, FreezeDetectThread
 from meters      import mk_label
@@ -639,6 +639,7 @@ class RightPanel(QWidget):
         counts = {
             'total': len(files),
             'normal': 0,
+            'partial_normal': 0,
             'black': 0,
             'mute': 0,
             'freeze': 0,
@@ -667,8 +668,10 @@ class RightPanel(QWidget):
                 counts['both'] += 1
             if issue_count:
                 continue
-            if black == 'ok' and mute == 'ok':
+            if black == 'ok' and mute == 'ok' and freeze == 'ok':
                 counts['normal'] += 1
+            elif black == 'ok' and mute == 'ok':
+                counts['partial_normal'] += 1
             else:
                 counts['pending'] += 1
         return counts
@@ -824,7 +827,25 @@ class RightPanel(QWidget):
     def _qc_summary_for_report(self, f, fallback=''):
         if not isinstance(f, dict):
             return fallback or '미분석'
-        return qc_summary_from_status(f.get('black'), f.get('mute'), f.get('freeze')) or fallback or '미분석'
+        black = str(f.get('black') or '').lower()
+        mute = str(f.get('mute') or '').lower()
+        freeze = str(f.get('freeze') or '').lower()
+        if 'error' in (black, mute, freeze):
+            return '검사 오류'
+        found = []
+        if black == 'found':
+            found.append('블랙')
+        if mute == 'found':
+            found.append('무음')
+        if freeze == 'found':
+            found.append('프리즈')
+        if found:
+            return '/'.join(found) + ' 있음'
+        if black == 'ok' and mute == 'ok' and freeze == 'ok':
+            return '정상'
+        if black == 'ok' and mute == 'ok':
+            return '블랙/무음 정상'
+        return fallback or '미분석'
 
     def _metadata_for_report(self, fp, p_name=''):
         if not self._path_exists(fp):
@@ -2069,6 +2090,7 @@ class RightPanel(QWidget):
         issue_total = counts['black'] + counts['mute'] + counts['freeze'] + counts['both'] + counts['error']
         summary = (
             f"일괄 검수 완료 | 총 {total} | 정상 {counts['normal']} | "
+            f"블랙/무음 정상 {counts['partial_normal']} | "
             f"블랙 {counts['black']} | 무음 {counts['mute']} | 프리즈 {counts['freeze']} | "
             f"복합 {counts['both']} | 오류 {counts['error']} | 미분석 {counts['pending']} | {elapsed:.1f}초"
         )
@@ -2077,7 +2099,8 @@ class RightPanel(QWidget):
         self.vp.ai_lbl.setText(f"✓ 일괄 검수 완료 — {total}개 파일{suffix}")
         log.info(
             f"batch qc finished files={total} elapsed={elapsed:.1f}s "
-            f"normal={counts['normal']} black={counts['black']} mute={counts['mute']} "
+            f"normal={counts['normal']} partial_normal={counts['partial_normal']} "
+            f"black={counts['black']} mute={counts['mute']} "
             f"freeze={counts['freeze']} complex={counts['both']} error={counts['error']} pending={counts['pending']}"
         )
         record_state_event(
@@ -2086,6 +2109,7 @@ class RightPanel(QWidget):
             files=total,
             elapsed=f'{elapsed:.1f}s',
             normal=counts['normal'],
+            partial_normal=counts['partial_normal'],
             black=counts['black'],
             mute=counts['mute'],
             freeze=counts['freeze'],

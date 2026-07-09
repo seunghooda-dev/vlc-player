@@ -158,6 +158,7 @@ def check_core_logic():
             errors.append(f"  FAIL 29.97 NDF detection: {status} / {issues}")
 
         qc_counts = RightPanel._batch_summary_counts(Probe(), [
+            {'black': 'ok', 'mute': 'ok', 'freeze': 'ok'},
             {'black': 'ok', 'mute': 'ok', 'freeze': ''},
             {'black': 'found', 'mute': 'ok', 'freeze': 'found'},
             {'black': 'found', 'mute': 'found', 'freeze': ''},
@@ -165,8 +166,9 @@ def check_core_logic():
             {'black': '', 'mute': '', 'freeze': ''},
         ])
         expected_qc_counts = {
-            'total': 5,
+            'total': 6,
             'normal': 1,
+            'partial_normal': 1,
             'black': 2,
             'mute': 1,
             'freeze': 1,
@@ -208,6 +210,13 @@ def check_core_logic():
         )
         if report_summary != '블랙/무음 있음':
             errors.append(f"  FAIL report QC summary recompute: {report_summary}")
+        partial_report_summary = RightPanel._qc_summary_for_report(
+            Probe(),
+            {'black': 'ok', 'mute': 'ok', 'freeze': '', 'qc_summary': '정상'},
+            'fallback',
+        )
+        if partial_report_summary != '블랙/무음 정상':
+            errors.append(f"  FAIL report partial QC summary: {partial_report_summary}")
         if RightPanel._metadata_for_report(MissingFileProbe(), 'C:/missing/sample.mxf', 'sample.mxf') != ({}, ''):
             errors.append("  FAIL report metadata missing-file guard")
 
