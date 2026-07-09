@@ -2558,7 +2558,11 @@ def probe(filepath):
             creationflags=_hidden_subprocess_flags())
         if r.returncode != 0: return {}
         d   = json.loads(r.stdout or "{}")
+        if not isinstance(d, dict):
+            return {}
         fmt = d.get("format", {})
+        if not isinstance(fmt, dict):
+            fmt = {}
         info = {
             "filename"    : Path(filepath).name,
             "filepath"    : filepath,
@@ -2571,7 +2575,12 @@ def probe(filepath):
             "timecode"    : "",
             "format_short": Path(filepath).suffix.upper().lstrip(".")
         }
-        for s in d.get("streams", []):
+        streams = d.get("streams", [])
+        if not isinstance(streams, list):
+            streams = []
+        for s in streams:
+            if not isinstance(s, dict):
+                continue
             if s.get("codec_type") == "video":
                 info["codec"]  = s.get("codec_name", "").upper()
                 info["width"]  = _probe_safe_count(s.get("width", 0))
@@ -2583,13 +2592,19 @@ def probe(filepath):
                     if fps_raw > 0 and math.isfinite(fps_raw):
                         info["fps"] = round(fps_raw, 3)
                 except Exception as e: log.debug(f'fps parse: {e}')
-                tc = s.get("tags", {}).get("timecode", "")
+                tags = s.get("tags", {})
+                if not isinstance(tags, dict):
+                    tags = {}
+                tc = tags.get("timecode", "")
                 if tc: info["timecode"] = tc
             elif s.get("codec_type") == "audio":
                 info["channels"] += _probe_safe_count(s.get("channels", 0))
                 info["audio_stream_count"] += 1
         if not info["timecode"]:
-            info["timecode"] = fmt.get("tags", {}).get("timecode", "")
+            tags = fmt.get("tags", {})
+            if not isinstance(tags, dict):
+                tags = {}
+            info["timecode"] = tags.get("timecode", "")
         fps = info["fps"]
         info["df"] = is_df_fps(fps)
         if info["width"] >= 3840 and abs(fps-60) < 1:

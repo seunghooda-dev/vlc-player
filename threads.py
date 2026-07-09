@@ -676,7 +676,13 @@ class AudioAnalyzeThread(QThread):
                 creationflags=_hidden_flags())
             audio_streams = []
             try:
-                for st in _json.loads(pr.stdout or "{}").get('streams',[]):
+                probe_data = _json.loads(pr.stdout or "{}")
+                streams = probe_data.get('streams', []) if isinstance(probe_data, dict) else []
+                if not isinstance(streams, list):
+                    streams = []
+                for st in streams:
+                    if not isinstance(st, dict):
+                        continue
                     if st.get('codec_type') == 'audio':
                         audio_streams.append(max(1, _safe_int(st.get('channels', 1), 1)))
             except Exception as e: log.debug(f'audio ch parse: {e}')
