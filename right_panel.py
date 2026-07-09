@@ -35,6 +35,7 @@ from meters      import mk_label
 
 FILE_ITEM_HTML_ROLE = Qt.ItemDataRole.UserRole.value + 10
 FILE_ITEM_PLAIN_ROLE = Qt.ItemDataRole.UserRole.value + 11
+QC_SEEK_EPSILON_SEC = 0.005
 FILE_FILTER_KEYS = ('all', 'done', 'attention', 'pending', 'issues', 'black', 'mute', 'freeze', 'error', 'normal')
 FILE_FILTER_LABELS = {
     'all': '전체',
@@ -2426,7 +2427,7 @@ class RightPanel(QWidget):
             return None
         current = _safe_float(current_sec, 0.0)
         for start in starts:
-            if start > current + 0.05:
+            if start > current + QC_SEEK_EPSILON_SEC:
                 return start
         return starts[0]
 
@@ -2436,7 +2437,7 @@ class RightPanel(QWidget):
             return None
         current = _safe_float(current_sec, 0.0)
         for start in reversed(starts):
-            if start < current - 0.05:
+            if start < current - QC_SEEK_EPSILON_SEC:
                 return start
         return starts[-1]
 
@@ -2467,7 +2468,7 @@ class RightPanel(QWidget):
             self.vp.status_changed.emit(f"  확인할 문제 구간이 없습니다 — {self._path_name(fp)}")
             return False
         self.seek_requested.emit(float(target))
-        if target <= current_sec + 0.05:
+        if target <= current_sec + QC_SEEK_EPSILON_SEC:
             self.vp.status_changed.emit(f"  마지막 이후라 첫 문제 구간으로 이동 — {target:.3f}s")
         else:
             self.vp.status_changed.emit(f"  다음 문제 구간으로 이동 — {target:.3f}s")
@@ -2487,7 +2488,7 @@ class RightPanel(QWidget):
             self.vp.status_changed.emit(f"  확인할 문제 구간이 없습니다 — {self._path_name(fp)}")
             return False
         self.seek_requested.emit(float(target))
-        if target >= current_sec - 0.05:
+        if target >= current_sec - QC_SEEK_EPSILON_SEC:
             self.vp.status_changed.emit(f"  첫 문제 이전이라 마지막 문제 구간으로 이동 — {target:.3f}s")
         else:
             self.vp.status_changed.emit(f"  이전 문제 구간으로 이동 — {target:.3f}s")

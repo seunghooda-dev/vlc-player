@@ -1174,6 +1174,17 @@ def check_core_logic():
         )
         if abs((next_issue_time or 0) - 3.0) > 0.0001:
             errors.append(f"  FAIL next QC issue seek time: {next_issue_time}")
+        adjacent_next_issue_time = RightPanel._next_qc_issue_seek_time(
+            SummaryCopyProbe(),
+            {
+                'black_ranges': [{'start': 1.0}],
+                'mute_ranges': [{'start': 1.034}],
+                'freeze_ranges': [{'start': 1.067}],
+            },
+            1.0,
+        )
+        if abs((adjacent_next_issue_time or 0) - 1.034) > 0.0001:
+            errors.append(f"  FAIL adjacent-frame next QC issue seek time: {adjacent_next_issue_time}")
         wrap_issue_time = RightPanel._next_qc_issue_seek_time(
             SummaryCopyProbe(),
             {
@@ -1196,6 +1207,17 @@ def check_core_logic():
         )
         if abs((prev_issue_time or 0) - 3.0) > 0.0001:
             errors.append(f"  FAIL previous QC issue seek time: {prev_issue_time}")
+        adjacent_prev_issue_time = RightPanel._previous_qc_issue_seek_time(
+            SummaryCopyProbe(),
+            {
+                'black_ranges': [{'start': 1.0}],
+                'mute_ranges': [{'start': 1.034}],
+                'freeze_ranges': [{'start': 1.067}],
+            },
+            1.034,
+        )
+        if abs((adjacent_prev_issue_time or 0) - 1.0) > 0.0001:
+            errors.append(f"  FAIL adjacent-frame previous QC issue seek time: {adjacent_prev_issue_time}")
         prev_wrap_issue_time = RightPanel._previous_qc_issue_seek_time(
             SummaryCopyProbe(),
             {
