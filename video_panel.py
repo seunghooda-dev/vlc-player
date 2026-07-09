@@ -2129,10 +2129,14 @@ class VideoPanel(QWidget):
                 self.cur_info = {}
         self.clip_list.clear()
         for f in self._files:
+            fp = f.get("filepath", "")
+            name = str(f.get("name") or (Path(fp).name if fp else "파일"))
+            ext = str(f.get("ext") or Path(fp).suffix.upper().lstrip(".") or "-")
+            size_mb = max(0, self._safe_int_value(f.get("size", 0), 0)) // 1024 // 1024
             item = QListWidgetItem(
-                f"  {f['name']}  —  {f['ext']}  {f['size']//1024//1024}MB"
+                f"  {name}  —  {ext}  {size_mb}MB"
             )
-            item.setData(Qt.ItemDataRole.UserRole, f["filepath"])
+            item.setData(Qt.ItemDataRole.UserRole, fp)
             self.clip_list.addItem(item)
         # Explorer도 항상 동기화
         if hasattr(self, '_right_panel'):

@@ -1020,7 +1020,7 @@ class RightPanel(QWidget):
             btn.setChecked(key == getattr(self, '_filter_key', 'all'))
 
         # 경로 표시: CUE 파일 기준, 없으면 첫 번째 파일 기준
-        base_fp = cue_fp or (all_files[0]["filepath"] if all_files else "")
+        base_fp = cue_fp or (all_files[0].get("filepath", "") if all_files else "")
         summary = self._status_summary_text(all_files)
         if base_fp:
             self.exp_path.setText(
@@ -1033,7 +1033,7 @@ class RightPanel(QWidget):
         sort_key = getattr(self, '_sort_key', 'name')
         sort_asc = getattr(self, '_sort_asc', True)
         if sort_key == 'name':
-            files = sorted(files, key=lambda x: x['name'].lower(), reverse=not sort_asc)
+            files = sorted(files, key=lambda x: _safe_text(x.get('name'), '').lower(), reverse=not sort_asc)
         elif sort_key == 'size':
             files = sorted(files, key=lambda x: x.get('size', 0), reverse=not sort_asc)
         # 'added' 는 원래 순서 유지 (reverse만 적용)
@@ -1041,20 +1041,22 @@ class RightPanel(QWidget):
             files = files if sort_asc else list(reversed(files))
 
         for f in files:
-            is_cue = (f["filepath"] == cue_fp)
+            fp = f.get("filepath", "")
+            name = _safe_text(f.get("name"), Path(fp).name if fp else "파일")
+            is_cue = (fp == cue_fp)
             prefix = "▶  " if is_cue else ""
             badge, badge_color = self._file_status_badge(f, is_cue)
             detail = self._file_status_detail(f)
-            item_text = f"{prefix}{f['name']}\nQC: {badge}    {detail}"
+            item_text = f"{prefix}{name}\nQC: {badge}    {detail}"
             item = QListWidgetItem(item_text)
             item.setData(FILE_ITEM_PLAIN_ROLE, item_text)
             item.setData(FILE_ITEM_HTML_ROLE, self._file_item_html(f, prefix, badge, badge_color))
             item.setSizeHint(QSize(0, self._file_item_height(item_text)))
-            item.setData(Qt.ItemDataRole.UserRole, f["filepath"])
+            item.setData(Qt.ItemDataRole.UserRole, fp)
             updated = f.get("qc_updated_at") or "-"
             item.setToolTip(
-                f"{Path(f['filepath']).name}\n"
-                f"QC 상태: {badge}\n{detail}\n갱신: {updated}\n{f['filepath']}"
+                f"{name}\n"
+                f"QC 상태: {badge}\n{detail}\n갱신: {updated}\n{fp}"
             )
             if is_cue and badge not in ("블랙 있음", "무음 있음", "블랙/무음", "검사 오류"):
                 item.setForeground(QColor(badge_color))
