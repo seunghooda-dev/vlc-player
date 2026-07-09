@@ -731,12 +731,19 @@ class RightPanel(QWidget):
         return 'DF' if bool(df) else 'NDF'
 
     @staticmethod
+    def _is_ntsc_drop_frame_rate(fps):
+        fps = _safe_float(fps, 0.0)
+        return abs(fps - (30000 / 1001)) < 0.01 or abs(fps - (60000 / 1001)) < 0.02
+
+    @staticmethod
     def _is_standard_playback_resolution(width, height):
         width = _safe_int(width, 0)
         height = _safe_int(height, 0)
         return (width, height) in ((1920, 1080), (3840, 2160))
 
     def _metadata_qc_summary(self, info, filepath=''):
+        if not isinstance(info, dict):
+            info = {}
         issues = []
         path_text = self._file_path_text(filepath or info.get('filepath', '') or '')
         try:
@@ -748,6 +755,9 @@ class RightPanel(QWidget):
             issues.append('파일 접근 불가')
         if ext and f'.{ext}' not in VIDEO_EXTS:
             issues.append('지원 형식 아님')
+        if not info:
+            issues.append('메타데이터 확인 실패')
+            return '확인 필요', issues
         width = _safe_int(info.get('width', 0), 0)
         height = _safe_int(info.get('height', 0), 0)
         if not width or not height:
@@ -759,7 +769,7 @@ class RightPanel(QWidget):
             issues.append('FPS 정보 없음')
         elif not self._is_common_playback_fps(fps):
             issues.append(f'FPS 확인({fps:.3f})')
-        elif abs(fps - 29.97) < 0.08 or abs(fps - 59.94) < 0.12:
+        elif self._is_ntsc_drop_frame_rate(fps):
             if not bool(info.get('df')):
                 issues.append('DF 타임코드 아님')
         duration = _safe_float(info.get('duration', 0), 0.0)
