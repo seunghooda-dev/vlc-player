@@ -301,6 +301,25 @@ def check_core_logic():
         if selected_report_names != ['selected-only.mxf']:
             errors.append(f"  FAIL selected report scope: {selected_report_names}")
 
+        class FilteredReportProbe(Probe):
+            _sort_key = 'name'
+            _sort_asc = True
+            _filter_key = 'issues'
+            _iter_report_files = RightPanel._iter_report_files
+            _file_matches_filter = RightPanel._file_matches_filter
+            def _file_records(self):
+                return [
+                    {'name': 'clean.mxf', 'black': 'ok', 'mute': 'ok', 'freeze': ''},
+                    {'name': 'bad-b.mxf', 'black': 'ok', 'mute': 'found', 'freeze': ''},
+                    {'name': 'bad-a.mxf', 'black': 'found', 'mute': 'ok', 'freeze': ''},
+                ]
+
+        filtered_report_names = [
+            f.get('name') for f in RightPanel._filtered_file_records(FilteredReportProbe())
+        ]
+        if filtered_report_names != ['bad-a.mxf', 'bad-b.mxf']:
+            errors.append(f"  FAIL filtered report scope: {filtered_report_names}")
+
         class RemoveProbe(Probe):
             _is_video_file_path = staticmethod(RightPanel._is_video_file_path)
             _same_path_text = staticmethod(RightPanel._same_path_text)

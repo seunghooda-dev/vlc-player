@@ -896,6 +896,13 @@ class RightPanel(QWidget):
             files = list(reversed(files))
         return files
 
+    def _filtered_file_records(self):
+        files = [
+            f for f in self._file_records()
+            if self._file_matches_filter(f)
+        ]
+        return self._iter_report_files(files)
+
     @staticmethod
     def _file_path_text(value):
         try:
@@ -1441,8 +1448,10 @@ class RightPanel(QWidget):
         menu = QMenu(self.exp_list)
         menu.setStyleSheet(self._menu_style())
         act_cue = act_del = act_relink = act_open_location = act_copy_path = None
-        act_export_one = act_reset_qc = act_clean_unavailable = None
+        act_export_visible = act_export_one = act_reset_qc = act_clean_unavailable = None
         record = self._file_record_for_path(fp)
+        visible_files = self._filtered_file_records()
+        all_files = self._file_records()
         if fp:
             if self._file_unavailable_badge(fp):
                 act_relink = menu.addAction("↻   파일 다시 연결")
@@ -1450,6 +1459,11 @@ class RightPanel(QWidget):
             act_cue = menu.addAction("▶   CUE  —  화면에 올리기")
             act_open_location = menu.addAction("📁   폴더 열기")
             act_copy_path = menu.addAction("⧉   경로 복사")
+            if visible_files and (
+                getattr(self, '_filter_key', 'all') != 'all'
+                or len(visible_files) != len(all_files)
+            ):
+                act_export_visible = menu.addAction(f"▣   표시 목록 리포트 저장 ({len(visible_files)}개)")
             if record:
                 act_export_one = menu.addAction("▣   선택 파일 리포트 저장")
             if self._has_qc_result(record):
@@ -1484,6 +1498,11 @@ class RightPanel(QWidget):
             self._open_file_location(fp)
         elif action == act_copy_path:
             self._copy_file_path(fp)
+        elif action == act_export_visible:
+            self._export_qc_report(
+                visible_files,
+                default_prefix=f"qc-visible-{getattr(self, '_filter_key', 'all')}",
+            )
         elif action == act_export_one:
             if record:
                 self._export_qc_report([record], default_prefix='qc-selected')
