@@ -512,6 +512,7 @@ class RightPanel(QWidget):
             'attention_count': len(attention_files),
             'latest_report': latest_report,
             'latest_report_name': self._path_name(latest_report, '최근 리포트 없음'),
+            'visible_label': self._filter_label(),
             'show_visible': (
                 getattr(self, '_filter_key', 'all') != 'all'
                 or len(visible_files) != len(all_files)
@@ -530,7 +531,9 @@ class RightPanel(QWidget):
         act_copy_issues.setEnabled(state['attention_count'] > 0)
         act_visible = None
         if state['show_visible']:
-            act_visible = menu.addAction(f"▣   표시 목록 리포트 저장 ({state['visible_count']}개)")
+            act_visible = menu.addAction(
+                f"▣   표시 목록 리포트 저장 ({state['visible_count']}개 · {state['visible_label']})"
+            )
             act_visible.setEnabled(state['visible_count'] > 0)
         menu.addSeparator()
         act_latest = menu.addAction(f"↗   최근 리포트 열기 — {state['latest_report_name']}")
@@ -2363,7 +2366,9 @@ class RightPanel(QWidget):
                 getattr(self, '_filter_key', 'all') != 'all'
                 or len(visible_files) != len(all_files)
             ):
-                act_export_visible = menu.addAction(f"▣   표시 목록 리포트 저장 ({len(visible_files)}개)")
+                act_export_visible = menu.addAction(
+                    f"▣   표시 목록 리포트 저장 ({len(visible_files)}개 · {self._filter_label()})"
+                )
             if record:
                 act_export_one = menu.addAction("▣   선택 파일 리포트 저장")
             if self._has_qc_result(record):

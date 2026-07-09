@@ -457,6 +457,7 @@ def check_core_logic():
             _attention_file_records = RightPanel._attention_file_records
             _file_needs_report_attention = staticmethod(RightPanel._file_needs_report_attention)
             _file_matches_filter = RightPanel._file_matches_filter
+            _filter_label = RightPanel._filter_label
             _report_menu_state = RightPanel._report_menu_state
             _path_name = staticmethod(RightPanel._path_name)
             def _latest_report_path(self):
@@ -496,6 +497,8 @@ def check_core_logic():
             errors.append(f"  FAIL report menu filter restore: {getattr(report_probe, '_filter_key', '')}")
         if not report_menu_state.get('show_visible'):
             errors.append(f"  FAIL report menu visible scope: {report_menu_state}")
+        if report_menu_state.get('visible_label') != '문제':
+            errors.append(f"  FAIL report menu visible label: {report_menu_state}")
         if report_menu_state.get('latest_report_name') != 'latest.csv':
             errors.append(f"  FAIL report menu latest name: {report_menu_state}")
         with tempfile.TemporaryDirectory() as tmp_dir:
