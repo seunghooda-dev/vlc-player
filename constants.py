@@ -1175,6 +1175,8 @@ DEFAULT_SETTINGS = {
     'black_threshold': '32',
     'mute_threshold': '-50',
     'mute_duration': '1.0',
+    'freeze_noise': '-60',
+    'freeze_duration': '1.0',
     'last_dir': 'C:/',
     'recent_files': [],
     'recent_dirs': [],
@@ -1219,6 +1221,21 @@ def _settings_float(value, default, min_value=None, max_value=None):
     if max_value is not None:
         n = min(float(max_value), n)
     return n
+
+def _settings_int_str(value, default, min_value, max_value):
+    return str(_settings_int(value, default, min_value, max_value))
+
+def _settings_float_str(value, default, min_value, max_value):
+    return f'{_settings_float(value, default, min_value, max_value):g}'
+
+def _settings_db_str(value, default):
+    try:
+        n = float(value)
+    except Exception:
+        n = float(default)
+    if n > 0:
+        n = float(default)
+    return f'{max(-120.0, min(0.0, n)):g}'
 
 def _settings_str_list(value, default, limit=50):
     if isinstance(value, (str, bytes)) or not isinstance(value, (list, tuple)):
@@ -1265,8 +1282,24 @@ def _normalize_settings(data):
         normalized.get('playback_rate'), DEFAULT_SETTINGS['playback_rate'], 0.5, 2.0
     )
     normalized['audio_channels'] = _settings_audio_channels(normalized.get('audio_channels'))
-    for key in ('black_amount', 'black_threshold', 'mute_threshold', 'mute_duration'):
-        normalized[key] = _settings_str(normalized.get(key), DEFAULT_SETTINGS[key])
+    normalized['black_amount'] = _settings_int_str(
+        normalized.get('black_amount'), DEFAULT_SETTINGS['black_amount'], 1, 100
+    )
+    normalized['black_threshold'] = _settings_int_str(
+        normalized.get('black_threshold'), DEFAULT_SETTINGS['black_threshold'], 0, 255
+    )
+    normalized['mute_threshold'] = _settings_db_str(
+        normalized.get('mute_threshold'), DEFAULT_SETTINGS['mute_threshold']
+    )
+    normalized['mute_duration'] = _settings_float_str(
+        normalized.get('mute_duration'), DEFAULT_SETTINGS['mute_duration'], 0.1, 3600.0
+    )
+    normalized['freeze_noise'] = _settings_db_str(
+        normalized.get('freeze_noise'), DEFAULT_SETTINGS['freeze_noise']
+    )
+    normalized['freeze_duration'] = _settings_float_str(
+        normalized.get('freeze_duration'), DEFAULT_SETTINGS['freeze_duration'], 0.1, 3600.0
+    )
     normalized['last_dir'] = _settings_str(normalized.get('last_dir'), DEFAULT_SETTINGS['last_dir'])
     normalized['recent_files'] = _settings_str_list(
         normalized.get('recent_files'), DEFAULT_SETTINGS['recent_files'], limit=50
