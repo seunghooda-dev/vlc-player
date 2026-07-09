@@ -1105,6 +1105,19 @@ def check_core_logic():
         )
         if meter_stereo != 2:
             errors.append(f"  FAIL meter stereo channel count: {meter_stereo}")
+        class ChannelControlProbe:
+            _safe_int_value = staticmethod(VideoPanel._safe_int_value)
+            cur_info = {}
+            cur_file = 'C:/qc/pending_metadata.mxf'
+            _selected_chs = [1, 2]
+        pending_channel_controls = VideoPanel._audio_channel_control_count(ChannelControlProbe())
+        if pending_channel_controls != 2:
+            errors.append(f"  FAIL pending metadata channel controls: {pending_channel_controls}")
+        ready_channel_controls = VideoPanel._audio_channel_control_count(
+            ChannelControlProbe(), {'audio_stream_count': 8, 'channels': 1}
+        )
+        if ready_channel_controls != 8:
+            errors.append(f"  FAIL ready metadata channel controls: {ready_channel_controls}")
 
         required_video_exts = {'.mxf', '.mp4'}
         missing_video_exts = sorted(required_video_exts - set(VIDEO_EXTS))

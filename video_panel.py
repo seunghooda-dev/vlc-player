@@ -1541,6 +1541,16 @@ class VideoPanel(QWidget):
             count = self._safe_int_value(fallback, 2)
         return max(1, min(8, count))
 
+    def _audio_channel_control_count(self, info=None):
+        info = info or getattr(self, 'cur_info', {}) or {}
+        streams = max(0, self._safe_int_value(info.get('audio_stream_count', 0), 0))
+        channels = max(0, self._safe_int_value(info.get('channels', 0), 0))
+        count = max(streams, channels)
+        if count <= 0 and getattr(self, 'cur_file', None):
+            selected = getattr(self, '_selected_chs', []) or [1, 2]
+            count = max(2, max((self._safe_int_value(ch, 0) for ch in selected), default=0))
+        return max(0, min(8, count))
+
     @staticmethod
     def _settings_entries(value):
         if isinstance(value, (str, bytes)):
@@ -2767,10 +2777,7 @@ class VideoPanel(QWidget):
                 btn.setEnabled(enabled)
         for btn in getattr(self, '_speed_btns', {}).values():
             btn.setEnabled(enabled)
-        stream_count = max(
-            max(0, self._safe_int_value(self.cur_info.get('audio_stream_count', 0), 0)),
-            max(0, self._safe_int_value(self.cur_info.get('channels', 0), 0)),
-        )
+        stream_count = self._audio_channel_control_count()
         for cb, ch_no in getattr(self, '_ch_checks', []):
             cb.setEnabled(enabled and stream_count > 0 and ch_no <= stream_count)
         has_file = bool(self.cur_file)
