@@ -518,6 +518,10 @@ class RightPanel(QWidget):
         return '미분석'
 
     def _file_status_badge(self, f, is_cue=False):
+        f = f or {}
+        unavailable = RightPanel._file_unavailable_badge(f.get("filepath"))
+        if unavailable:
+            return unavailable, C['red']
         analysis = f.get("analysis")
         if analysis == "black":
             return "블랙 검사중", C['yellow']
@@ -573,8 +577,10 @@ class RightPanel(QWidget):
         return safe
 
     def _file_item_html(self, f, prefix, badge, badge_color):
+        f = f or {}
         issue = (
-            str(f.get("black") or '').lower() in ('found', 'error')
+            bool(RightPanel._file_unavailable_badge(f.get("filepath")))
+            or str(f.get("black") or '').lower() in ('found', 'error')
             or str(f.get("mute") or '').lower() in ('found', 'error')
             or str(f.get("freeze") or '').lower() in ('found', 'error')
         )
@@ -591,9 +597,13 @@ class RightPanel(QWidget):
         )
 
     def _file_matches_filter(self, f):
+        f = f or {}
         key = getattr(self, '_filter_key', 'all')
         if key == 'all':
             return True
+        unavailable = bool(RightPanel._file_unavailable_badge(f.get('filepath')))
+        if unavailable:
+            return key in ('issues', 'error')
         black = str(f.get('black') or '').lower()
         mute = str(f.get('mute') or '').lower()
         freeze = str(f.get('freeze') or '').lower()
@@ -640,8 +650,12 @@ class RightPanel(QWidget):
             'both': 0,
             'error': 0,
             'pending': 0,
+            'missing': 0,
         }
         for f in files:
+            if RightPanel._file_unavailable_badge((f or {}).get('filepath')):
+                counts['missing'] += 1
+                continue
             black = str(f.get('black') or '').lower()
             mute = str(f.get('mute') or '').lower()
             freeze = str(f.get('freeze') or '').lower()
@@ -700,6 +714,10 @@ class RightPanel(QWidget):
             "프리즈 있음": 0,
             "복합 문제": 0,
             "검사 오류": 0,
+            "파일 없음": 0,
+            "파일 아님": 0,
+            "지원 안함": 0,
+            "접근 불가": 0,
             "검사중": 0,
         }
         for f in files:
@@ -715,7 +733,12 @@ class RightPanel(QWidget):
             elif badge in ("CUE", "재생중"):
                 counts["미분석"] += 1
         parts = [f"파일 {len(files)}"]
-        for key in ("정상", "블랙/무음 정상", "블랙 있음", "무음 있음", "프리즈 있음", "블랙/무음", "복합 문제", "검사 오류", "검사중", "미분석"):
+        for key in (
+            "정상", "블랙/무음 정상", "블랙 있음", "무음 있음", "프리즈 있음",
+            "블랙/무음", "복합 문제", "검사 오류",
+            "파일 없음", "파일 아님", "지원 안함", "접근 불가",
+            "검사중", "미분석",
+        ):
             if counts.get(key):
                 parts.append(f"{key} {counts[key]}")
         return " | ".join(parts)
@@ -821,6 +844,9 @@ class RightPanel(QWidget):
     def _qc_summary_for_report(self, f, fallback=''):
         if not isinstance(f, dict):
             return fallback or '미분석'
+        unavailable = RightPanel._file_unavailable_badge(f.get('filepath'))
+        if unavailable:
+            return unavailable
         return qc_summary_from_status(f.get('black'), f.get('mute'), f.get('freeze')) or '미분석'
 
     def _metadata_for_report(self, fp, p_name=''):
@@ -914,6 +940,23 @@ class RightPanel(QWidget):
             return p.exists() and p.is_file() and p.suffix.lower() in VIDEO_EXTS
         except Exception:
             return False
+
+    @classmethod
+    def _file_unavailable_badge(cls, value):
+        text = cls._file_path_text(value)
+        if not text:
+            return ''
+        try:
+            p = Path(text)
+            if not p.exists():
+                return '파일 없음'
+            if not p.is_file():
+                return '파일 아님'
+            if p.suffix.lower() not in VIDEO_EXTS:
+                return '지원 안함'
+            return ''
+        except Exception:
+            return '접근 불가'
 
     def _current_video_file(self):
         fp = self._file_path_text(getattr(self.vp, 'cur_file', ''))
@@ -2063,12 +2106,16 @@ class RightPanel(QWidget):
                 log.warning(f'batch qc auto report failed: {e}')
         suffix = f" / 리포트 {Path(report).name}" if report else ""
         counts = self._batch_summary_counts(self._file_records())
-        issue_total = counts['black'] + counts['mute'] + counts['freeze'] + counts['both'] + counts['error']
+        issue_total = (
+            counts['black'] + counts['mute'] + counts['freeze']
+            + counts['both'] + counts['error'] + counts.get('missing', 0)
+        )
         summary = (
             f"일괄 검수 완료 | 총 {total} | 정상 {counts['normal']} | "
             f"블랙/무음 정상 {counts['partial_normal']} | "
             f"블랙 {counts['black']} | 무음 {counts['mute']} | 프리즈 {counts['freeze']} | "
-            f"복합 {counts['both']} | 오류 {counts['error']} | 미분석 {counts['pending']} | {elapsed:.1f}초"
+            f"복합 {counts['both']} | 오류 {counts['error']} | 파일없음 {counts.get('missing', 0)} | "
+            f"미분석 {counts['pending']} | {elapsed:.1f}초"
         )
         self._set_batch_summary_panel(summary + suffix, issues=issue_total > 0)
         self.exp_path.setText(f"✓ {summary}{suffix}")
@@ -2077,7 +2124,8 @@ class RightPanel(QWidget):
             f"batch qc finished files={total} elapsed={elapsed:.1f}s "
             f"normal={counts['normal']} partial_normal={counts['partial_normal']} "
             f"black={counts['black']} mute={counts['mute']} "
-            f"freeze={counts['freeze']} complex={counts['both']} error={counts['error']} pending={counts['pending']}"
+            f"freeze={counts['freeze']} complex={counts['both']} "
+            f"error={counts['error']} missing={counts.get('missing', 0)} pending={counts['pending']}"
         )
         record_state_event(
             'batch-qc',
@@ -2091,6 +2139,7 @@ class RightPanel(QWidget):
             freeze=counts['freeze'],
             complex=counts['both'],
             error=counts['error'],
+            missing=counts.get('missing', 0),
             pending=counts['pending'],
             report=str(report or ''),
         )

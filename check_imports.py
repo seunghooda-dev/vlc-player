@@ -168,9 +168,10 @@ def check_core_logic():
             {'black': 'found', 'mute': 'found', 'freeze': ''},
             {'black': 'ok', 'mute': 'error', 'freeze': ''},
             {'black': '', 'mute': '', 'freeze': ''},
+            {'filepath': 'C:/missing/file_not_available.mxf', 'black': 'ok', 'mute': 'ok', 'freeze': 'ok'},
         ])
         expected_qc_counts = {
-            'total': 6,
+            'total': 7,
             'normal': 1,
             'partial_normal': 1,
             'black': 2,
@@ -179,6 +180,7 @@ def check_core_logic():
             'both': 2,
             'error': 1,
             'pending': 1,
+            'missing': 1,
         }
         for key, expected in expected_qc_counts.items():
             if qc_counts.get(key) != expected:
@@ -188,6 +190,7 @@ def check_core_logic():
             {'black': 'ok', 'mute': 'ok', 'freeze': ''},
             {'black': 'found', 'mute': 'found', 'freeze': ''},
             {'black': 'found', 'mute': 'ok', 'freeze': 'found'},
+            {'filepath': 'C:/missing/file_not_available.mxf', 'black': 'ok', 'mute': 'ok', 'freeze': 'ok'},
         ])
         if "정상 1" not in status_summary:
             errors.append(f"  FAIL status summary normal count: {status_summary}")
@@ -197,11 +200,14 @@ def check_core_logic():
             errors.append(f"  FAIL status summary black/mute count: {status_summary}")
         if "복합 문제 1" not in status_summary:
             errors.append(f"  FAIL status summary complex count: {status_summary}")
+        if "파일 없음 1" not in status_summary:
+            errors.append(f"  FAIL status summary missing-file count: {status_summary}")
         badge_cases = [
             ({'black': 'ok', 'mute': 'ok', 'freeze': ''}, '블랙/무음 정상', 'partial badge'),
             ({'black': 'ok', 'mute': 'ok', 'freeze': 'ok'}, '정상', 'normal badge'),
             ({'black': 'found', 'mute': 'ok', 'freeze': 'found'}, '블랙/프리즈 있음', 'multi issue badge'),
             ({'black': 'ok', 'mute': 'error', 'freeze': ''}, '검사 오류', 'error badge'),
+            ({'filepath': 'C:/missing/file_not_available.mxf', 'black': 'ok', 'mute': 'ok', 'freeze': 'ok'}, '파일 없음', 'missing-file badge'),
         ]
         for file_state, expected, label in badge_cases:
             actual, _ = RightPanel._file_status_badge(Probe(), file_state)
@@ -218,8 +224,12 @@ def check_core_logic():
             ('pending', {'black': 'error', 'mute': 'ok', 'freeze': ''}, False, 'pending excludes completed error state'),
             ('issues', {'black': 'ok', 'mute': 'error', 'freeze': ''}, True, 'issues includes error'),
             ('issues', {'black': 'ok', 'mute': 'ok', 'freeze': ''}, False, 'issues excludes clean partial normal'),
+            ('issues', {'filepath': 'C:/missing/file_not_available.mxf', 'black': 'ok', 'mute': 'ok', 'freeze': 'ok'}, True, 'issues includes missing file'),
             ('freeze', {'black': 'ok', 'mute': 'ok', 'freeze': 'found'}, True, 'freeze filter includes freeze issue'),
             ('error', {'black': 'ok', 'mute': 'error', 'freeze': 'found'}, True, 'error filter includes any error'),
+            ('error', {'filepath': 'C:/missing/file_not_available.mxf', 'black': 'ok', 'mute': 'ok', 'freeze': 'ok'}, True, 'error filter includes missing file'),
+            ('normal', {'filepath': 'C:/missing/file_not_available.mxf', 'black': 'ok', 'mute': 'ok', 'freeze': 'ok'}, False, 'normal excludes missing file'),
+            ('pending', {'filepath': 'C:/missing/file_not_available.mxf', 'black': '', 'mute': '', 'freeze': ''}, False, 'pending excludes missing file'),
         ]
         for key, file_state, expected, label in filter_cases:
             actual = RightPanel._file_matches_filter(FilterProbe(key), file_state)
@@ -257,6 +267,13 @@ def check_core_logic():
         )
         if pending_report_summary != '미분석':
             errors.append(f"  FAIL report pending QC summary: {pending_report_summary}")
+        missing_report_summary = RightPanel._qc_summary_for_report(
+            Probe(),
+            {'filepath': 'C:/missing/file_not_available.mxf', 'black': 'ok', 'mute': 'ok', 'freeze': 'ok'},
+            '정상',
+        )
+        if missing_report_summary != '파일 없음':
+            errors.append(f"  FAIL report missing-file QC summary: {missing_report_summary}")
         if RightPanel._metadata_for_report(MissingFileProbe(), 'C:/missing/sample.mxf', 'sample.mxf') != ({}, ''):
             errors.append("  FAIL report metadata missing-file guard")
 
