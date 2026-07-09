@@ -35,7 +35,7 @@ from meters      import mk_label
 
 FILE_ITEM_HTML_ROLE = Qt.ItemDataRole.UserRole.value + 10
 FILE_ITEM_PLAIN_ROLE = Qt.ItemDataRole.UserRole.value + 11
-FILE_FILTER_KEYS = ('all', 'done', 'issues', 'black', 'mute', 'freeze', 'error', 'normal')
+FILE_FILTER_KEYS = ('all', 'done', 'pending', 'issues', 'black', 'mute', 'freeze', 'error', 'normal')
 
 
 def _safe_float(value, default=0.0):
@@ -276,6 +276,7 @@ class RightPanel(QWidget):
         for key, label, tip in [
             ('all', '전체', '모든 파일 보기'),
             ('done', '완료', '일괄 검수 기준인 블랙/무음 검사가 완료된 파일만 보기'),
+            ('pending', '미분석', '블랙/무음 검사가 아직 완료되지 않은 파일만 보기'),
             ('issues', '문제', '블랙/무음/프리즈 발견 또는 검사 오류가 있는 파일만 보기'),
             ('black', '블랙', '블랙 구간이 발견된 파일만 보기'),
             ('mute', '무음', '무음 구간이 발견된 파일만 보기'),
@@ -598,6 +599,8 @@ class RightPanel(QWidget):
         freeze = str(f.get('freeze') or '').lower()
         if key == 'done':
             return black in ('ok', 'found') and mute in ('ok', 'found')
+        if key == 'pending':
+            return black not in ('ok', 'found', 'error') or mute not in ('ok', 'found', 'error')
         if key == 'issues':
             return black in ('found', 'error') or mute in ('found', 'error') or freeze in ('found', 'error')
         if key == 'black':
@@ -616,6 +619,7 @@ class RightPanel(QWidget):
         return {
             'all': '전체',
             'done': '완료',
+            'pending': '미분석',
             'issues': '문제',
             'black': '블랙',
             'mute': '무음',
