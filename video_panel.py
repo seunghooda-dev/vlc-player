@@ -1727,12 +1727,16 @@ class VideoPanel(QWidget):
     def _add_file_to_list(self, filepath):
         if not filepath or not Path(filepath).exists():
             return False
-        if filepath not in [x["filepath"] for x in self._files]:
+        existing_paths = {str(x.get("filepath", "")) for x in self._file_records()}
+        if str(filepath) not in existing_paths:
             self._files.append(self._new_file_record(filepath))
             self._remember_recent_file(filepath)
             return True
         self._remember_recent_file(filepath)
         return False
+
+    def _file_records(self):
+        return [f for f in (getattr(self, '_files', []) or []) if isinstance(f, dict)]
 
     def _new_file_record(self, filepath):
         p = Path(filepath)
@@ -1760,7 +1764,7 @@ class VideoPanel(QWidget):
         }
 
     def _file_entry(self, filepath):
-        for item in self._files:
+        for item in self._file_records():
             if item.get("filepath") == filepath:
                 item.setdefault("cue", False)
                 item.setdefault("playing", False)
@@ -2112,7 +2116,12 @@ class VideoPanel(QWidget):
     def _refresh_clip_list(self):
         existing = []
         removed = []
-        for f in self._files:
+        raw_files = list(getattr(self, '_files', []) or [])
+        records = [f for f in raw_files if isinstance(f, dict)]
+        invalid_count = len(raw_files) - len(records)
+        if invalid_count:
+            removed.append(f"invalid record x{invalid_count}")
+        for f in records:
             fp = f.get("filepath")
             try:
                 if fp and Path(fp).exists():
@@ -2128,7 +2137,7 @@ class VideoPanel(QWidget):
                 self.cur_file = None
                 self.cur_info = {}
         self.clip_list.clear()
-        for f in self._files:
+        for f in self._file_records():
             fp = f.get("filepath", "")
             name = str(f.get("name") or (Path(fp).name if fp else "파일"))
             ext = str(f.get("ext") or Path(fp).suffix.upper().lstrip(".") or "-")
