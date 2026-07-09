@@ -107,6 +107,8 @@ def check_core_logic():
     errors = []
     try:
         from right_panel import RightPanel
+        from constants import DEFAULT_SETTINGS, _normalize_settings
+        from video_panel import AudioMixPlayer
     except Exception as e:
         return [f"  FAIL core logic import: {e}"]
 
@@ -148,6 +150,20 @@ def check_core_logic():
         status, issues = RightPanel._metadata_qc_summary(Probe(), dict(base, fps=29.97, df=False), '')
         if 'DF 타임코드 아님' not in issues:
             errors.append(f"  FAIL 29.97 NDF detection: {status} / {issues}")
+
+        if DEFAULT_SETTINGS.get('audio_channels') != [1, 2]:
+            errors.append(f"  FAIL default audio channels: {DEFAULT_SETTINGS.get('audio_channels')}")
+        normalized = _normalize_settings({'audio_channels': [1, 2, 9, 16, 2, 'bad']})
+        if normalized.get('audio_channels') != [1, 2]:
+            errors.append(f"  FAIL audio settings channel clamp: {normalized.get('audio_channels')}")
+
+        audio_mix = AudioMixPlayer()
+        audio_mix.set_channels([1, 2, 9, 16, 2, 'bad'])
+        if audio_mix.channels != [1, 2]:
+            errors.append(f"  FAIL audio mix channel clamp: {audio_mix.channels}")
+        audio_mix.set_channels([8, 7])
+        if audio_mix.channels != [8, 7]:
+            errors.append(f"  FAIL audio mix channel upper bound: {audio_mix.channels}")
     except Exception as e:
         errors.append(f"  FAIL core logic check: {e}")
     return errors
@@ -191,7 +207,7 @@ def main():
         all_ok = False
         for e in logic_errors: print(e)
     else:
-        print("  OK metadata QC summary rules")
+        print("  OK metadata QC and audio channel rules")
 
     print()
     print("=" * 55)
