@@ -108,6 +108,7 @@ def check_core_logic():
     try:
         from right_panel import RightPanel
         from constants import DEFAULT_SETTINGS, VIDEO_EXTS, _normalize_settings
+        from db_models import frames_to_tc, is_df_fps, tc_to_frames
         from video_panel import AudioMixPlayer, DIRECT_VLC_EXTS
     except Exception as e:
         return [f"  FAIL core logic import: {e}"]
@@ -181,6 +182,31 @@ def check_core_logic():
         )
         if malformed_exts:
             errors.append(f"  FAIL malformed video extensions: {malformed_exts}")
+
+        if not is_df_fps(30000 / 1001) or is_df_fps(30.0):
+            errors.append("  FAIL 29.97 DF fps detection")
+        if not is_df_fps(60000 / 1001) or is_df_fps(60.0):
+            errors.append("  FAIL 59.94 DF fps detection")
+        tc_cases = [
+            (frames_to_tc(1800, 29.97, True), '00:01:00;02', '29.97 DF one minute'),
+            (frames_to_tc(17982, 29.97, True), '00:10:00;00', '29.97 DF ten minutes'),
+            (frames_to_tc(1800, 30.0, False), '00:01:00:00', '30.0 NDF one minute'),
+            (frames_to_tc(3600, 59.94, True), '00:01:00;04', '59.94 DF one minute'),
+            (frames_to_tc(35964, 59.94, True), '00:10:00;00', '59.94 DF ten minutes'),
+        ]
+        for actual, expected, label in tc_cases:
+            if actual != expected:
+                errors.append(f"  FAIL {label}: {actual} != {expected}")
+        frame_cases = [
+            (tc_to_frames('00:01:00;02', 29.97, True), 1800, '29.97 DF tc reverse'),
+            (tc_to_frames('00:10:00;00', 29.97, True), 17982, '29.97 DF ten minute reverse'),
+            (tc_to_frames('00:01:00:00', 30.0, False), 1800, '30.0 NDF tc reverse'),
+            (tc_to_frames('00:01:00;04', 59.94, True), 3600, '59.94 DF tc reverse'),
+            (tc_to_frames('00:10:00;00', 59.94, True), 35964, '59.94 DF ten minute reverse'),
+        ]
+        for actual, expected, label in frame_cases:
+            if actual != expected:
+                errors.append(f"  FAIL {label}: {actual} != {expected}")
     except Exception as e:
         errors.append(f"  FAIL core logic check: {e}")
     return errors
@@ -224,7 +250,7 @@ def main():
         all_ok = False
         for e in logic_errors: print(e)
     else:
-        print("  OK metadata QC, audio channel, and video extension rules")
+        print("  OK metadata QC, audio channel, video extension, and timecode rules")
 
     print()
     print("=" * 55)
