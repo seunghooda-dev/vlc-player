@@ -2225,6 +2225,7 @@ class VideoPanel(QWidget):
     def _refresh_clip_list(self):
         existing = []
         removed = []
+        unavailable = []
         raw_files = list(getattr(self, '_files', []) or [])
         records = [f for f in raw_files if isinstance(f, dict)]
         invalid_count = len(raw_files) - len(records)
@@ -2242,13 +2243,30 @@ class VideoPanel(QWidget):
                     f["size"] = _path_size(p)
                 existing.append(f)
             else:
-                removed.append(f.get("name") or self._display_file_name(fp, str(fp) if fp else "unknown"))
+                text = str(fp or "").strip()
+                if not text:
+                    removed.append(f.get("name") or "unknown")
+                    continue
+                try:
+                    suffix = Path(text).suffix.upper().lstrip(".")
+                except Exception:
+                    suffix = ""
+                f["filepath"] = text
+                f["name"] = f.get("name") or self._display_file_name(text, text)
+                f["ext"] = f.get("ext") or suffix or "-"
+                f["size"] = max(0, self._safe_int_value(f.get("size", 0), 0))
+                existing.append(f)
+                unavailable.append(f.get("name") or self._display_file_name(text, text))
         if removed:
             self._files = existing
-            log.warning(f'missing loaded files removed: {", ".join(removed[:5])}')
-            if self.cur_file and not self._video_file_path(self.cur_file):
-                self.cur_file = None
-                self.cur_info = {}
+            log.warning(f'invalid loaded file records removed: {", ".join(removed[:5])}')
+        elif unavailable:
+            self._files = existing
+        if unavailable:
+            log.warning(f'unavailable loaded files kept in list: {", ".join(unavailable[:5])}')
+        if self.cur_file and not self._video_file_path(self.cur_file):
+            self.cur_file = None
+            self.cur_info = {}
         self.clip_list.clear()
         for f in self._file_records():
             fp = f.get("filepath", "")
