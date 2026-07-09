@@ -1221,6 +1221,57 @@ def check_core_logic():
         )
         if ready_channel_controls != 8:
             errors.append(f"  FAIL ready metadata channel controls: {ready_channel_controls}")
+        class AudioRestartProbe:
+            _safe_int_value = staticmethod(VideoPanel._safe_int_value)
+            _metadata_audio_restart_required = VideoPanel._metadata_audio_restart_required
+
+            def __init__(self, selected):
+                self.selected = selected
+
+            def _get_selected_audio_channels(self):
+                return list(self.selected)
+
+        audio_restart = AudioRestartProbe([1, 2])
+        if VideoPanel._metadata_audio_restart_required(
+            audio_restart,
+            {'audio_stream_count': 1, 'channels': 2},
+            True,
+            {'running': True, 'active_layout_known': False},
+        ):
+            errors.append("  FAIL fallback 1/2 audio should stay running after metadata")
+        if not VideoPanel._metadata_audio_restart_required(
+            audio_restart,
+            {'audio_stream_count': 8, 'channels': 1},
+            True,
+            {'running': True, 'active_layout_known': False},
+        ):
+            errors.append("  FAIL fallback multi-mono audio should restart after metadata")
+        if VideoPanel._metadata_audio_restart_required(
+            audio_restart,
+            {'audio_stream_count': 8, 'channels': 1},
+            False,
+            {
+                'running': True,
+                'active_layout_known': True,
+                'audio_stream_count': 8,
+                'channel_count': 1,
+                'channels': (1, 2),
+            },
+        ):
+            errors.append("  FAIL matching known audio layout should not restart after metadata")
+        if not VideoPanel._metadata_audio_restart_required(
+            audio_restart,
+            {'audio_stream_count': 8, 'channels': 1},
+            False,
+            {
+                'running': True,
+                'active_layout_known': True,
+                'audio_stream_count': 1,
+                'channel_count': 2,
+                'channels': (1, 2),
+            },
+        ):
+            errors.append("  FAIL changed known audio layout should restart after metadata")
         class TransportReadyProbe:
             _metadata_ready = False
             _cue_ready = False

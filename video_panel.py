@@ -3059,17 +3059,51 @@ class VideoPanel(QWidget):
             warnings.append('길이 정보 없음 — 탐색/REM 표시가 제한될 수 있습니다')
         return True, '', '', warnings
 
-    def _metadata_audio_restart_required(self, info, was_fallback_audio):
-        if not was_fallback_audio:
-            return True
+    def _audio_mix_layout_snapshot(self):
+        mix = getattr(self, 'audio_mix', None)
+        if not mix:
+            return {}
+        try:
+            running = bool(mix.is_running())
+        except Exception:
+            running = False
+        try:
+            active_known = bool(mix.active_layout_known())
+        except Exception:
+            active_known = False
+        return {
+            'running': running,
+            'active_layout_known': active_known,
+            'audio_stream_count': max(0, self._safe_int_value(getattr(mix, 'audio_stream_count', 0), 0)),
+            'channel_count': max(0, self._safe_int_value(getattr(mix, 'channel_count', 0), 0)),
+            'channels': tuple(self._safe_int_value(ch, 0) for ch in (getattr(mix, 'channels', []) or [])),
+        }
+
+    def _metadata_audio_restart_required(self, info, was_fallback_audio, previous_audio_layout=None):
         audio_streams = max(0, self._safe_int_value(info.get('audio_stream_count', 0), 0))
         channels = max(0, self._safe_int_value(info.get('channels', 0), 0))
-        selected = self._get_selected_audio_channels()
+        selected = tuple(self._get_selected_audio_channels())
         if not selected:
             return False
-        simple_first_stream = audio_streams <= 1 and channels <= 2
-        default_pair_only = all(ch in (1, 2) for ch in selected)
-        if simple_first_stream and default_pair_only:
+        if was_fallback_audio:
+            simple_first_stream = audio_streams <= 1 and channels <= 2
+            default_pair_only = all(ch in (1, 2) for ch in selected)
+            if simple_first_stream and default_pair_only:
+                return False
+            return True
+        previous = previous_audio_layout or {}
+        if not previous.get('running'):
+            return True
+        if not previous.get('active_layout_known'):
+            return True
+        previous_channels = tuple(
+            self._safe_int_value(ch, 0) for ch in (previous.get('channels') or [])
+        )
+        if previous_channels != selected:
+            return True
+        previous_streams = max(0, self._safe_int_value(previous.get('audio_stream_count', 0), 0))
+        previous_channels_count = max(0, self._safe_int_value(previous.get('channel_count', 0), 0))
+        if previous_streams == audio_streams and previous_channels_count == channels:
             return False
         return True
 
@@ -3113,7 +3147,11 @@ class VideoPanel(QWidget):
             if warnings:
                 log.warning(f'async metadata probe warning: {file_name} | {"; ".join(warnings)}')
             apply_t0 = time.monotonic()
-            was_fallback_audio = self.audio_mix.is_running() and not self.audio_mix.active_layout_known()
+            previous_audio_layout = self._audio_mix_layout_snapshot()
+            was_fallback_audio = (
+                previous_audio_layout.get('running')
+                and not previous_audio_layout.get('active_layout_known')
+            )
             self._apply_probe_metadata(filepath, info, warnings, emit_loaded=True)
             apply_elapsed = time.monotonic() - apply_t0
             total_elapsed = time.monotonic() - load_t0
@@ -3133,10 +3171,10 @@ class VideoPanel(QWidget):
             )
             if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
                 self._reset_audio_recovery()
-                if self._metadata_audio_restart_required(info, was_fallback_audio):
+                if self._metadata_audio_restart_required(info, was_fallback_audio, previous_audio_layout):
                     self._schedule_audio_mix(delay_ms=80, restart=True, lead_sec=0.0)
                 else:
-                    log.info(f'audio mix kept after metadata: {file_name} fallback stream already matches selected channels')
+                    log.info(f'audio mix kept after metadata: {file_name} current layout already matches selected channels')
                     record_state_event('audio-mix', 'kept after metadata', file=file_name)
 
         def _error(err, elapsed, t=thread):
