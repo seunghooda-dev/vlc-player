@@ -3,7 +3,7 @@ check_imports.py — 모듈 간 import 정합성 자동 검증
 실행: python check_imports.py
 모듈 분리 후, 새 기능 추가 후 항상 실행하세요.
 """
-import re, ast, sys, tempfile, csv
+import re, ast, sys, tempfile, csv, time
 from pathlib import Path
 
 FILES = [
@@ -291,8 +291,10 @@ def check_core_logic():
         class MetadataRestoreProbe(Probe):
             _restore_metadata_qc_from_hint = RightPanel._restore_metadata_qc_from_hint
             _clear_stale_record_state = RightPanel._clear_stale_record_state
+            _snapshot_check_due = RightPanel._snapshot_check_due
             _record_file_snapshot_changed = RightPanel._record_file_snapshot_changed
             _record_file_snapshot = lambda self, record: getattr(self, '_snapshot', (0, 0))
+            _same_path_text = staticmethod(lambda a, b: str(a or '').lower() == str(b or '').lower())
 
         original_hint_loader = rpm.load_clip_metadata_hint
         try:
@@ -317,6 +319,15 @@ def check_core_logic():
             rpm.load_clip_metadata_hint = lambda fp: {}
             stale_probe = MetadataRestoreProbe()
             stale_probe._snapshot = (200, 20)
+            stale_probe.vp = type(
+                'VP',
+                (),
+                {
+                    'cur_file': 'C:/sample/replaced.mxf',
+                    'marker_refreshes': 0,
+                    '_apply_qc_markers': lambda self: setattr(self, 'marker_refreshes', self.marker_refreshes + 1),
+                },
+            )()
             stale_record = {
                 'filepath': 'C:/sample/replaced.mxf',
                 'size': 100,
@@ -354,6 +365,20 @@ def check_core_logic():
                     errors.append(f"  FAIL stale QC ranges clear {key}: {stale_record}")
             if stale_record.get('qc_summary') != '미분석' or stale_record.get('analysis') is not None:
                 errors.append(f"  FAIL stale QC summary/analysis clear: {stale_record}")
+            if stale_probe.vp.marker_refreshes != 1:
+                errors.append(f"  FAIL stale current marker refresh: {stale_probe.vp.marker_refreshes}")
+
+            throttled_record = {
+                'filepath': 'C:/sample/throttled.mxf',
+                'size': 100,
+                'mtime_ns': 10,
+                'black': 'found',
+                '_snapshot_checked_at': time.monotonic(),
+            }
+            if RightPanel._clear_stale_record_state(stale_probe, throttled_record):
+                errors.append(f"  FAIL stale snapshot throttle: {throttled_record}")
+            if throttled_record.get('black') != 'found':
+                errors.append(f"  FAIL stale snapshot throttle mutated record: {throttled_record}")
         finally:
             rpm.load_clip_metadata_hint = original_hint_loader
 

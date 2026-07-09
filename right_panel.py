@@ -1182,12 +1182,29 @@ class RightPanel(QWidget):
     def _record_file_snapshot_changed(self, record):
         if not isinstance(record, dict):
             return False
-        current_size, current_mtime_ns = self._record_file_snapshot(record)
         stored_size = _safe_int(record.get('size', 0), 0)
         stored_mtime_ns = _safe_int(record.get('mtime_ns', 0), 0)
+        if not stored_size and not stored_mtime_ns:
+            return False
+        current_size, current_mtime_ns = self._record_file_snapshot(record)
         size_changed = bool(stored_size and current_size and stored_size != current_size)
         mtime_changed = bool(stored_mtime_ns and current_mtime_ns and stored_mtime_ns != current_mtime_ns)
         return size_changed or mtime_changed
+
+    def _snapshot_check_due(self, record):
+        if not isinstance(record, dict):
+            return False
+        stored_size = _safe_int(record.get('size', 0), 0)
+        stored_mtime_ns = _safe_int(record.get('mtime_ns', 0), 0)
+        if not stored_size and not stored_mtime_ns:
+            return False
+        now = time.monotonic()
+        last = _safe_float(record.get('_snapshot_checked_at', 0), 0.0)
+        interval = max(0.25, _safe_float(getattr(self, '_snapshot_check_interval_sec', 2.0), 2.0))
+        if last and now - last < interval:
+            return False
+        record['_snapshot_checked_at'] = now
+        return True
 
     @staticmethod
     def _clear_record_metadata_qc(record):
@@ -1214,6 +1231,8 @@ class RightPanel(QWidget):
     def _clear_stale_record_state(self, record):
         if not isinstance(record, dict):
             return False
+        if not self._snapshot_check_due(record):
+            return False
         if not self._record_file_snapshot_changed(record):
             return False
         RightPanel._clear_record_metadata_qc(record)
@@ -1223,6 +1242,12 @@ class RightPanel(QWidget):
             record['size'] = size
         if mtime_ns:
             record['mtime_ns'] = mtime_ns
+        try:
+            if self._same_path_text(getattr(self.vp, 'cur_file', ''), record.get('filepath')):
+                if hasattr(self.vp, '_apply_qc_markers'):
+                    self.vp._apply_qc_markers()
+        except Exception as e:
+            log.debug(f"stale QC marker refresh skipped: {e}")
         log.debug(f"file record QC state cleared after file change: {self._path_name(record.get('filepath'))}")
         return True
 
