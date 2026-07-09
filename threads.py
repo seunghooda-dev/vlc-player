@@ -31,6 +31,7 @@ from db_models import (
 
 _BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
 _WARMUP_RECENT_PROBE_MAX_BYTES = 2 * 1024 * 1024 * 1024
+_AUDIO_INDEX_CACHE_MAX_BYTES = 16 * 1024 * 1024
 
 def _hidden_flags():
     return _hidden_subprocess_flags()
@@ -467,6 +468,9 @@ class AudioAnalyzeThread(QThread):
     def _load_index_cache(self, path):
         try:
             if not path.exists():
+                return None
+            if _path_size(path) > _AUDIO_INDEX_CACHE_MAX_BYTES:
+                self._discard_index_cache(path, 'oversized')
                 return None
             data = json.loads(path.read_text(encoding='utf-8', errors='replace'))
             if not isinstance(data, dict):
