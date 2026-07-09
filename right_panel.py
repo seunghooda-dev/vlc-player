@@ -1197,11 +1197,39 @@ class RightPanel(QWidget):
         record.pop('meta_issues', None)
         record.pop('_meta_qc_hint_checked', None)
 
+    @staticmethod
+    def _clear_record_qc_status(record):
+        if not isinstance(record, dict):
+            return
+        for key in ('black', 'mute', 'freeze'):
+            record[key] = ''
+        for key in ('black_count', 'mute_count', 'freeze_count'):
+            record[key] = 0
+        for key in ('black_ranges', 'mute_ranges', 'freeze_ranges'):
+            record[key] = []
+        record['analysis'] = None
+        record['qc_summary'] = '미분석'
+        record['qc_updated_at'] = None
+
+    def _clear_stale_record_state(self, record):
+        if not isinstance(record, dict):
+            return False
+        if not self._record_file_snapshot_changed(record):
+            return False
+        RightPanel._clear_record_metadata_qc(record)
+        RightPanel._clear_record_qc_status(record)
+        size, mtime_ns = self._record_file_snapshot(record)
+        if size:
+            record['size'] = size
+        if mtime_ns:
+            record['mtime_ns'] = mtime_ns
+        log.debug(f"file record QC state cleared after file change: {self._path_name(record.get('filepath'))}")
+        return True
+
     def _restore_metadata_qc_from_hint(self, record):
         if not isinstance(record, dict):
             return False
-        if self._record_file_snapshot_changed(record):
-            RightPanel._clear_record_metadata_qc(record)
+        self._clear_stale_record_state(record)
         if str(record.get('meta_status') or '').strip():
             return True
         if bool(record.get('_meta_qc_hint_checked')):

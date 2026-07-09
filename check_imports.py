@@ -133,6 +133,7 @@ def check_core_logic():
         _file_path_text = staticmethod(lambda value: str(value or ''))
         _path_exists = staticmethod(lambda value: True)
         _file_status_badge = RightPanel._file_status_badge
+        _path_name = staticmethod(lambda value, fallback='파일': Path(str(value or '')).name or fallback)
         _file_matches_filter_key = staticmethod(RightPanel._file_matches_filter_key)
         _is_standard_playback_resolution = staticmethod(RightPanel._is_standard_playback_resolution)
         _is_common_playback_fps = staticmethod(RightPanel._is_common_playback_fps)
@@ -289,6 +290,7 @@ def check_core_logic():
 
         class MetadataRestoreProbe(Probe):
             _restore_metadata_qc_from_hint = RightPanel._restore_metadata_qc_from_hint
+            _clear_stale_record_state = RightPanel._clear_stale_record_state
             _record_file_snapshot_changed = RightPanel._record_file_snapshot_changed
             _record_file_snapshot = lambda self, record: getattr(self, '_snapshot', (0, 0))
 
@@ -322,11 +324,36 @@ def check_core_logic():
                 'meta_status': '확인 필요',
                 'meta_issues': ['오디오 없음'],
                 '_meta_qc_hint_checked': True,
+                'black': 'found',
+                'mute': 'ok',
+                'freeze': 'found',
+                'black_count': 2,
+                'mute_count': 0,
+                'freeze_count': 1,
+                'black_ranges': [{'start': 1.0}],
+                'mute_ranges': [],
+                'freeze_ranges': [{'start': 2.0}],
+                'qc_summary': '블랙/프리즈 있음',
+                'qc_updated_at': 'cached',
+                'analysis': 'black',
             }
             if RightPanel._restore_metadata_qc_from_hint(stale_probe, stale_record):
                 errors.append(f"  FAIL stale metadata QC restore result: {stale_record}")
             if stale_record.get('meta_status') or stale_record.get('meta_issues'):
                 errors.append(f"  FAIL stale metadata QC clear: {stale_record}")
+            if stale_record.get('size') != 200 or stale_record.get('mtime_ns') != 20:
+                errors.append(f"  FAIL stale record snapshot refresh: {stale_record}")
+            for key in ('black', 'mute', 'freeze'):
+                if stale_record.get(key) != '':
+                    errors.append(f"  FAIL stale QC status clear {key}: {stale_record}")
+            for key in ('black_count', 'mute_count', 'freeze_count'):
+                if stale_record.get(key) != 0:
+                    errors.append(f"  FAIL stale QC count clear {key}: {stale_record}")
+            for key in ('black_ranges', 'mute_ranges', 'freeze_ranges'):
+                if stale_record.get(key) != []:
+                    errors.append(f"  FAIL stale QC ranges clear {key}: {stale_record}")
+            if stale_record.get('qc_summary') != '미분석' or stale_record.get('analysis') is not None:
+                errors.append(f"  FAIL stale QC summary/analysis clear: {stale_record}")
         finally:
             rpm.load_clip_metadata_hint = original_hint_loader
 
