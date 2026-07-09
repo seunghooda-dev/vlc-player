@@ -1946,6 +1946,61 @@ def check_core_logic():
         cue_block_text = VideoPanel._cue_block_status_text(CueStatusProbe(), str(Path(__file__)))
         if '지원하지 않는 파일 형식입니다' not in cue_block_text or 'CUE 불가' not in cue_block_text:
             errors.append(f"  FAIL CUE block status unsupported reason: {cue_block_text}")
+        class RuntimeFlagProbe:
+            _clear_file_runtime_flags = VideoPanel._clear_file_runtime_flags
+
+            def __init__(self):
+                self._files = [
+                    {'filepath': 'C:/qc/clean.mxf', 'cue': True, 'playing': True, 'black': 'ok', 'mute': 'ok'},
+                    {'filepath': 'C:/qc/issue.mxf', 'cue': True, 'playing': False, 'black': 'found', 'mute': 'ok'},
+                    {'filepath': 'C:/qc/idle.mxf', 'cue': False, 'playing': True},
+                ]
+
+        runtime_probe = RuntimeFlagProbe()
+        if not VideoPanel._clear_file_runtime_flags(runtime_probe, clear_cue=True):
+            errors.append("  FAIL runtime flag clear should report change")
+        if any(f.get('cue') or f.get('playing') for f in runtime_probe._files):
+            errors.append(f"  FAIL runtime flag clear should clear all cue/playing flags: {runtime_probe._files}")
+        runtime_probe = RuntimeFlagProbe()
+        VideoPanel._clear_file_runtime_flags(runtime_probe, clear_cue=False)
+        if runtime_probe._files[0].get('playing') or not runtime_probe._files[0].get('cue'):
+            errors.append(f"  FAIL runtime flag clear without cue should keep cue only: {runtime_probe._files}")
+
+        class CurrentUnavailableProbe:
+            _handle_unavailable_current_file = VideoPanel._handle_unavailable_current_file
+            _display_file_name = staticmethod(VideoPanel._display_file_name)
+            _video_file_path = lambda self, _fp: None
+
+            def __init__(self):
+                self.cur_file = 'C:/missing/current.mxf'
+                self.cur_info = {'filename': 'current.mxf'}
+                self._metadata_ready = True
+                self._cue_ready = True
+                self.ejected = 0
+                self.messages = []
+                self.status_changed = type(
+                    'Signal',
+                    (),
+                    {'emit': lambda _, msg: self.messages.append(msg)},
+                )()
+
+            def eject_clip(self):
+                self.ejected += 1
+                self.cur_file = None
+                self.cur_info = {}
+                self._metadata_ready = False
+                self._cue_ready = False
+
+        unavailable_current_probe = CurrentUnavailableProbe()
+        if not VideoPanel._handle_unavailable_current_file(unavailable_current_probe):
+            errors.append("  FAIL unavailable current file should be handled")
+        if unavailable_current_probe.ejected != 1 or unavailable_current_probe.cur_file is not None:
+            errors.append(
+                f"  FAIL unavailable current file should eject: "
+                f"ejected={unavailable_current_probe.ejected} cur={unavailable_current_probe.cur_file}"
+            )
+        if not any('CUE 파일 접근 불가' in msg for msg in unavailable_current_probe.messages):
+            errors.append(f"  FAIL unavailable current file status: {unavailable_current_probe.messages}")
 
         class RecentPruneProbe:
             _settings_entries = staticmethod(VideoPanel._settings_entries)

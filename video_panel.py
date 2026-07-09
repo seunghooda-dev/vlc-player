@@ -2167,13 +2167,22 @@ class VideoPanel(QWidget):
             self._apply_qc_markers()
 
     def _set_all_files_not_playing(self):
+        changed = self._clear_file_runtime_flags(clear_cue=False)
+        if changed and hasattr(self, '_right_panel'):
+            self._right_panel.refresh_explorer()
+
+    def _clear_file_runtime_flags(self, clear_cue=True):
         changed = False
-        for item in self._files:
+        for item in (getattr(self, '_files', []) or []):
+            if not isinstance(item, dict):
+                continue
             if item.get("playing"):
                 item["playing"] = False
                 changed = True
-        if changed and hasattr(self, '_right_panel'):
-            self._right_panel.refresh_explorer()
+            if clear_cue and item.get("cue"):
+                item["cue"] = False
+                changed = True
+        return changed
 
     def _on_clip_selected(self, item):
         """클립 단일클릭 — 상태바에 파일명 표시, 아직 CUE 안 함"""
@@ -2242,10 +2251,7 @@ class VideoPanel(QWidget):
 
         # 클립 리스트 선택 해제
         self.clip_list.clearSelection()
-        self._set_all_files_not_playing()
-        for f in self._files:
-            if f.get("cue") and f.get("black") is None and f.get("mute") is None:
-                f["cue"] = False
+        self._clear_file_runtime_flags(clear_cue=True)
         if hasattr(self, '_right_panel'):
             self._right_panel.refresh_explorer()
 
@@ -2476,9 +2482,7 @@ class VideoPanel(QWidget):
             self._files = existing
         if unavailable:
             log.warning(f'unavailable loaded files kept in list: {", ".join(unavailable[:5])}')
-        if self.cur_file and not self._video_file_path(self.cur_file):
-            self.cur_file = None
-            self.cur_info = {}
+        self._handle_unavailable_current_file()
         self.clip_list.clear()
         for f in self._file_records():
             fp = f.get("filepath", "")
@@ -3227,6 +3231,26 @@ class VideoPanel(QWidget):
         except OSError as e:
             return False, '파일을 읽을 수 없습니다', f'{e}\n{self._path_access_hint(filepath)}'
         return True, '', ''
+
+    def _handle_unavailable_current_file(self):
+        fp = getattr(self, 'cur_file', None)
+        if not fp or self._video_file_path(fp):
+            return False
+        name = self._display_file_name(fp, '?')
+        log.warning(f'current cue file became unavailable: {name}')
+        try:
+            self.eject_clip()
+        except Exception as e:
+            log.debug(f'unavailable current eject failed: {e}')
+            self.cur_file = None
+            self.cur_info = {}
+            self._metadata_ready = False
+            self._cue_ready = False
+        try:
+            self.status_changed.emit(f'  ⚠ CUE 파일 접근 불가 — {name}')
+        except Exception:
+            pass
+        return True
 
     def _validate_probe_info(self, filepath, info):
         if not info:
