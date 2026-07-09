@@ -178,12 +178,15 @@ def check_core_logic():
             if qc_counts.get(key) != expected:
                 errors.append(f"  FAIL batch QC count {key}: {qc_counts.get(key)} != {expected}")
         status_summary = RightPanel._status_summary_text(Probe(), [
+            {'black': 'ok', 'mute': 'ok', 'freeze': 'ok'},
             {'black': 'ok', 'mute': 'ok', 'freeze': ''},
             {'black': 'found', 'mute': 'found', 'freeze': ''},
             {'black': 'found', 'mute': 'ok', 'freeze': 'found'},
         ])
         if "정상 1" not in status_summary:
             errors.append(f"  FAIL status summary normal count: {status_summary}")
+        if "블랙/무음 정상 1" not in status_summary:
+            errors.append(f"  FAIL status summary black/mute normal count: {status_summary}")
         if "블랙/무음 1" not in status_summary:
             errors.append(f"  FAIL status summary black/mute count: {status_summary}")
         if "복합 문제 1" not in status_summary:

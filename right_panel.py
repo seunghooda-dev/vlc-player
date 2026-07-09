@@ -281,7 +281,7 @@ class RightPanel(QWidget):
             ('mute', '무음', '무음 구간이 발견된 파일만 보기'),
             ('freeze', '프리즈', '정지 화면 구간이 발견된 파일만 보기'),
             ('error', '오류', '검사 오류가 있는 파일만 보기'),
-            ('normal', '정상', '블랙/무음이 정상이고 프리즈 문제 또는 오류가 없는 파일만 보기'),
+            ('normal', '정상', '정상 또는 블랙/무음 정상 파일만 보기'),
         ]:
             b = QPushButton(label)
             b.setCheckable(True)
@@ -535,8 +535,10 @@ class RightPanel(QWidget):
             found.append("프리즈")
         if found:
             return f"{'/'.join(found)} 있음", C['red']
-        if f.get("black") == "ok" and f.get("mute") == "ok":
+        if f.get("black") == "ok" and f.get("mute") == "ok" and f.get("freeze") == "ok":
             return "정상", C['green']
+        if f.get("black") == "ok" and f.get("mute") == "ok":
+            return "블랙/무음 정상", C['green']
         if f.get("playing"):
             return "재생중", C['green']
         if is_cue or f.get("cue"):
@@ -694,6 +696,7 @@ class RightPanel(QWidget):
         counts = {
             "미분석": 0,
             "정상": 0,
+            "블랙/무음 정상": 0,
             "블랙 있음": 0,
             "무음 있음": 0,
             "블랙/무음": 0,
@@ -715,7 +718,7 @@ class RightPanel(QWidget):
             elif badge in ("CUE", "재생중"):
                 counts["미분석"] += 1
         parts = [f"파일 {len(files)}"]
-        for key in ("정상", "블랙 있음", "무음 있음", "프리즈 있음", "블랙/무음", "복합 문제", "검사 오류", "검사중", "미분석"):
+        for key in ("정상", "블랙/무음 정상", "블랙 있음", "무음 있음", "프리즈 있음", "블랙/무음", "복합 문제", "검사 오류", "검사중", "미분석"):
             if counts.get(key):
                 parts.append(f"{key} {counts[key]}")
         return " | ".join(parts)
