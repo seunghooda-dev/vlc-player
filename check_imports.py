@@ -1185,6 +1185,15 @@ def check_core_logic():
         audio_mix.set_channels([8, 7])
         if audio_mix.channels != [8, 7]:
             errors.append(f"  FAIL audio mix channel upper bound: {audio_mix.channels}")
+        feedback_new = VideoPanel._file_add_feedback_text(3, 3)
+        if feedback_new != '✓ 파일 3개 추가 — CUE 또는 더블클릭으로 원본 파일을 바로 재생합니다':
+            errors.append(f"  FAIL file add feedback new: {feedback_new}")
+        feedback_mixed = VideoPanel._file_add_feedback_text(3, 1, action_hint='첫 파일 CUE')
+        if feedback_mixed != '✓ 파일 1개 추가 / 중복 2개 — 첫 파일 CUE':
+            errors.append(f"  FAIL file add feedback mixed: {feedback_mixed}")
+        feedback_duplicate = VideoPanel._file_add_feedback_text(2, 0, action_hint='')
+        if feedback_duplicate != '↺ 이미 목록에 있는 파일 2개':
+            errors.append(f"  FAIL file add feedback duplicate: {feedback_duplicate}")
         hinted_layout = VideoPanel._provisional_audio_mix_layout({
             'metadata_hint': True,
             'audio_stream_count': 8,

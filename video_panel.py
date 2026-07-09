@@ -1905,6 +1905,28 @@ class VideoPanel(QWidget):
         self._remember_recent_file(filepath)
         return False
 
+    @staticmethod
+    def _file_add_feedback_text(total, added, *, action_hint='CUE 또는 더블클릭으로 원본 파일을 바로 재생합니다'):
+        try:
+            total = max(0, int(total))
+        except Exception:
+            total = 0
+        try:
+            added = max(0, int(added))
+        except Exception:
+            added = 0
+        added = min(added, total)
+        duplicate = max(0, total - added)
+        if total <= 0:
+            return ''
+        if added <= 0:
+            base = f"↺ 이미 목록에 있는 파일 {duplicate}개"
+        elif duplicate:
+            base = f"✓ 파일 {added}개 추가 / 중복 {duplicate}개"
+        else:
+            base = f"✓ 파일 {added}개 추가"
+        return f"{base} — {action_hint}" if action_hint else base
+
     def _file_records(self):
         return [
             f for f in (getattr(self, '_files', []) or [])
@@ -2271,8 +2293,10 @@ class VideoPanel(QWidget):
             if self._add_file_to_list(f):
                 new_files.append(f)
         self._refresh_clip_list()
-        if new_files:
-            self.ai_lbl.setText("✓ 파일 추가 완료 — CUE 또는 더블클릭으로 원본 파일을 바로 재생합니다")
+        feedback = self._file_add_feedback_text(len(files), len(new_files))
+        if feedback:
+            self.ai_lbl.setText(feedback)
+            self.status_changed.emit(f"  {feedback}")
         # Explorer 목록 즉시 갱신
         if hasattr(self, '_right_panel'):
             self._right_panel.refresh_explorer()
@@ -4451,11 +4475,12 @@ class VideoPanel(QWidget):
             self._refresh_clip_list()
             e.acceptProposedAction()
             first = paths[0]
-            if len(paths) > 1:
-                self.status_changed.emit(
-                    f'  📥 드래그 파일 {len(paths)}개 추가'
-                    f'{f" / 신규 {added}개" if added else ""} — 첫 파일 CUE'
-                )
+            feedback = self._file_add_feedback_text(
+                len(paths), added,
+                action_hint='첫 파일 CUE',
+            )
+            if feedback:
+                self.status_changed.emit(f'  📥 {feedback}')
             self.load_file(first)
         else:
             self.status_changed.emit('  ⚠ 지원하는 영상 파일을 드래그하세요')
