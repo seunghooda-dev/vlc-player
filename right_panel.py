@@ -484,16 +484,24 @@ class RightPanel(QWidget):
         return recent_files, recent_dirs
 
     def _on_exp_clicked(self, item):
-        fp = item.data(Qt.ItemDataRole.UserRole)
+        fp = self._file_path_text(item.data(Qt.ItemDataRole.UserRole))
         if not fp:
             return
+        if not self._is_video_file_path(fp):
+            self.vp.status_changed.emit(f"  ⚠ 파일을 찾을 수 없습니다 — {self._path_name(fp)}")
+            return
         self.vp.status_changed.emit(
-            f"  📄 {Path(fp).name}  —  더블클릭하면 CUE 후 첫 프레임을 표시합니다")
+            f"  📄 {self._path_name(fp)}  —  더블클릭하면 CUE 후 첫 프레임을 표시합니다")
 
     def _cue_exp_item(self, item):
-        fp = item.data(Qt.ItemDataRole.UserRole)
-        if fp:
-            self.vp.load_file(fp)
+        fp = self._file_path_text(item.data(Qt.ItemDataRole.UserRole))
+        if not fp:
+            return
+        if not self._is_video_file_path(fp):
+            self.vp.status_changed.emit(f"  ⚠ 파일을 찾을 수 없습니다 — {self._path_name(fp)}")
+            self.refresh_explorer()
+            return
+        self.vp.load_file(fp)
 
     def _qc_status_text(self, value, kind):
         value = str(value or '').lower()
@@ -869,6 +877,12 @@ class RightPanel(QWidget):
             records.append(f)
         return records
 
+    def _video_file_records(self):
+        return [
+            f for f in self._file_records()
+            if self._is_video_file_path(f.get('filepath'))
+        ]
+
     def _qc_report_rows(self):
         rows = []
         criteria = self._qc_criteria()
@@ -1082,7 +1096,7 @@ class RightPanel(QWidget):
         from PyQt6.QtWidgets import QMenu
         item = self.exp_list.itemAt(pos)
         if not item: return
-        fp = item.data(Qt.ItemDataRole.UserRole)
+        fp = self._file_path_text(item.data(Qt.ItemDataRole.UserRole))
         if not fp: return
         menu = QMenu(self.exp_list)
         menu.setStyleSheet(self._menu_style())
@@ -1093,10 +1107,17 @@ class RightPanel(QWidget):
         if action is None:
             return
         elif action == act_cue:
+            if not self._is_video_file_path(fp):
+                self.vp.status_changed.emit(f"  ⚠ 파일을 찾을 수 없습니다 — {self._path_name(fp)}")
+                self.refresh_explorer()
+                return
             self.vp.load_file(fp)
         elif action == act_del:
-            self.vp._files = [f for f in self.vp._files if f["filepath"] != fp]
-            if self.vp.cur_file == fp:
+            self.vp._files = [
+                f for f in (getattr(self.vp, '_files', []) or [])
+                if not (isinstance(f, dict) and self._file_path_text(f.get("filepath")) == fp)
+            ]
+            if self._file_path_text(getattr(self.vp, 'cur_file', '')) == fp:
                 self.vp.eject_clip()
             self.vp._refresh_clip_list()
             self._update_explorer(self.vp.cur_info, self.vp.cur_id or "")
@@ -1127,7 +1148,7 @@ class RightPanel(QWidget):
         all_files = self._file_records()
         files = [f for f in all_files if self._file_matches_filter(f)]
         cue_fp = self.vp.cur_file
-        can_use_files = bool(all_files) and not bool(getattr(self.vp, '_loading', False)) and not bool(getattr(self, '_analysis_active', None))
+        can_use_files = bool(self._video_file_records()) and not bool(getattr(self.vp, '_loading', False)) and not bool(getattr(self, '_analysis_active', None))
         if hasattr(self, 'btn_batch'):
             self.btn_batch.setEnabled(can_use_files)
         if hasattr(self, 'btn_export'):
@@ -1594,6 +1615,8 @@ class RightPanel(QWidget):
     def _set_analysis_buttons_busy(self, kind=None, busy=False):
         has_file = bool(self._current_video_file())
         loading = bool(getattr(self.vp, '_loading', False))
+        has_records = bool(self._file_records())
+        has_video_records = bool(self._video_file_records())
         black = getattr(self, 'btn_run_black', None)
         audio = getattr(self, 'btn_run_audio', None)
         freeze = getattr(self, 'btn_run_freeze', None)
@@ -1610,12 +1633,12 @@ class RightPanel(QWidget):
             freeze.setEnabled(False if busy else (has_file and not loading))
         if batch:
             batch.setText("진행중" if busy and kind == 'batch' else "일괄")
-            batch.setEnabled(False if busy else (bool(getattr(self.vp, '_files', [])) and not loading))
+            batch.setEnabled(False if busy else (has_video_records and not loading))
         cancel = getattr(self, 'btn_batch_cancel', None)
         if cancel:
             cancel.setEnabled(bool(busy and kind == 'batch'))
         if export:
-            export.setEnabled(False if busy else bool(getattr(self.vp, '_files', [])))
+            export.setEnabled(False if busy else has_records)
 
     def _set_transport_enabled(self, enabled):
         for name in (
@@ -1732,7 +1755,7 @@ class RightPanel(QWidget):
             return int(round(_safe_float(info.get('tc_offset', 0.0), 0.0) * fps))
 
     def _run_batch_qc(self):
-        files = self._file_records()
+        files = self._video_file_records()
         if not files:
             QMessageBox.information(self, '일괄 검수', '파일 목록에 검수할 영상 파일이 없습니다.')
             return
