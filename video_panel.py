@@ -150,10 +150,25 @@ class AudioMixPlayer(QObject):
         # Seeking the external audio slightly ahead keeps MXF playback closer.
         self.start_lead_sec = 0.12
 
+    @staticmethod
+    def _safe_int(value, default=0):
+        try:
+            return int(value)
+        except Exception:
+            return default
+
+    @staticmethod
+    def _safe_float(value, default=0.0):
+        try:
+            parsed = float(value)
+            return parsed if math.isfinite(parsed) else default
+        except Exception:
+            return default
+
     def set_file(self, filepath, audio_stream_count=0, channel_count=2):
         self.filepath = filepath
-        self.audio_stream_count = int(audio_stream_count or 0)
-        self.channel_count = max(0, int(channel_count or 0))
+        self.audio_stream_count = max(0, self._safe_int(audio_stream_count, 0))
+        self.channel_count = max(0, self._safe_int(channel_count, 0))
         self.audio_layout_known = self.audio_stream_count > 0 or self.channel_count > 0
 
     def set_channels(self, channels):
@@ -168,7 +183,7 @@ class AudioMixPlayer(QObject):
         self.channels = cleaned or [1, 2]
 
     def set_volume(self, value):
-        self.volume = max(0.0, min(1.0, float(value)))
+        self.volume = max(0.0, min(1.0, self._safe_float(value, self.volume)))
 
     def set_rate(self, rate):
         try:
@@ -199,7 +214,11 @@ class AudioMixPlayer(QObject):
     def _proc_state(self, proc):
         if proc is None:
             return 'missing'
-        rc = proc.poll()
+        try:
+            rc = proc.poll()
+        except Exception as e:
+            log.debug(f'audio child poll failed: {e}')
+            return 'unknown'
         return 'running' if rc is None else f'exited({rc})'
 
     def process_status(self):
@@ -216,10 +235,10 @@ class AudioMixPlayer(QObject):
             'ffplay_pid': getattr(self._ffplay, 'pid', None),
             'file': self.filepath,
             'channels': list(self.channels or []),
-            'rate': round(float(self.rate or 1.0), 3),
-            'volume_percent': int(round(float(self.volume or 0.0) * 100)),
-            'audio_stream_count': int(self.audio_stream_count or 0),
-            'channel_count': int(self.channel_count or 0),
+            'rate': round(self._safe_float(self.rate, 1.0), 3),
+            'volume_percent': int(round(self._safe_float(self.volume, 0.0) * 100)),
+            'audio_stream_count': max(0, self._safe_int(self.audio_stream_count, 0)),
+            'channel_count': max(0, self._safe_int(self.channel_count, 0)),
             'layout_known': bool(self.audio_layout_known),
             'active_layout_known': bool(self._active_layout_known),
             'last_error': self.last_error,
@@ -245,9 +264,9 @@ class AudioMixPlayer(QObject):
     def is_running(self):
         status = self.process_status()
         return (
-            status['playing']
-            and status['ffmpeg'] == 'running'
-            and status['ffplay'] == 'running'
+            status.get('playing')
+            and status.get('ffmpeg') == 'running'
+            and status.get('ffplay') == 'running'
         )
 
     def active_layout_known(self):
@@ -268,8 +287,8 @@ class AudioMixPlayer(QObject):
             self.last_error = missing
             log.warning(f'audio mix blocked: {missing}')
             return False
-        lead = self.start_lead_sec if lead_sec is None else max(0.0, float(lead_sec))
-        start_sec = max(0.0, float(pos_sec) + lead)
+        lead = self.start_lead_sec if lead_sec is None else max(0.0, self._safe_float(lead_sec, 0.0))
+        start_sec = max(0.0, self._safe_float(pos_sec, 0.0) + lead)
         ffmpeg_cmd = [
             FFMPEG, '-hide_banner', '-loglevel', 'error',
             '-ss', f'{start_sec:.3f}',
@@ -356,8 +375,9 @@ class AudioMixPlayer(QObject):
 
     def _tail_filters(self):
         filters = []
-        if abs(self.rate - 1.0) > 0.001:
-            filters.append(f'atempo={self.rate:.3f}')
+        rate = max(0.5, min(2.0, self._safe_float(self.rate, 1.0)))
+        if abs(rate - 1.0) > 0.001:
+            filters.append(f'atempo={rate:.3f}')
         return ','.join(filters) if filters else 'anull'
 
     def _build_filter(self):
