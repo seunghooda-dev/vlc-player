@@ -29,7 +29,7 @@ from constants  import (
     friendly_error_text, friendly_error_title,
     format_missing_runtime_tools,
     _hidden_subprocess_flags,
-    _path_size,
+    _path_size, _path_mtime_ns,
     record_state_event,
 )
 from db_models  import (
@@ -2433,8 +2433,12 @@ class VideoPanel(QWidget):
 
     def _loudness_cache_key(self, filepath):
         try:
-            st = Path(filepath).stat()
-            return f'{Path(filepath).resolve()}|{st.st_size}|{st.st_mtime_ns}'
+            path = Path(filepath)
+            size = _path_size(path)
+            mtime_ns = _path_mtime_ns(path)
+            if not size and not mtime_ns:
+                return str(filepath)
+            return f'{path.resolve()}|{size}|{mtime_ns}'
         except Exception:
             return str(filepath)
 

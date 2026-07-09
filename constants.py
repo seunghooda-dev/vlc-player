@@ -887,6 +887,12 @@ def _path_mtime(path, default=0.0):
     except Exception:
         return default
 
+def _path_mtime_ns(path, default=0):
+    try:
+        return int(Path(path).stat().st_mtime_ns)
+    except Exception:
+        return default
+
 def _path_size(path, default=0):
     try:
         return int(Path(path).stat().st_size)

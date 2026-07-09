@@ -21,7 +21,7 @@ from constants import (
     register_child_process, unregister_child_process, terminate_child_process,
     acquire_heavy_analysis_slot, release_heavy_analysis_slot,
     _hidden_subprocess_flags,
-    _path_size,
+    _path_size, _path_mtime_ns,
 )
 from db_models import (
     sec_to_tc, frames_to_tc,
@@ -454,9 +454,10 @@ class AudioAnalyzeThread(QThread):
         return f'[0:a:0]anull[{out_label}]', 1
 
     def _cache_path(self, source_ch_count, basis):
-        st = os.stat(self.fp)
+        file_size = _path_size(self.fp)
+        file_mtime_ns = _path_mtime_ns(self.fp)
         key = hashlib.sha1(
-            f'{self.fp}|{st.st_size}|{st.st_mtime_ns}|{source_ch_count}|{basis}|sr8000|win0.1|v2'
+            f'{self.fp}|{file_size}|{file_mtime_ns}|{source_ch_count}|{basis}|sr8000|win0.1|v2'
             .encode('utf-8', 'ignore')
         ).hexdigest()
         cache_dir = TMP_DIR / 'audio_index'
