@@ -29,6 +29,7 @@ from constants  import (
     friendly_error_text, friendly_error_title,
     format_missing_runtime_tools,
     _hidden_subprocess_flags,
+    _path_size,
     record_state_event,
 )
 from db_models  import (
@@ -1733,11 +1734,7 @@ class VideoPanel(QWidget):
     def _new_file_record(self, filepath):
         p = Path(filepath)
         qc = load_qc_status(filepath)
-        try:
-            size = p.stat().st_size
-        except OSError as e:
-            size = 0
-            log.warning(f'file size unavailable for list record: {p.name} | {e}')
+        size = _path_size(p)
         return {
             "name": p.name,
             "filepath": filepath,
@@ -1960,7 +1957,7 @@ class VideoPanel(QWidget):
                     return None
                 if target.is_symlink() or not target.is_file():
                     return None
-                return (str(target), target.stat().st_size)
+                return (str(target), _path_size(target))
             except Exception as e:
                 log.debug(f'cache record skipped: {e}')
                 return None
@@ -1973,7 +1970,7 @@ class VideoPanel(QWidget):
                     return 0
                 if target.is_symlink() or not target.is_file():
                     return 0
-                size = target.stat().st_size
+                size = _path_size(target)
                 target.unlink(missing_ok=True)
                 return size
             except Exception as e:
@@ -2260,10 +2257,7 @@ class VideoPanel(QWidget):
 
     def _provisional_info(self, filepath):
         p = Path(filepath)
-        try:
-            size = p.stat().st_size
-        except Exception:
-            size = 0
+        size = _path_size(p)
         info = {
             "filename": p.name,
             "filepath": filepath,

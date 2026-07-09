@@ -21,6 +21,7 @@ from constants import (
     register_child_process, unregister_child_process, terminate_child_process,
     acquire_heavy_analysis_slot, release_heavy_analysis_slot,
     _hidden_subprocess_flags,
+    _path_size,
 )
 from db_models import (
     sec_to_tc, frames_to_tc,
@@ -141,10 +142,7 @@ class RuntimeWarmupThread(QThread):
                             'source': 'db-hint',
                         }
                         break
-                    try:
-                        file_size = int(p.stat().st_size)
-                    except Exception:
-                        file_size = 0
+                    file_size = _path_size(p)
                     if file_size > _WARMUP_RECENT_PROBE_MAX_BYTES:
                         skipped_recent = {
                             'file': p.name,

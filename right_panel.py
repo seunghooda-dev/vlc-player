@@ -24,7 +24,7 @@ from PyQt6.QtMultimedia import QMediaPlayer
 from constants   import (
     C, VIDEO_EXTS, BASE_DIR, REPORT_DIR, log, load_settings, save_settings,
     friendly_error_title, format_missing_runtime_tools, heavy_analysis_status,
-    format_bytes, record_state_event,
+    format_bytes, record_state_event, _path_size,
 )
 from db_models   import probe, sec_to_tc, tc_to_frames, sanitize_qc_ranges
 from threads     import AudioAnalyzeThread, BlackDetectThread, FreezeDetectThread
@@ -765,10 +765,7 @@ class RightPanel(QWidget):
             badge, _ = self._file_status_badge(f, fp == self.vp.cur_file)
             size = _safe_int(f.get('size', 0), 0)
             if not size:
-                try:
-                    size = p.stat().st_size
-                except Exception:
-                    size = 0
+                size = _path_size(p)
             info = {}
             try:
                 if Path(fp).exists():
