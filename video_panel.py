@@ -2015,8 +2015,18 @@ class VideoPanel(QWidget):
             if hasattr(self, '_preconvert_jobs'):
                 self._preconvert_jobs.pop(fp, None)
 
+        def _on_finished(fp=filepath, thread=t):
+            if hasattr(self, '_preconvert_threads') and thread in self._preconvert_threads:
+                self._preconvert_threads.remove(thread)
+                log.debug(f'preconvert thread cleanup on finished: {Path(fp).name}')
+            if hasattr(self, '_preconvert_jobs') and self._preconvert_jobs.get(fp) is thread:
+                self._preconvert_jobs.pop(fp, None)
+            if hasattr(self, '_tc_cache') and self._tc_cache.get(fp) is None:
+                self._tc_cache.pop(fp, None)
+
         t.ready_full.connect(_on_done)
         t.error.connect(_on_err)
+        t.finished.connect(_on_finished)
 
         # ★ self에 보관 → GC 소멸 방지 (이게 없으면 함수 종료 즉시 크래시)
         self._preconvert_threads.append(t)

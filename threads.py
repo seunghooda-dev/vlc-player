@@ -196,12 +196,17 @@ class TranscodeThread(QThread):
         self._abort = False
         self._proc  = None
 
+    @staticmethod
+    def _safe_stream_channels(value):
+        return max(1, _safe_int(value, 1))
+
     def abort(self):
         self._abort = True
         if self._proc and self._proc.poll() is None:
             terminate_child_process(self._proc, 'transcode ffmpeg')
 
     def _build_filter(self, audio_streams, pairs):
+        audio_streams = [self._safe_stream_channels(ch) for ch in (audio_streams or [])]
         n_streams  = len(audio_streams)
         total_ch   = sum(audio_streams) if audio_streams else 2
         multi_mono = n_streams > 1 and all(c == 1 for c in audio_streams)
@@ -303,9 +308,13 @@ class TranscodeThread(QThread):
             )
             audio_streams = []
             if pr.returncode == 0:
-                for s in _j.loads(pr.stdout or "{}").get("streams",[]):
-                    if s.get("codec_type") == "audio":
-                        audio_streams.append(s.get("channels", 1))
+                data = _j.loads(pr.stdout or "{}")
+                streams = data.get("streams", []) if isinstance(data, dict) else []
+                if not isinstance(streams, list):
+                    streams = []
+                for s in streams:
+                    if isinstance(s, dict) and s.get("codec_type") == "audio":
+                        audio_streams.append(self._safe_stream_channels(s.get("channels", 1)))
 
             pairs    = self.ch_pair if isinstance(self.ch_pair, list) else [self.ch_pair]
             audio_fc = self._build_filter(audio_streams, pairs)
@@ -339,8 +348,11 @@ class TranscodeThread(QThread):
                     errors="replace",
                     timeout=10)
                 if pr2.returncode == 0:
-                    total_sec = float(
-                        _j2.loads(pr2.stdout or "{}").get('format',{}).get('duration',0))
+                    data = _j2.loads(pr2.stdout or "{}")
+                    fmt = data.get('format', {}) if isinstance(data, dict) else {}
+                    if not isinstance(fmt, dict):
+                        fmt = {}
+                    total_sec = max(0.0, _safe_float(fmt.get('duration', 0), 0.0))
             except Exception as e:
                 log.debug(f'duration probe: {e}')
             self.progress.emit(0)
