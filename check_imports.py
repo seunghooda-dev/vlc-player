@@ -617,6 +617,28 @@ def check_core_logic():
         )
         if abs((wrap_issue_time or 0) - 1.25) > 0.0001:
             errors.append(f"  FAIL next QC issue seek wrap: {wrap_issue_time}")
+        prev_issue_time = RightPanel._previous_qc_issue_seek_time(
+            SummaryCopyProbe(),
+            {
+                'black_ranges': [{'start': 4.0}],
+                'mute_ranges': [{'start': 1.25}],
+                'freeze_ranges': [{'start': 3.0}],
+            },
+            3.2,
+        )
+        if abs((prev_issue_time or 0) - 3.0) > 0.0001:
+            errors.append(f"  FAIL previous QC issue seek time: {prev_issue_time}")
+        prev_wrap_issue_time = RightPanel._previous_qc_issue_seek_time(
+            SummaryCopyProbe(),
+            {
+                'black_ranges': [{'start': 4.0}],
+                'mute_ranges': [{'start': 1.25}],
+                'freeze_ranges': [{'start': 3.0}],
+            },
+            1.0,
+        )
+        if abs((prev_wrap_issue_time or 0) - 4.0) > 0.0001:
+            errors.append(f"  FAIL previous QC issue seek wrap: {prev_wrap_issue_time}")
         if RightPanel._first_qc_issue_seek_time(SummaryCopyProbe(), {}) is not None:
             errors.append("  FAIL first QC issue seek empty")
 

@@ -1817,6 +1817,16 @@ class RightPanel(QWidget):
                 return start
         return starts[0]
 
+    def _previous_qc_issue_seek_time(self, record, current_sec=0.0):
+        starts = self._qc_issue_seek_times(record)
+        if not starts:
+            return None
+        current = _safe_float(current_sec, 0.0)
+        for start in reversed(starts):
+            if start < current - 0.05:
+                return start
+        return starts[-1]
+
     def _seek_first_qc_issue(self, record, filepath=None):
         fp = self._file_path_text(filepath or (record or {}).get('filepath'))
         if not self._same_path_text(fp, getattr(self.vp, 'cur_file', '')):
@@ -1848,6 +1858,26 @@ class RightPanel(QWidget):
             self.vp.status_changed.emit(f"  마지막 이후라 첫 문제 구간으로 이동 — {target:.3f}s")
         else:
             self.vp.status_changed.emit(f"  다음 문제 구간으로 이동 — {target:.3f}s")
+        return True
+
+    def _seek_previous_qc_issue(self, record, filepath=None):
+        fp = self._file_path_text(filepath or (record or {}).get('filepath'))
+        if not self._same_path_text(fp, getattr(self.vp, 'cur_file', '')):
+            self.vp.status_changed.emit(f"  ⏳ 이전 문제 이동은 CUE 후 가능합니다 — {self._path_name(fp)}")
+            return False
+        try:
+            current_sec = _safe_int(self.vp.player.position(), 0) / 1000.0
+        except Exception:
+            current_sec = 0.0
+        target = self._previous_qc_issue_seek_time(record, current_sec)
+        if target is None:
+            self.vp.status_changed.emit(f"  확인할 문제 구간이 없습니다 — {self._path_name(fp)}")
+            return False
+        self.seek_requested.emit(float(target))
+        if target >= current_sec - 0.05:
+            self.vp.status_changed.emit(f"  첫 문제 이전이라 마지막 문제 구간으로 이동 — {target:.3f}s")
+        else:
+            self.vp.status_changed.emit(f"  이전 문제 구간으로 이동 — {target:.3f}s")
         return True
 
     def _can_reanalyze_current_file(self, filepath):
@@ -1960,7 +1990,7 @@ class RightPanel(QWidget):
         menu = QMenu(self.exp_list)
         menu.setStyleSheet(self._menu_style())
         act_cue = act_del = act_relink = act_open_location = act_copy_path = act_copy_qc = None
-        act_seek_first_issue = act_seek_next_issue = act_seek_issue_need_cue = None
+        act_seek_first_issue = act_seek_prev_issue = act_seek_next_issue = act_seek_issue_need_cue = None
         act_re_black = act_re_audio = act_re_freeze = act_re_need_cue = None
         act_export_visible = act_export_one = act_reset_qc = act_clean_unavailable = None
         record = self._file_record_for_path(fp)
@@ -1978,6 +2008,7 @@ class RightPanel(QWidget):
                 if self._first_qc_issue_seek_time(record) is not None:
                     if self._same_path_text(fp, getattr(self.vp, 'cur_file', '')):
                         act_seek_first_issue = menu.addAction("⏱   첫 문제 구간으로 이동")
+                        act_seek_prev_issue = menu.addAction("⏮   이전 문제 구간으로 이동")
                         act_seek_next_issue = menu.addAction("⏭   다음 문제 구간으로 이동")
                     else:
                         act_seek_issue_need_cue = menu.addAction("ⓘ   첫 문제 이동은 CUE 후 가능")
@@ -2037,6 +2068,8 @@ class RightPanel(QWidget):
             self._copy_qc_summary(record)
         elif action == act_seek_first_issue:
             self._seek_first_qc_issue(record, fp)
+        elif action == act_seek_prev_issue:
+            self._seek_previous_qc_issue(record, fp)
         elif action == act_seek_next_issue:
             self._seek_next_qc_issue(record, fp)
         elif action == act_re_black:
