@@ -902,6 +902,7 @@ class RightPanel(QWidget):
         files = [f for f in (files or []) if isinstance(f, dict)]
         counts = {
             'total': len(files),
+            'attention': 0,
             'normal': 0,
             'partial_normal': 0,
             'black': 0,
@@ -913,7 +914,10 @@ class RightPanel(QWidget):
             'missing': 0,
         }
         for f in files:
-            if RightPanel._file_unavailable_badge((f or {}).get('filepath')):
+            unavailable = RightPanel._file_unavailable_badge((f or {}).get('filepath'))
+            if RightPanel._file_needs_report_attention(f, unavailable=unavailable):
+                counts['attention'] += 1
+            if unavailable:
                 counts['missing'] += 1
                 continue
             black = str(f.get('black') or '').lower()
@@ -3347,22 +3351,19 @@ class RightPanel(QWidget):
                 log.warning(f'batch qc auto report failed: {e}')
         suffix = f" / 리포트 {Path(report).name}" if report else ""
         counts = self._batch_summary_counts(self._file_records())
-        issue_total = (
-            counts['black'] + counts['mute'] + counts['freeze']
-            + counts['both'] + counts['error'] + counts.get('missing', 0)
-        )
         summary = (
-            f"일괄 검수 완료 | 총 {total} | 정상 {counts['normal']} | "
+            f"일괄 검수 완료 | 총 {total} | 확인필요 {counts['attention']} | 정상 {counts['normal']} | "
             f"블랙/무음 정상 {counts['partial_normal']} | "
             f"블랙 {counts['black']} | 무음 {counts['mute']} | 프리즈 {counts['freeze']} | "
             f"복합 {counts['both']} | 오류 {counts['error']} | 파일없음 {counts.get('missing', 0)} | "
             f"미분석 {counts['pending']} | {elapsed:.1f}초"
         )
-        self._set_batch_summary_panel(summary + suffix, issues=issue_total > 0)
+        self._set_batch_summary_panel(summary + suffix, issues=counts['attention'] > 0)
         self.exp_path.setText(f"✓ {summary}{suffix}")
         self.vp.ai_lbl.setText(f"✓ 일괄 검수 완료 — {total}개 파일{suffix}")
         log.info(
             f"batch qc finished files={total} elapsed={elapsed:.1f}s "
+            f"attention={counts['attention']} "
             f"normal={counts['normal']} partial_normal={counts['partial_normal']} "
             f"black={counts['black']} mute={counts['mute']} "
             f"freeze={counts['freeze']} complex={counts['both']} "
@@ -3373,6 +3374,7 @@ class RightPanel(QWidget):
             'finished',
             files=total,
             elapsed=f'{elapsed:.1f}s',
+            attention=counts['attention'],
             normal=counts['normal'],
             partial_normal=counts['partial_normal'],
             black=counts['black'],

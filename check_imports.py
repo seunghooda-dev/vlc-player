@@ -185,6 +185,7 @@ def check_core_logic():
         ])
         expected_qc_counts = {
             'total': 7,
+            'attention': 5,
             'normal': 1,
             'partial_normal': 1,
             'black': 2,
