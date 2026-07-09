@@ -2002,6 +2002,48 @@ def check_core_logic():
         if not any('CUE 파일 접근 불가' in msg for msg in unavailable_current_probe.messages):
             errors.append(f"  FAIL unavailable current file status: {unavailable_current_probe.messages}")
 
+        class ClearClipsProbe:
+            clear_clips = VideoPanel.clear_clips
+
+            def __init__(self):
+                self._files = [{'filepath': 'C:/qc/current.mxf'}]
+                self.cur_file = 'C:/qc/current.mxf'
+                self.ejected = 0
+                self.eject_seen_files = None
+                self.messages = []
+                self.clip_list = type(
+                    'ClipList',
+                    (),
+                    {'clear': lambda inner: setattr(self, 'clip_cleared', True)},
+                )()
+                self.status_changed = type(
+                    'Signal',
+                    (),
+                    {'emit': lambda _, msg: self.messages.append(msg)},
+                )()
+
+            def eject_clip(self):
+                self.ejected += 1
+                self.eject_seen_files = list(self._files)
+                self.cur_file = None
+
+        clear_clips_probe = ClearClipsProbe()
+        VideoPanel.clear_clips(clear_clips_probe)
+        if clear_clips_probe._files or clear_clips_probe.eject_seen_files:
+            errors.append(
+                f"  FAIL clear clips should empty files before eject: "
+                f"files={clear_clips_probe._files} seen={clear_clips_probe.eject_seen_files}"
+            )
+        if clear_clips_probe.ejected != 1 or clear_clips_probe.cur_file is not None:
+            errors.append(
+                f"  FAIL clear clips should eject current state: "
+                f"ejected={clear_clips_probe.ejected} cur={clear_clips_probe.cur_file}"
+            )
+        if not getattr(clear_clips_probe, 'clip_cleared', False):
+            errors.append("  FAIL clear clips should clear clip list")
+        if not any('파일 목록 비움' in msg for msg in clear_clips_probe.messages):
+            errors.append(f"  FAIL clear clips status message: {clear_clips_probe.messages}")
+
         class RecentPruneProbe:
             _settings_entries = staticmethod(VideoPanel._settings_entries)
             _prune_recent_entries = VideoPanel._prune_recent_entries

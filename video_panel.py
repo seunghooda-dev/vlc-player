@@ -2502,9 +2502,13 @@ class VideoPanel(QWidget):
             self._right_panel.refresh_explorer()
 
     def clear_clips(self):
-        self._files=[]; self.clip_list.clear()
-        self._cancel_audio_mix()
-        self.player.stop(); self._video_item.hide(); self._empty_proxy.show()
+        self._files = []
+        try:
+            self.clip_list.clear()
+        except Exception:
+            pass
+        self.eject_clip()
+        self.status_changed.emit("  🧹 파일 목록 비움 — 현재 CUE도 초기화했습니다")
 
     def _prune_dead_threads(self):
         dead_threads = getattr(self, '_dead_threads', [])
