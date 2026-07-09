@@ -237,6 +237,34 @@ def check_core_logic():
             actual = RightPanel._file_matches_filter(FilterProbe(key), file_state)
             if actual is not expected:
                 errors.append(f"  FAIL filter {label}: {actual} != {expected}")
+        filter_count_records = [
+            {'black': 'ok', 'mute': 'ok', 'freeze': ''},
+            {'black': '', 'mute': '', 'freeze': ''},
+            {'black': 'found', 'mute': 'ok', 'freeze': ''},
+            {'black': 'ok', 'mute': 'error', 'freeze': ''},
+            {'black': 'ok', 'mute': 'ok', 'freeze': 'found'},
+        ]
+        filter_counts = RightPanel._filter_counts(filter_count_records)
+        expected_filter_counts = {
+            'all': 5,
+            'done': 3,
+            'pending': 1,
+            'issues': 3,
+            'black': 1,
+            'mute': 0,
+            'freeze': 1,
+            'error': 1,
+            'normal': 1,
+        }
+        for key, expected in expected_filter_counts.items():
+            if filter_counts.get(key) != expected:
+                errors.append(f"  FAIL filter count {key}: {filter_counts.get(key)} != {expected}")
+        if RightPanel._filter_button_text('issues', 3) != '문제 3':
+            errors.append("  FAIL filter button text issues")
+        if RightPanel._filter_button_text('mute', 0) != '무음':
+            errors.append("  FAIL filter button text zero-detail")
+        if RightPanel._filter_button_text('all', 0) != '전체 0':
+            errors.append("  FAIL filter button text all-zero")
         qc_summary_cases = [
             (qc_summary_from_status('ok', 'ok', ''), '블랙/무음 정상', 'black/mute ok without freeze'),
             (qc_summary_from_status('ok', 'ok', 'ok'), '정상', 'black/mute/freeze ok'),

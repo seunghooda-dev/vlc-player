@@ -36,6 +36,28 @@ from meters      import mk_label
 FILE_ITEM_HTML_ROLE = Qt.ItemDataRole.UserRole.value + 10
 FILE_ITEM_PLAIN_ROLE = Qt.ItemDataRole.UserRole.value + 11
 FILE_FILTER_KEYS = ('all', 'done', 'pending', 'issues', 'black', 'mute', 'freeze', 'error', 'normal')
+FILE_FILTER_LABELS = {
+    'all': '전체',
+    'done': '완료',
+    'pending': '미분석',
+    'issues': '문제',
+    'black': '블랙',
+    'mute': '무음',
+    'freeze': '프리즈',
+    'error': '오류',
+    'normal': '정상',
+}
+FILE_FILTER_TIPS = {
+    'all': '모든 파일 보기',
+    'done': '일괄 검수 기준인 블랙/무음 검사가 완료된 파일만 보기',
+    'pending': '블랙/무음 검사가 아직 완료되지 않은 파일만 보기',
+    'issues': '블랙/무음/프리즈 발견 또는 검사 오류가 있는 파일만 보기',
+    'black': '블랙 구간이 발견된 파일만 보기',
+    'mute': '무음 구간이 발견된 파일만 보기',
+    'freeze': '정지 화면 구간이 발견된 파일만 보기',
+    'error': '검사 오류가 있는 파일만 보기',
+    'normal': '정상 또는 블랙/무음 정상 파일만 보기',
+}
 
 
 def _safe_float(value, default=0.0):
@@ -281,17 +303,9 @@ class RightPanel(QWidget):
         fbl.setContentsMargins(8,3,8,3)
         fbl.setSpacing(5)
         self._filter_btns = {}
-        for key, label, tip in [
-            ('all', '전체', '모든 파일 보기'),
-            ('done', '완료', '일괄 검수 기준인 블랙/무음 검사가 완료된 파일만 보기'),
-            ('pending', '미분석', '블랙/무음 검사가 아직 완료되지 않은 파일만 보기'),
-            ('issues', '문제', '블랙/무음/프리즈 발견 또는 검사 오류가 있는 파일만 보기'),
-            ('black', '블랙', '블랙 구간이 발견된 파일만 보기'),
-            ('mute', '무음', '무음 구간이 발견된 파일만 보기'),
-            ('freeze', '프리즈', '정지 화면 구간이 발견된 파일만 보기'),
-            ('error', '오류', '검사 오류가 있는 파일만 보기'),
-            ('normal', '정상', '정상 또는 블랙/무음 정상 파일만 보기'),
-        ]:
+        for key in FILE_FILTER_KEYS:
+            label = FILE_FILTER_LABELS.get(key, key)
+            tip = FILE_FILTER_TIPS.get(key, label)
             b = QPushButton(label)
             b.setCheckable(True)
             b.setChecked(key == self._filter_key)
@@ -709,17 +723,34 @@ class RightPanel(QWidget):
         return True
 
     def _filter_label(self):
+        return FILE_FILTER_LABELS.get(getattr(self, '_filter_key', 'all'), '전체')
+
+    @staticmethod
+    def _filter_counts(files):
+        files = [f for f in (files or []) if isinstance(f, dict)]
         return {
-            'all': '전체',
-            'done': '완료',
-            'pending': '미분석',
-            'issues': '문제',
-            'black': '블랙',
-            'mute': '무음',
-            'freeze': '프리즈',
-            'error': '오류',
-            'normal': '정상',
-        }.get(getattr(self, '_filter_key', 'all'), '전체')
+            key: sum(1 for f in files if RightPanel._file_matches_filter_key(f, key))
+            for key in FILE_FILTER_KEYS
+        }
+
+    @staticmethod
+    def _filter_button_text(key, count):
+        label = FILE_FILTER_LABELS.get(key, key)
+        count = _safe_count(count)
+        if key in ('all', 'done', 'pending', 'issues') or count > 0:
+            return f"{label} {count}"
+        return label
+
+    def _update_filter_buttons(self, files):
+        counts = self._filter_counts(files)
+        current_key = getattr(self, '_filter_key', 'all')
+        for key, btn in getattr(self, '_filter_btns', {}).items():
+            btn.setChecked(key == current_key)
+            count = counts.get(key, 0)
+            btn.setText(self._filter_button_text(key, count))
+            tip = FILE_FILTER_TIPS.get(key, FILE_FILTER_LABELS.get(key, key))
+            btn.setToolTip(f"{tip}\n현재 {count}개")
+        return counts
 
     def _batch_summary_counts(self, files):
         files = [f for f in (files or []) if isinstance(f, dict)]
@@ -2148,8 +2179,7 @@ class RightPanel(QWidget):
             )
         if hasattr(self, 'btn_batch_cancel'):
             self.btn_batch_cancel.setEnabled(bool(getattr(self, '_batch_active', False)))
-        for key, btn in getattr(self, '_filter_btns', {}).items():
-            btn.setChecked(key == getattr(self, '_filter_key', 'all'))
+        self._update_filter_buttons(all_files)
 
         # 경로 표시: CUE 파일 기준, 없으면 첫 번째 파일 기준
         base_fp = self._file_path_text(cue_fp) or (
