@@ -119,6 +119,7 @@ def check_core_logic():
         _file_path_text = staticmethod(lambda value: str(value or ''))
         _path_exists = staticmethod(lambda value: True)
         _file_status_badge = RightPanel._file_status_badge
+        _file_matches_filter_key = staticmethod(RightPanel._file_matches_filter_key)
         _is_standard_playback_resolution = staticmethod(RightPanel._is_standard_playback_resolution)
         _is_common_playback_fps = staticmethod(RightPanel._is_common_playback_fps)
         _is_ntsc_drop_frame_rate = staticmethod(RightPanel._is_ntsc_drop_frame_rate)
@@ -307,6 +308,7 @@ def check_core_logic():
             _filter_key = 'issues'
             _iter_report_files = RightPanel._iter_report_files
             _filtered_file_records = RightPanel._filtered_file_records
+            _issue_file_records = RightPanel._issue_file_records
             _file_matches_filter = RightPanel._file_matches_filter
             _report_menu_state = RightPanel._report_menu_state
             _path_name = staticmethod(RightPanel._path_name)
@@ -324,9 +326,19 @@ def check_core_logic():
         ]
         if filtered_report_names != ['bad-a.mxf', 'bad-b.mxf']:
             errors.append(f"  FAIL filtered report scope: {filtered_report_names}")
-        report_menu_state = RightPanel._report_menu_state(FilteredReportProbe())
+        report_probe = FilteredReportProbe()
+        report_menu_state = RightPanel._report_menu_state(report_probe)
         if report_menu_state.get('all_count') != 3 or report_menu_state.get('visible_count') != 2:
             errors.append(f"  FAIL report menu counts: {report_menu_state}")
+        if report_menu_state.get('issue_count') != 2:
+            errors.append(f"  FAIL report menu issue count: {report_menu_state}")
+        issue_report_names = [
+            f.get('name') for f in report_menu_state.get('issue_files', [])
+        ]
+        if issue_report_names != ['bad-a.mxf', 'bad-b.mxf']:
+            errors.append(f"  FAIL report menu issue files: {issue_report_names}")
+        if getattr(report_probe, '_filter_key', '') != 'issues':
+            errors.append(f"  FAIL report menu filter restore: {getattr(report_probe, '_filter_key', '')}")
         if not report_menu_state.get('show_visible'):
             errors.append(f"  FAIL report menu visible scope: {report_menu_state}")
         if report_menu_state.get('latest_report_name') != 'latest.csv':

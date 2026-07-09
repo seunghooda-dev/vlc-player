@@ -458,12 +458,15 @@ class RightPanel(QWidget):
     def _report_menu_state(self):
         all_files = self._file_records()
         visible_files = self._filtered_file_records()
+        issue_files = self._issue_file_records()
         latest_report = self._latest_report_path()
         return {
             'all_files': all_files,
             'visible_files': visible_files,
+            'issue_files': issue_files,
             'all_count': len(all_files),
             'visible_count': len(visible_files),
+            'issue_count': len(issue_files),
             'latest_report': latest_report,
             'latest_report_name': self._path_name(latest_report, '최근 리포트 없음'),
             'show_visible': (
@@ -478,6 +481,8 @@ class RightPanel(QWidget):
         menu.setStyleSheet(self._menu_style())
         act_all = menu.addAction(f"▣   전체 리포트 저장 ({state['all_count']}개)")
         act_all.setEnabled(state['all_count'] > 0)
+        act_issues = menu.addAction(f"▣   문제 파일 리포트 저장 ({state['issue_count']}개)")
+        act_issues.setEnabled(state['issue_count'] > 0)
         act_visible = None
         if state['show_visible']:
             act_visible = menu.addAction(f"▣   표시 목록 리포트 저장 ({state['visible_count']}개)")
@@ -497,6 +502,8 @@ class RightPanel(QWidget):
             return
         if action == act_all:
             self._export_qc_report(state['all_files'], default_prefix='qc-report')
+        elif action == act_issues:
+            self._export_qc_report(state['issue_files'], default_prefix='qc-issues')
         elif action == act_visible:
             self._export_qc_report(
                 state['visible_files'],
@@ -657,8 +664,11 @@ class RightPanel(QWidget):
         )
 
     def _file_matches_filter(self, f):
+        return self._file_matches_filter_key(f, getattr(self, '_filter_key', 'all'))
+
+    @staticmethod
+    def _file_matches_filter_key(f, key):
         f = f or {}
-        key = getattr(self, '_filter_key', 'all')
         if key == 'all':
             return True
         unavailable = bool(RightPanel._file_unavailable_badge(f.get('filepath')))
@@ -960,6 +970,13 @@ class RightPanel(QWidget):
         files = [
             f for f in self._file_records()
             if self._file_matches_filter(f)
+        ]
+        return self._iter_report_files(files)
+
+    def _issue_file_records(self):
+        files = [
+            f for f in self._file_records()
+            if self._file_matches_filter_key(f, 'issues')
         ]
         return self._iter_report_files(files)
 
