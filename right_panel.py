@@ -641,6 +641,15 @@ class RightPanel(QWidget):
         divider = f" <span style='color:{C['text2']};'>/</span> "
         return f"{black}{divider}{mute}{divider}{freeze}"
 
+    def _file_first_issue_hint_html(self, f):
+        hint = self._first_qc_issue_text(f)
+        if not hint:
+            return ''
+        return (
+            f" <span style='color:{C['text2']};'>&nbsp;&nbsp;|&nbsp;&nbsp;</span>"
+            f"<span style='color:{C['yellow']};font-weight:800;'>첫문제 {escape(hint)}</span>"
+        )
+
     def _breakable_name_html(self, name):
         safe = escape(str(name or ''), quote=False)
         for ch in ('_', '-', '.', '(', ')', '[', ']'):
@@ -664,7 +673,7 @@ class RightPanel(QWidget):
             f"<div style=\"font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';"
             f"font-size:12px;color:{C['text0']};font-weight:500;\">"
             f"QC: <span style='color:{badge_color};font-weight:800;'>{escape(badge)}</span>"
-            f"&nbsp;&nbsp;&nbsp;{self._file_status_detail_html(f)}</div>"
+            f"&nbsp;&nbsp;&nbsp;{self._file_status_detail_html(f)}{self._file_first_issue_hint_html(f)}</div>"
         )
 
     def _file_matches_filter(self, f):
@@ -1690,6 +1699,9 @@ class RightPanel(QWidget):
             f"QC상태: {badge}",
             f"상세: {self._file_status_detail(record)}",
         ]
+        first_issue = self._first_qc_issue_text(record)
+        if first_issue:
+            lines.append(f"첫문제: {first_issue}")
         ranges = (
             ('블랙구간', record.get('black_ranges')),
             ('무음구간', record.get('mute_ranges')),
@@ -1738,7 +1750,9 @@ class RightPanel(QWidget):
             name = record.get('name') or self._path_name(fp, '파일')
             badge, _ = self._file_status_badge(record, fp == current)
             detail = self._file_status_detail(record)
-            lines.append(f"- {name}: {badge} / {detail}")
+            first_issue = self._first_qc_issue_text(record)
+            issue_suffix = f" / 첫문제 {first_issue}" if first_issue else ""
+            lines.append(f"- {name}: {badge} / {detail}{issue_suffix}")
             if fp:
                 lines.append(f"  {fp}")
         return '\n'.join(lines)
@@ -1755,16 +1769,37 @@ class RightPanel(QWidget):
             self.vp.status_changed.emit("  ⚠ 문제 요약 복사 실패")
             return False
 
-    def _qc_issue_seek_times(self, record):
+    def _qc_issue_markers(self, record):
         if not isinstance(record, dict):
             return []
-        starts = []
-        for key in ('black_ranges', 'mute_ranges', 'freeze_ranges'):
+        markers = []
+        for key, label in (
+            ('black_ranges', '블랙'),
+            ('mute_ranges', '무음'),
+            ('freeze_ranges', '프리즈'),
+        ):
             for item in sanitize_qc_ranges(record.get(key)):
                 start = _safe_float(item.get('start'), None)
                 if start is not None and start >= 0:
-                    starts.append(start)
-        return sorted({round(start, 3) for start in starts})
+                    markers.append({
+                        'start': round(start, 3),
+                        'label': label,
+                        'tc': str(item.get('tc_start') or '').strip(),
+                    })
+        priority = {'블랙': 0, '무음': 1, '프리즈': 2}
+        markers.sort(key=lambda marker: (marker.get('start', 0.0), priority.get(marker.get('label'), 9)))
+        return markers
+
+    def _qc_issue_seek_times(self, record):
+        return sorted({marker['start'] for marker in self._qc_issue_markers(record)})
+
+    def _first_qc_issue_text(self, record):
+        markers = self._qc_issue_markers(record)
+        if not markers:
+            return ''
+        marker = markers[0]
+        pos = marker.get('tc') or f"{_safe_float(marker.get('start'), 0.0):.3f}s"
+        return f"{marker.get('label', '문제')} {pos}"
 
     def _first_qc_issue_seek_time(self, record):
         starts = self._qc_issue_seek_times(record)
@@ -2114,16 +2149,19 @@ class RightPanel(QWidget):
             prefix = "▶  " if is_cue else ""
             badge, badge_color = self._file_status_badge(f, is_cue)
             detail = self._file_status_detail(f)
-            item_text = f"{prefix}{name}\nQC: {badge}    {detail}"
+            first_issue = self._first_qc_issue_text(f)
+            issue_hint = f"    첫문제 {first_issue}" if first_issue else ""
+            item_text = f"{prefix}{name}\nQC: {badge}    {detail}{issue_hint}"
             item = QListWidgetItem(item_text)
             item.setData(FILE_ITEM_PLAIN_ROLE, item_text)
             item.setData(FILE_ITEM_HTML_ROLE, self._file_item_html(f, prefix, badge, badge_color))
             item.setSizeHint(QSize(0, self._file_item_height(item_text)))
             item.setData(Qt.ItemDataRole.UserRole, fp)
             updated = f.get("qc_updated_at") or "-"
+            first_issue_tip = f"\n첫문제: {first_issue}" if first_issue else ""
             item.setToolTip(
                 f"{name}\n"
-                f"QC 상태: {badge}\n{detail}\n갱신: {updated}\n{fp}"
+                f"QC 상태: {badge}\n{detail}{first_issue_tip}\n갱신: {updated}\n{fp}"
             )
             if is_cue and badge not in ("블랙 있음", "무음 있음", "블랙/무음", "검사 오류"):
                 item.setForeground(QColor(badge_color))

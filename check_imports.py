@@ -487,7 +487,9 @@ def check_core_logic():
 
         class SummaryCopyProbe:
             _iter_report_files = RightPanel._iter_report_files
+            _qc_issue_markers = RightPanel._qc_issue_markers
             _qc_issue_seek_times = RightPanel._qc_issue_seek_times
+            _first_qc_issue_text = RightPanel._first_qc_issue_text
             vp = type('VP', (), {'cur_file': ''})()
 
             def _file_path_text(self, value):
@@ -532,6 +534,8 @@ def check_core_logic():
             errors.append(f"  FAIL QC summary copy header: {summary_text}")
         if '상세: 블랙 있음 1 / 무음 정상 0 / 프리즈 미분석 0' not in summary_text:
             errors.append(f"  FAIL QC summary copy detail: {summary_text}")
+        if '첫문제: 블랙 00:00:01;00' not in summary_text:
+            errors.append(f"  FAIL QC summary copy first issue: {summary_text}")
         if '블랙구간: 00:00:01;00>00:00:02;00(1.000s)' not in summary_text:
             errors.append(f"  FAIL QC summary copy ranges: {summary_text}")
         if '경로: C:/qc/copy-me.mxf' not in summary_text:
@@ -548,6 +552,7 @@ def check_core_logic():
                     'black_count': 1,
                     'mute_count': 0,
                     'freeze_count': 0,
+                    'black_ranges': [{'start': 4.0, 'tc_start': '00:00:04;00'}],
                 },
                 {
                     'name': 'bad-b.mxf',
@@ -563,7 +568,7 @@ def check_core_logic():
         )
         if 'MXF QC Player 문제 파일 요약' not in issue_summary_text or '문제 2개' not in issue_summary_text:
             errors.append(f"  FAIL issue summary copy header: {issue_summary_text}")
-        if 'bad-a.mxf: 블랙 있음 / 블랙 있음 1 / 무음 정상 0 / 프리즈 미분석 0' not in issue_summary_text:
+        if 'bad-a.mxf: 블랙 있음 / 블랙 있음 1 / 무음 정상 0 / 프리즈 미분석 0 / 첫문제 블랙 00:00:04;00' not in issue_summary_text:
             errors.append(f"  FAIL issue summary copy black detail: {issue_summary_text}")
         if 'bad-b.mxf: 검사 오류 / 블랙 정상 0 / 무음 오류 0 / 프리즈 미분석 0' not in issue_summary_text:
             errors.append(f"  FAIL issue summary copy error detail: {issue_summary_text}")
