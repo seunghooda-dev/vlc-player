@@ -12,4 +12,24 @@ echo ================================================
 echo.
 
 "%PY%" check_imports.py
-exit /b %errorlevel%
+if errorlevel 1 exit /b %errorlevel%
+
+echo.
+echo Running Python bytecode compile check...
+"%PY%" -m py_compile check_imports.py constants.py db_models.py threads.py meters.py video_panel.py right_panel.py main.py
+if errorlevel 1 exit /b %errorlevel%
+
+where git > nul 2>&1
+if errorlevel 1 (
+    echo.
+    echo [WARN] git was not found. Skipping whitespace diff check.
+) else if exist ".git" (
+    echo.
+    echo Running git whitespace diff check...
+    git diff --check
+    if errorlevel 1 exit /b %errorlevel%
+)
+
+echo.
+echo [PASS] Development check completed.
+exit /b 0
