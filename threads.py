@@ -40,6 +40,25 @@ def _analysis_flags():
         return _CREATE_NO_WINDOW | _BELOW_NORMAL_PRIORITY_CLASS
     return 0
 
+def _safe_float(value, default=0.0):
+    try:
+        parsed = float(value)
+        return parsed if math.isfinite(parsed) else default
+    except Exception:
+        return default
+
+def _safe_int(value, default=0):
+    try:
+        parsed = float(value)
+        if math.isfinite(parsed):
+            return int(parsed)
+    except Exception:
+        pass
+    return default
+
+def _safe_count(value):
+    return max(0, _safe_int(value, 0))
+
 class ProbeThread(QThread):
     probed = pyqtSignal(dict, float)  # info, elapsed seconds
     error = pyqtSignal(str, float)
@@ -346,11 +365,11 @@ class AudioAnalyzeThread(QThread):
     def __init__(self, fp, fps, noise_threshold=-50, min_duration=2.0, df=None, tc_offset_frames=0):
         super().__init__()
         self.fp              = fp
-        self.fps             = fps
+        self.fps             = max(1.0, _safe_float(fps, 29.97))
         self.df              = df
-        self.tc_offset_frames = int(tc_offset_frames or 0)
-        self.noise_threshold = noise_threshold   # dB (-50 기본)
-        self.min_duration    = min_duration      # 초
+        self.tc_offset_frames = _safe_count(tc_offset_frames)
+        self.noise_threshold = _safe_float(noise_threshold, -50.0)   # dB (-50 기본)
+        self.min_duration    = max(0.0, _safe_float(min_duration, 2.0))      # 초
         self._abort          = False
         self._proc           = None
 
@@ -388,7 +407,7 @@ class AudioAnalyzeThread(QThread):
         """분석 속도를 위해 QC 기준 채널인 1/2CH만 추출한다."""
         if not audio_streams:
             return f'[0:a:0]anull[{out_label}]', 2
-        first_ch = int(audio_streams[0] or 1)
+        first_ch = max(1, _safe_int(audio_streams[0], 1))
         if first_ch >= 2:
             return f'[0:a:0]pan=stereo|c0=c0|c1=c1[{out_label}]', 2
         if len(audio_streams) >= 2:
@@ -417,6 +436,19 @@ class AudioAnalyzeThread(QThread):
             if not isinstance(levels, list):
                 self._discard_index_cache(path, 'invalid levels')
                 return None
+            cleaned_levels = []
+            for value in levels:
+                db = _safe_float(value, None)
+                if db is None:
+                    self._discard_index_cache(path, 'non-finite level')
+                    return None
+                cleaned_levels.append(round(db, 1))
+            window_sec = _safe_float(data.get('window_sec', 0.1), 0.1)
+            if window_sec <= 0:
+                self._discard_index_cache(path, 'invalid window')
+                return None
+            data['levels_db'] = cleaned_levels
+            data['window_sec'] = window_sec
             return data
         except Exception as e:
             log.debug(f'audio index cache load: {e}')
@@ -597,7 +629,7 @@ class AudioAnalyzeThread(QThread):
             try:
                 for st in _json.loads(pr.stdout or "{}").get('streams',[]):
                     if st.get('codec_type') == 'audio':
-                        audio_streams.append(int(st.get('channels', 1) or 1))
+                        audio_streams.append(max(1, _safe_int(st.get('channels', 1), 1)))
             except Exception as e: log.debug(f'audio ch parse: {e}')
             if not audio_streams:
                 audio_streams = [2]
@@ -611,7 +643,9 @@ class AudioAnalyzeThread(QThread):
             if cache_hit:
                 self.progress.emit(f'{basis} 레벨 인덱스 캐시 사용 — 뮤트 구간 계산 중...')
                 levels = cache['levels_db']
-                window_sec = float(cache.get('window_sec', 0.1))
+                window_sec = _safe_float(cache.get('window_sec', 0.1), 0.1)
+                if window_sec <= 0:
+                    window_sec = 0.1
             else:
                 self.progress.emit(f'{source_ch_count}ch 파일 — {basis} 레벨 인덱스 생성 중...')
                 window_sec = 0.1
@@ -663,12 +697,9 @@ class LoudnessAnalyzeThread(QThread):
     def __init__(self, fp, audio_stream_count=0, channel_count=2, duration=0.0):
         super().__init__()
         self.fp = fp
-        self.audio_stream_count = max(0, int(audio_stream_count or 0))
-        self.channel_count = max(1, int(channel_count or 2))
-        try:
-            self.duration = max(0.0, float(duration or 0.0))
-        except Exception:
-            self.duration = 0.0
+        self.audio_stream_count = _safe_count(audio_stream_count)
+        self.channel_count = max(1, _safe_int(channel_count, 2))
+        self.duration = max(0.0, _safe_float(duration, 0.0))
         self._abort = False
         self._proc = None
 
@@ -844,11 +875,11 @@ class BlackDetectThread(QThread):
     def __init__(self, fp, fps, amount=98, threshold=32, df=None, tc_offset_frames=0):
         super().__init__()
         self.fp        = fp
-        self.fps       = fps or 29.97
+        self.fps       = max(1.0, _safe_float(fps, 29.97))
         self.df        = df
-        self.tc_offset_frames = int(tc_offset_frames or 0)
-        self.amount    = int(amount)
-        self.threshold = int(threshold)
+        self.tc_offset_frames = _safe_count(tc_offset_frames)
+        self.amount    = max(0, min(100, _safe_int(amount, 98)))
+        self.threshold = max(0, min(255, _safe_int(threshold, 32)))
         self._abort    = False
         self._proc     = None
 
@@ -983,11 +1014,11 @@ class FreezeDetectThread(QThread):
     def __init__(self, fp, fps, noise_db=-60.0, min_duration=1.0, df=None, tc_offset_frames=0):
         super().__init__()
         self.fp = fp
-        self.fps = fps or 29.97
-        self.noise_db = float(noise_db)
-        self.min_duration = float(min_duration)
+        self.fps = max(1.0, _safe_float(fps, 29.97))
+        self.noise_db = _safe_float(noise_db, -60.0)
+        self.min_duration = max(0.1, _safe_float(min_duration, 1.0))
         self.df = df
-        self.tc_offset_frames = int(tc_offset_frames or 0)
+        self.tc_offset_frames = _safe_count(tc_offset_frames)
         self._abort = False
         self._proc = None
 
