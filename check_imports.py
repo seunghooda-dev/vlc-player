@@ -1344,6 +1344,9 @@ def check_core_logic():
             _file_path_text = staticmethod(RightPanel._file_path_text)
             _is_video_file_path = staticmethod(lambda value: bool(value))
             _path_name = staticmethod(RightPanel._path_name)
+            _file_access_block_status = staticmethod(
+                lambda value, action='CUE': RightPanel._file_access_block_status(value, action)
+            )
             _cue_exp_item = RightPanel._cue_exp_item
 
             def __init__(self, active=None):
@@ -1373,6 +1376,18 @@ def check_core_logic():
         RightPanel._cue_exp_item(cue_allowed_probe, CueBlockItem('C:/qc/current.mxf'))
         if cue_allowed_probe.loaded != ['C:/qc/current.mxf']:
             errors.append(f"  FAIL idle cue should load: {cue_allowed_probe.loaded}")
+
+        class CueUnavailableProbe(CueBlockProbe):
+            _is_video_file_path = staticmethod(lambda value: False)
+
+        cue_unavailable_probe = CueUnavailableProbe(active=None)
+        RightPanel._cue_exp_item(cue_unavailable_probe, CueBlockItem(str(Path(__file__))))
+        if cue_unavailable_probe.loaded:
+            errors.append("  FAIL unavailable cue should not load")
+        if not any('지원 안함' in msg and 'CUE 불가' in msg for msg in cue_unavailable_probe.messages):
+            errors.append(f"  FAIL unavailable cue reason status: {cue_unavailable_probe.messages}")
+        if cue_unavailable_probe.refreshed != 1:
+            errors.append(f"  FAIL unavailable cue should refresh once: {cue_unavailable_probe.refreshed}")
 
         class AnalysisCancelProbe:
             _cancel_current_analysis = RightPanel._cancel_current_analysis
@@ -1922,6 +1937,15 @@ def check_core_logic():
         feedback_invalid_only = VideoPanel._file_add_feedback_text(2, 0, 2, action_hint='')
         if feedback_invalid_only != '⚠ 지원 안 함 2개':
             errors.append(f"  FAIL file add feedback invalid only: {feedback_invalid_only}")
+        class CueStatusProbe:
+            _quick_file_preflight = VideoPanel._quick_file_preflight
+            _cue_block_status_text = VideoPanel._cue_block_status_text
+            _display_file_name = staticmethod(VideoPanel._display_file_name)
+            _path_access_hint = VideoPanel._path_access_hint
+
+        cue_block_text = VideoPanel._cue_block_status_text(CueStatusProbe(), str(Path(__file__)))
+        if '지원하지 않는 파일 형식입니다' not in cue_block_text or 'CUE 불가' not in cue_block_text:
+            errors.append(f"  FAIL CUE block status unsupported reason: {cue_block_text}")
 
         class RecentPruneProbe:
             _settings_entries = staticmethod(VideoPanel._settings_entries)

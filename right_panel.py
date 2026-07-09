@@ -689,7 +689,7 @@ class RightPanel(QWidget):
             self.vp.status_changed.emit("  ⏳ 분석 중에는 파일 전환을 잠시 막습니다")
             return
         if not self._is_video_file_path(fp):
-            self.vp.status_changed.emit(f"  ⚠ 파일을 찾을 수 없습니다 — {self._path_name(fp)}")
+            self.vp.status_changed.emit(self._file_access_block_status(fp, action='선택'))
             return
         self.vp.status_changed.emit(
             f"  📄 {self._path_name(fp)}  —  더블클릭하면 CUE 후 첫 프레임을 표시합니다")
@@ -702,7 +702,7 @@ class RightPanel(QWidget):
             self.vp.status_changed.emit("  ⏳ 분석 중에는 CUE를 변경할 수 없습니다")
             return
         if not self._is_video_file_path(fp):
-            self.vp.status_changed.emit(f"  ⚠ 파일을 찾을 수 없습니다 — {self._path_name(fp)}")
+            self.vp.status_changed.emit(self._file_access_block_status(fp, action='CUE'))
             self.refresh_explorer()
             return
         self.vp.load_file(fp)
@@ -1596,6 +1596,11 @@ class RightPanel(QWidget):
             return ''
         except Exception:
             return '접근 불가'
+
+    @classmethod
+    def _file_access_block_status(cls, value, action='CUE'):
+        reason = cls._file_unavailable_badge(value) or '사용 불가'
+        return f"  ⚠ {reason} — {action} 불가: {cls._path_name(value)}"
 
     def _current_video_file(self):
         fp = self._file_path_text(getattr(self.vp, 'cur_file', ''))

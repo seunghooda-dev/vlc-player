@@ -3192,6 +3192,12 @@ class VideoPanel(QWidget):
             self._empty_proxy.show()
             self._video_item.hide()
 
+    def _cue_block_status_text(self, filepath):
+        ok, title, _detail = self._quick_file_preflight(filepath)
+        if ok:
+            title = 'CUE할 수 없습니다'
+        return f'  ⚠ {title} — CUE 불가: {self._display_file_name(filepath, "?")}'
+
     def _quick_file_preflight(self, filepath):
         if not filepath:
             return False, '파일을 찾을 수 없습니다', '파일 경로가 비어 있습니다.'
@@ -4412,7 +4418,13 @@ class VideoPanel(QWidget):
             if self.in_pt is not None:
                 self._set_position(int(self.in_pt * 1000))
         else:
-            self.load_file(sel)
+            p = self._video_file_path(sel)
+            if not p:
+                self.status_changed.emit(self._cue_block_status_text(sel))
+                if hasattr(self, '_right_panel'):
+                    self._right_panel.refresh_explorer()
+                return
+            self.load_file(str(p))
 
     def seek_to(self, sec):
         if not self._set_position(int(sec*1000)):
