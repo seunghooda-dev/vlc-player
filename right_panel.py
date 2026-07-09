@@ -3,6 +3,7 @@ right_panel.py — 오른쪽 탭 패널
 RightPanel: 파일 탐색기, 블랙 검출, 오디오 분석
 """
 import csv
+import math
 import os
 import sys
 import time
@@ -32,6 +33,33 @@ from meters      import mk_label
 FILE_ITEM_HTML_ROLE = Qt.ItemDataRole.UserRole.value + 10
 FILE_ITEM_PLAIN_ROLE = Qt.ItemDataRole.UserRole.value + 11
 FILE_FILTER_KEYS = ('all', 'done', 'issues', 'black', 'mute', 'freeze', 'error', 'normal')
+
+
+def _safe_float(value, default=0.0):
+    try:
+        parsed = float(value)
+        return parsed if math.isfinite(parsed) else default
+    except Exception:
+        return default
+
+
+def _safe_int(value, default=0):
+    try:
+        parsed = float(value)
+        if math.isfinite(parsed):
+            return int(parsed)
+    except Exception:
+        pass
+    return default
+
+
+def _safe_count(value):
+    return max(0, _safe_int(value, 0))
+
+
+def _safe_text(value, default='—'):
+    text = str(value or '').strip()
+    return text if text else default
 
 
 class FileListItemDelegate(QStyledItemDelegate):
@@ -480,9 +508,9 @@ class RightPanel(QWidget):
         return "미분석", C['text2']
 
     def _file_status_detail(self, f):
-        black_count = int(f.get("black_count", 0) or 0)
-        mute_count = int(f.get("mute_count", 0) or 0)
-        freeze_count = int(f.get("freeze_count", 0) or 0)
+        black_count = _safe_count(f.get("black_count", 0))
+        mute_count = _safe_count(f.get("mute_count", 0))
+        freeze_count = _safe_count(f.get("freeze_count", 0))
         black = self._qc_status_text(f.get("black"), "black")
         mute = self._qc_status_text(f.get("mute"), "mute")
         freeze = self._qc_status_text(f.get("freeze"), "freeze")
@@ -495,14 +523,14 @@ class RightPanel(QWidget):
         weight = 800 if raw_state in ('found', 'error') else 500
         return (
             f"<span style='color:{color};font-weight:{weight};'>"
-            f"{escape(label)} {escape(text)} {int(count or 0)}"
+            f"{escape(label)} {escape(text)} {_safe_count(count)}"
             "</span>"
         )
 
     def _file_status_detail_html(self, f):
-        black_count = int(f.get("black_count", 0) or 0)
-        mute_count = int(f.get("mute_count", 0) or 0)
-        freeze_count = int(f.get("freeze_count", 0) or 0)
+        black_count = _safe_count(f.get("black_count", 0))
+        mute_count = _safe_count(f.get("mute_count", 0))
+        freeze_count = _safe_count(f.get("freeze_count", 0))
         black = self._qc_piece_html("블랙", f.get("black"), black_count)
         mute = self._qc_piece_html("무음", f.get("mute"), mute_count)
         freeze = self._qc_piece_html("프리즈", f.get("freeze"), freeze_count)
@@ -738,9 +766,9 @@ class RightPanel(QWidget):
         sort_key = getattr(self, '_sort_key', 'name')
         sort_asc = getattr(self, '_sort_asc', True)
         if sort_key == 'name':
-            files = sorted(files, key=lambda x: x.get('name', '').lower(), reverse=not sort_asc)
+            files = sorted(files, key=lambda x: _safe_text(x.get('name'), '').lower(), reverse=not sort_asc)
         elif sort_key == 'size':
-            files = sorted(files, key=lambda x: x.get('size', 0), reverse=not sort_asc)
+            files = sorted(files, key=lambda x: _safe_int(x.get('size', 0), 0), reverse=not sort_asc)
         elif sort_key == 'added' and not sort_asc:
             files = list(reversed(files))
         return files
@@ -752,7 +780,7 @@ class RightPanel(QWidget):
             fp = f.get('filepath', '')
             p = Path(fp)
             badge, _ = self._file_status_badge(f, fp == self.vp.cur_file)
-            size = int(f.get('size', 0) or 0)
+            size = _safe_int(f.get('size', 0), 0)
             if not size:
                 try:
                     size = p.stat().st_size
@@ -764,10 +792,12 @@ class RightPanel(QWidget):
                     info = probe(fp) or {}
             except Exception as e:
                 log.debug(f'qc report probe skipped file={p.name}: {e}')
-            fps = float(info.get('fps', 0) or 0)
-            duration = float(info.get('duration', 0) or 0)
-            width = int(info.get('width', 0) or 0)
-            height = int(info.get('height', 0) or 0)
+            fps = _safe_float(info.get('fps', 0), 0.0)
+            duration = _safe_float(info.get('duration', 0), 0.0)
+            width = _safe_int(info.get('width', 0), 0)
+            height = _safe_int(info.get('height', 0), 0)
+            channels = _safe_count(info.get('channels', 0))
+            streams = _safe_count(info.get('audio_stream_count', 0))
             meta_status, meta_issues = self._metadata_qc_summary(info, fp)
             rows.append({
                 '앱버전': 'MXF QC Player V.1.0',
@@ -784,8 +814,8 @@ class RightPanel(QWidget):
                 'DF': 'Y' if info.get('df') else 'N',
                 '길이_TC': sec_to_tc(duration, fps or 29.97, info.get('df')) if duration else '',
                 '길이_sec': f'{duration:.3f}' if duration else '',
-                '오디오채널': str(int(info.get('channels', 0) or 0)),
-                '오디오스트림': str(int(info.get('audio_stream_count', 0) or 0)),
+                '오디오채널': str(channels),
+                '오디오스트림': str(streams),
                 '소스타임코드': info.get('timecode', '') or '',
                 '비트레이트': str(info.get('bit_rate', '') or ''),
                 '크기': format_bytes(size) if size else '-',
@@ -799,13 +829,13 @@ class RightPanel(QWidget):
                 '프리즈기준_dB': criteria['freeze_noise'],
                 '프리즈기준_초': criteria['freeze_duration'],
                 '블랙상태': self._qc_status_text(f.get('black'), 'black'),
-                '블랙구간': str(int(f.get('black_count', 0) or 0)),
+                '블랙구간': str(_safe_count(f.get('black_count', 0))),
                 '블랙구간목록': self._ranges_report_text(f.get('black_ranges')),
                 '무음상태': self._qc_status_text(f.get('mute'), 'mute'),
-                '무음구간': str(int(f.get('mute_count', 0) or 0)),
+                '무음구간': str(_safe_count(f.get('mute_count', 0))),
                 '무음구간목록': self._ranges_report_text(f.get('mute_ranges')),
                 '프리즈상태': self._qc_status_text(f.get('freeze'), 'freeze'),
-                '프리즈구간': str(int(f.get('freeze_count', 0) or 0)),
+                '프리즈구간': str(_safe_count(f.get('freeze_count', 0))),
                 '프리즈구간목록': self._ranges_report_text(f.get('freeze_ranges')),
                 'QC요약': f.get('qc_summary') or badge,
                 '갱신시각': str(f.get('qc_updated_at') or ''),
@@ -1050,18 +1080,22 @@ class RightPanel(QWidget):
             self.meta_panel.hide()
             return
         self.meta_panel.show()
-        self.meta_labels["filename"].setText(info.get("filename","—"))
-        self.meta_labels["format_short"].setText(info.get("format_short","—"))
-        self.meta_labels["codec"].setText(info.get("codec","—"))
-        w=info.get("width",0); h=info.get("height",0)
-        self.meta_labels["res"].setText(f"{w}×{h}" if w else "—")
-        self.meta_labels["fps"].setText(f"{info.get('fps',0):.3f}")
-        self.meta_labels["channels"].setText(f"{info.get('channels',0)}CH")
+        self.meta_labels["filename"].setText(_safe_text(info.get("filename"), "—"))
+        self.meta_labels["format_short"].setText(_safe_text(info.get("format_short"), "—"))
+        self.meta_labels["codec"].setText(_safe_text(info.get("codec"), "—"))
+        w = _safe_int(info.get("width", 0), 0)
+        h = _safe_int(info.get("height", 0), 0)
+        fps = _safe_float(info.get("fps", 0), 0.0)
+        duration = _safe_float(info.get("duration", 0), 0.0)
+        channels = _safe_count(info.get("channels", 0))
+        self.meta_labels["res"].setText(f"{w}×{h}" if w and h else "—")
+        self.meta_labels["fps"].setText(f"{fps:.3f}" if fps else "—")
+        self.meta_labels["channels"].setText(f"{channels}CH" if channels else "—")
         self.meta_labels["duration"].setText(
-            sec_to_tc(info.get("duration",0), info.get("fps",29.97), info.get("df"))
+            sec_to_tc(duration, fps or 29.97, info.get("df")) if duration else "—"
         )
-        self.meta_labels["timecode"].setText(info.get("timecode","—") or "—")
-        sz = info.get("size",0)
+        self.meta_labels["timecode"].setText(_safe_text(info.get("timecode"), "—"))
+        sz = _safe_int(info.get("size", 0), 0)
         self.meta_labels["size"].setText(f"{sz/1024/1024:.1f} MB" if sz else "—")
         meta_status, meta_issues = self._metadata_qc_summary(info, info.get("filepath", "") or self.vp.cur_file or "")
         meta_text = meta_status if not meta_issues else f"{meta_status}: {', '.join(meta_issues[:2])}"
