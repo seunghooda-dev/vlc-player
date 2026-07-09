@@ -1653,9 +1653,12 @@ class VideoPanel(QWidget):
         try:
             import json as _j
             p = BASE_DIR / 'last_dir.json'
-            legacy_dir = self._existing_dir(_j.loads(p.read_text()).get('folder', ''))
+            data = _j.loads(p.read_text(encoding='utf-8', errors='replace'))
+            legacy_dir = self._existing_dir(data.get('folder', '') if isinstance(data, dict) else '')
             return legacy_dir or 'C:/'
-        except: return 'C:/'
+        except Exception as e:
+            log.debug(f'legacy last_dir read skipped: {e}')
+            return 'C:/'
 
     def _save_last_dir(self, folder):
         try:
