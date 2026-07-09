@@ -210,20 +210,40 @@ class TranscodeThread(QThread):
         n_streams  = len(audio_streams)
         total_ch   = sum(audio_streams) if audio_streams else 2
         multi_mono = n_streams > 1 and all(c == 1 for c in audio_streams)
+        cleaned_pairs = []
+        for pair in pairs or [(1, 2)]:
+            try:
+                p1, p2 = pair
+            except Exception:
+                p1, p2 = 1, 2
+            p1 = max(1, _safe_int(p1, 1))
+            p2 = max(1, _safe_int(p2, min(p1 + 1, 8)))
+            cleaned_pairs.append((p1, p2))
+        pairs = cleaned_pairs or [(1, 2)]
+
+        def _channel_index(ch):
+            return max(0, min(_safe_int(ch, 1) - 1, total_ch - 1))
+
         if multi_mono:
             ins   = "".join(f"[0:a:{i}]" for i in range(n_streams))
             merge = f"{ins}amerge=inputs={n_streams}[merged]"
             if len(pairs) == 1:
-                c1=min(pairs[0][0]-1,total_ch-1); c2=min(pairs[0][1]-1,total_ch-1)
+                c1 = _channel_index(pairs[0][0]); c2 = _channel_index(pairs[0][1])
                 return f"{merge};[merged]pan=stereo|c0=c{c1}|c1=c{c2}[aout]"
-            pans = []; [pans.append(f"[merged]pan=stereo|c0=c{min(p1-1,total_ch-1)}|c1=c{min(p2-1,total_ch-1)}[ch{i}]") for i,(p1,p2) in enumerate(pairs)]
+            pans = [
+                f"[merged]pan=stereo|c0=c{_channel_index(p1)}|c1=c{_channel_index(p2)}[ch{i}]"
+                for i, (p1, p2) in enumerate(pairs)
+            ]
             mix = "".join(f"[ch{i}]" for i in range(len(pairs)))
             return f"{merge};{chr(59).join(pans)};{mix}amix=inputs={len(pairs)}:normalize=0[aout]"
         else:
             if len(pairs) == 1:
-                c1=min(pairs[0][0]-1,total_ch-1); c2=min(pairs[0][1]-1,total_ch-1)
+                c1 = _channel_index(pairs[0][0]); c2 = _channel_index(pairs[0][1])
                 return f"[0:a]pan=stereo|c0=c{c1}|c1=c{c2}[aout]"
-            pans = [f"[0:a]pan=stereo|c0=c{min(p1-1,total_ch-1)}|c1=c{min(p2-1,total_ch-1)}[ch{i}]" for i,(p1,p2) in enumerate(pairs)]
+            pans = [
+                f"[0:a]pan=stereo|c0=c{_channel_index(p1)}|c1=c{_channel_index(p2)}[ch{i}]"
+                for i, (p1, p2) in enumerate(pairs)
+            ]
             mix = "".join(f"[ch{i}]" for i in range(len(pairs)))
             return ";".join(pans) + f";{mix}amix=inputs={len(pairs)}:normalize=0[aout]"
 

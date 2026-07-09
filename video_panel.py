@@ -153,9 +153,12 @@ class AudioMixPlayer(QObject):
     @staticmethod
     def _safe_int(value, default=0):
         try:
-            return int(value)
+            parsed = float(value)
+            if math.isfinite(parsed):
+                return int(parsed)
         except Exception:
-            return default
+            pass
+        return default
 
     @staticmethod
     def _safe_float(value, default=0.0):
@@ -174,10 +177,7 @@ class AudioMixPlayer(QObject):
     def set_channels(self, channels):
         cleaned = []
         for ch in channels or [1, 2]:
-            try:
-                n = int(ch)
-            except Exception:
-                continue
+            n = self._safe_int(ch, 0)
             if 1 <= n <= 8 and n not in cleaned:
                 cleaned.append(n)
         self.channels = cleaned or [1, 2]
@@ -186,10 +186,7 @@ class AudioMixPlayer(QObject):
         self.volume = max(0.0, min(1.0, self._safe_float(value, self.volume)))
 
     def set_rate(self, rate):
-        try:
-            self.rate = max(0.5, min(2.0, float(rate)))
-        except Exception:
-            self.rate = 1.0
+        self.rate = max(0.5, min(2.0, self._safe_float(rate, 1.0)))
 
     def stop(self):
         was_active = bool(self._playing or self._ffplay or self._ffmpeg)
@@ -320,7 +317,7 @@ class AudioMixPlayer(QObject):
             '-f', 's16le',
             '-sample_rate', '48000',
             '-ch_layout', 'stereo',
-            '-volume', str(int(self.volume * 100)),
+            '-volume', str(max(0, min(100, self._safe_int(self._safe_float(self.volume, 0.8) * 100, 80)))),
             '-i', '-',
         ]
         try:
@@ -367,7 +364,7 @@ class AudioMixPlayer(QObject):
         return True
 
     def _source_for_channel(self, ch, idx):
-        ch = max(1, min(8, int(ch)))
+        ch = max(1, min(8, self._safe_int(ch, 1)))
         if self.audio_stream_count > 1:
             return f'0:a:{ch - 1}', ''
         label = f'mono{idx}'
@@ -381,7 +378,12 @@ class AudioMixPlayer(QObject):
         return ','.join(filters) if filters else 'anull'
 
     def _build_filter(self):
-        channels = self.channels or [1, 2]
+        channels = []
+        for ch in self.channels or [1, 2]:
+            n = max(1, min(8, self._safe_int(ch, 0)))
+            if n not in channels:
+                channels.append(n)
+        channels = channels or [1, 2]
         setup = []
         if len(channels) == 1:
             src, prep = self._source_for_channel(channels[0], 0)
@@ -560,7 +562,10 @@ class VlcPlayerAdapter(QObject):
 
     def setPlaybackRate(self, rate):
         try:
-            self._player.set_rate(float(rate))
+            parsed = float(rate)
+            if not math.isfinite(parsed):
+                parsed = 1.0
+            self._player.set_rate(max(0.5, min(2.0, parsed)))
         except Exception as e:
             log.debug(f'vlc set rate: {e}')
 
@@ -569,7 +574,10 @@ class VlcPlayerAdapter(QObject):
 
     def set_audio_channel(self, channel_no):
         try:
-            self._selected_audio_channel = max(1, min(8, int(channel_no)))
+            parsed = float(channel_no)
+            if not math.isfinite(parsed):
+                parsed = 1
+            self._selected_audio_channel = max(1, min(8, int(parsed)))
         except Exception:
             self._selected_audio_channel = 1
         self._audio_apply_attempts = 0
