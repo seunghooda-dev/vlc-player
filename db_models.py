@@ -449,6 +449,20 @@ def probe(filepath):
 def _clip_id_for_path(filepath):
     return hashlib.md5(str(filepath or "").encode()).hexdigest()
 
+def _snapshot_mismatch(filepath, stored_size=0, stored_mtime_ns=0, context="snapshot"):
+    snapshot = _safe_file_snapshot(filepath)
+    current_size = snapshot["size"]
+    current_mtime_ns = snapshot["mtime_ns"]
+    stored_size = _safe_count(stored_size)
+    stored_mtime_ns = _safe_count(stored_mtime_ns)
+    if stored_size and current_size and stored_size != current_size:
+        log.debug(f"{context} ignored size mismatch: {Path(filepath).name}")
+        return True
+    if stored_mtime_ns and current_mtime_ns and stored_mtime_ns != current_mtime_ns:
+        log.debug(f"{context} ignored modified-time mismatch: {Path(filepath).name}")
+        return True
+    return False
+
 def _normalize_qc_status(value):
     value = str(value or "").strip().lower()
     return value if value in ("ok", "found", "error") else ""
@@ -550,10 +564,21 @@ def _decode_qc_ranges(value):
 def load_qc_status(filepath):
     if not filepath:
         return {}
+    p = _safe_media_file_path(filepath)
+    if p is None:
+        return {}
+    filepath = str(p)
     cid = _clip_id_for_path(filepath)
     with Session(engine) as s:
         clip = s.get(Clip, cid)
         if not clip:
+            return {}
+        if _snapshot_mismatch(
+            filepath,
+            getattr(clip, "file_size", 0),
+            getattr(clip, "file_mtime_ns", 0),
+            context="QC status",
+        ):
             return {}
         black = _normalize_qc_status(getattr(clip, "qc_black_status", ""))
         mute = _normalize_qc_status(getattr(clip, "qc_mute_status", ""))
@@ -589,12 +614,8 @@ def load_clip_metadata_hint(filepath):
             if not clip:
                 return {}
             stored_size = _safe_count(getattr(clip, "file_size", 0))
-            if stored_size and current_size and stored_size != current_size:
-                log.debug(f"metadata hint ignored size mismatch: {p.name}")
-                return {}
             stored_mtime_ns = _safe_count(getattr(clip, "file_mtime_ns", 0))
-            if stored_mtime_ns and current_mtime_ns and stored_mtime_ns != current_mtime_ns:
-                log.debug(f"metadata hint ignored modified-time mismatch: {p.name}")
+            if _snapshot_mismatch(filepath, stored_size, stored_mtime_ns, context="metadata hint"):
                 return {}
             duration = _safe_float(getattr(clip, "duration", 0), 0.0)
             width = _safe_count(getattr(clip, "width", 0))
@@ -642,12 +663,19 @@ def update_clip_qc(
         return {}
     cid = _clip_id_for_path(filepath)
     now = datetime.now()
+    snapshot = _safe_file_snapshot(filepath)
     with Session(engine) as s:
         clip = s.get(Clip, cid)
         if not clip:
             p = Path(filepath)
             clip = Clip(id=cid, filename=p.name, filepath=str(filepath), created_at=now)
             s.add(clip)
+        clip.filepath = str(filepath)
+        clip.filename = Path(filepath).name
+        if snapshot["size"]:
+            clip.file_size = snapshot["size"]
+        if snapshot["mtime_ns"]:
+            clip.file_mtime_ns = snapshot["mtime_ns"]
         if black is not None:
             clip.qc_black_status = _normalize_qc_status(black)
         if mute is not None:

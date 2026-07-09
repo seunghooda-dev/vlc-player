@@ -191,6 +191,37 @@ def check_core_logic():
             except Exception:
                 pass
 
+        class FakeSnapshotLog:
+            def __init__(self):
+                self.debugs = []
+
+            def debug(self, msg):
+                self.debugs.append(str(msg))
+
+            def warning(self, msg):
+                pass
+
+        original_snapshot = dbm._safe_file_snapshot
+        original_log = dbm.log
+        try:
+            fake_log = FakeSnapshotLog()
+            dbm.log = fake_log
+            dbm._safe_file_snapshot = lambda fp: {"size": 200, "mtime_ns": 20}
+            if not dbm._snapshot_mismatch('C:/sample/replaced.mxf', 100, 20, context='QC status'):
+                errors.append("  FAIL QC snapshot size mismatch")
+            if not any('QC status ignored size mismatch' in msg for msg in fake_log.debugs):
+                errors.append(f"  FAIL QC snapshot mismatch log: {fake_log.debugs}")
+            fake_log.debugs.clear()
+            if not dbm._snapshot_mismatch('C:/sample/replaced.mxf', 200, 10, context='metadata hint'):
+                errors.append("  FAIL metadata snapshot mtime mismatch")
+            if dbm._snapshot_mismatch('C:/sample/replaced.mxf', 200, 20, context='QC status'):
+                errors.append("  FAIL snapshot false positive")
+            if dbm._snapshot_mismatch('C:/sample/replaced.mxf', 0, 0, context='QC status'):
+                errors.append("  FAIL snapshot missing stored values false positive")
+        finally:
+            dbm._safe_file_snapshot = original_snapshot
+            dbm.log = original_log
+
         parse_audio_streams = AudioAnalyzeThread._audio_streams_from_probe_output
         audio_probe_json = '{"streams":[{"codec_type":"video"},{"codec_type":"audio","channels":2},{"codec_type":"audio","channels":1}]}'
         if parse_audio_streams(audio_probe_json, 0, '') != [2, 1]:
