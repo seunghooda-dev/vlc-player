@@ -1095,6 +1095,16 @@ def check_core_logic():
         })
         if guessed_layout != (0, 0):
             errors.append(f"  FAIL provisional guessed audio layout: {guessed_layout}")
+        meter_multimono = VideoPanel._meter_channel_count(
+            VideoPanel, {'audio_stream_count': 8, 'channels': 1}
+        )
+        if meter_multimono != 8:
+            errors.append(f"  FAIL meter multi-mono channel count: {meter_multimono}")
+        meter_stereo = VideoPanel._meter_channel_count(
+            VideoPanel, {'audio_stream_count': 1, 'channels': 2}
+        )
+        if meter_stereo != 2:
+            errors.append(f"  FAIL meter stereo channel count: {meter_stereo}")
 
         required_video_exts = {'.mxf', '.mp4'}
         missing_video_exts = sorted(required_video_exts - set(VIDEO_EXTS))

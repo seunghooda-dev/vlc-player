@@ -2941,7 +2941,13 @@ class RightPanel(QWidget):
         try:
             current_file = self._current_video_file()
             if self._analysis_paused_meters and current_file:
-                ch_count = self.vp.cur_info.get('channels', 2)
+                if hasattr(self.vp, '_meter_channel_count'):
+                    ch_count = self.vp._meter_channel_count()
+                else:
+                    ch_count = max(
+                        _safe_int(self.vp.cur_info.get('audio_stream_count', 0), 0),
+                        _safe_int(self.vp.cur_info.get('channels', 2), 2),
+                    )
                 self.vp.meter_ctrl.start_file(
                     current_file, ch_count, self.vp.player, (1, 2),
                     self.vp.cur_info.get('audio_stream_count', 0))

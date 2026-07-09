@@ -1532,6 +1532,15 @@ class VideoPanel(QWidget):
             pass
         return default
 
+    def _meter_channel_count(self, info=None, fallback=2):
+        info = info or getattr(self, 'cur_info', {}) or {}
+        streams = max(0, self._safe_int_value(info.get('audio_stream_count', 0), 0))
+        channels = max(0, self._safe_int_value(info.get('channels', 0), 0))
+        count = max(streams, channels)
+        if count <= 0:
+            count = self._safe_int_value(fallback, 2)
+        return max(1, min(8, count))
+
     @staticmethod
     def _settings_entries(value):
         if isinstance(value, (str, bytes)):
@@ -2537,6 +2546,7 @@ class VideoPanel(QWidget):
         ch_count = max(0, self._safe_int_value(info.get('channels', 0), 0))
         audio_streams = max(0, self._safe_int_value(info.get('audio_stream_count', 0), 0))
         stream_count = max(audio_streams, ch_count)
+        meter_ch_count = self._meter_channel_count(info)
         self.lbl_ch.setText(f"{stream_count}CH")
         first_enabled = None
         for cb, ch_no in self._ch_checks:
@@ -2572,7 +2582,7 @@ class VideoPanel(QWidget):
 
         self.ai_lbl.setText(f"⚠ {warnings[0]}" if warnings else "AI 분석 준비됨")
         self.meter_ctrl.start_file(
-            filepath, ch_count or 2, self.player, (1, 2),
+            filepath, meter_ch_count, self.player, (1, 2),
             audio_streams
         )
         self.audio_mix.set_file(
@@ -3358,6 +3368,7 @@ class VideoPanel(QWidget):
         ch_count = max(0, self._safe_int_value(info.get('channels', 0), 0))
         audio_streams = max(0, self._safe_int_value(info.get('audio_stream_count', 0), 0))
         stream_count = max(audio_streams, ch_count)
+        meter_ch_count = self._meter_channel_count(info)
         self.lbl_ch.setText(f"{stream_count}CH")
         # 파일 채널 수에 따라 체크박스 활성화/비활성화
         first_enabled = None
@@ -3398,7 +3409,7 @@ class VideoPanel(QWidget):
 
         # 실시간 오디오 미터 시작 (채널 수 전달)
         self.meter_ctrl.start_file(
-            filepath, ch_count or 2, self.player, (1, 2),
+            filepath, meter_ch_count, self.player, (1, 2),
             audio_streams
         )
         self.audio_mix.set_file(
@@ -3526,9 +3537,8 @@ class VideoPanel(QWidget):
             self.ai_lbl.setText(
                 "⏳ 전체 변환 중... (재생 가능)" if is_preview
                 else "✓ CUE 완료 — ▶ 재생버튼을 누르세요")
-            ch_count = self.cur_info.get('channels', 2)
             self.meter_ctrl.start_file(
-                self.cur_file, ch_count, self.player, (1, 2),
+                self.cur_file, self._meter_channel_count(), self.player, (1, 2),
                 self.cur_info.get('audio_stream_count', 0))
         except Exception as e:
             # setSource 실패해도 프로그램 유지
@@ -4242,9 +4252,8 @@ class VideoPanel(QWidget):
             self._led_on = False
         if playing and self.cur_file:
             if not self.meter_ctrl._thread.isRunning():
-                ch = self.cur_info.get('channels', 2)
                 self.meter_ctrl.start_file(
-                    self.cur_file, ch, self.player, (1, 2),
+                    self.cur_file, self._meter_channel_count(), self.player, (1, 2),
                     self.cur_info.get('audio_stream_count', 0))
         else:
             self.meter_ctrl.set_playing(playing)
