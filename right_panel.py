@@ -932,6 +932,7 @@ class RightPanel(QWidget):
             height = _safe_int(info.get('height', 0), 0)
             channels = _safe_count(info.get('channels', 0))
             streams = _safe_count(info.get('audio_stream_count', 0))
+            frame_mode = 'DF' if fps and info.get('df') else 'NDF' if fps else ''
             meta_status, meta_issues = self._metadata_qc_summary(info, fp)
             rows.append({
                 '앱버전': 'MXF QC Player V.1.0',
@@ -945,7 +946,8 @@ class RightPanel(QWidget):
                 '코덱': info.get('codec', ''),
                 '해상도': f'{width}x{height}' if width and height else '',
                 'FPS': f'{fps:.3f}' if fps else '',
-                'DF': 'Y' if info.get('df') else 'N',
+                'DF': 'Y' if frame_mode == 'DF' else 'N' if frame_mode == 'NDF' else '',
+                '프레임모드': frame_mode,
                 '길이_TC': sec_to_tc(duration, fps or 29.97, info.get('df')) if duration else '',
                 '길이_sec': f'{duration:.3f}' if duration else '',
                 '오디오채널': str(channels),
@@ -987,12 +989,10 @@ class RightPanel(QWidget):
 
         def fps_cell(row):
             fps = row.get('FPS') or '-'
-            df = row.get('DF')
-            if df == 'Y':
-                return f'{fps}fps DF'
-            if df == 'N':
-                return f'{fps}fps NDF'
-            return f'{fps}fps'
+            mode = row.get('프레임모드') or ''
+            if fps == '-':
+                return '-'
+            return f'{fps}fps {mode}'.strip()
 
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
