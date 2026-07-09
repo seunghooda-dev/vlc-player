@@ -218,6 +218,13 @@ def check_core_logic():
         )
         if partial_report_summary != '블랙/무음 정상':
             errors.append(f"  FAIL report partial QC summary: {partial_report_summary}")
+        pending_report_summary = RightPanel._qc_summary_for_report(
+            Probe(),
+            {'black': '', 'mute': '', 'freeze': '', 'qc_summary': 'CUE'},
+            'CUE',
+        )
+        if pending_report_summary != '미분석':
+            errors.append(f"  FAIL report pending QC summary: {pending_report_summary}")
         if RightPanel._metadata_for_report(MissingFileProbe(), 'C:/missing/sample.mxf', 'sample.mxf') != ({}, ''):
             errors.append("  FAIL report metadata missing-file guard")
 

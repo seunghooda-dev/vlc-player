@@ -28,7 +28,7 @@ from constants   import (
 )
 from db_models   import (
     probe, sec_to_tc, tc_to_frames, sanitize_qc_ranges,
-    load_clip_metadata_hint,
+    qc_summary_from_status, load_clip_metadata_hint,
 )
 from threads     import AudioAnalyzeThread, BlackDetectThread, FreezeDetectThread
 from meters      import mk_label
@@ -827,25 +827,7 @@ class RightPanel(QWidget):
     def _qc_summary_for_report(self, f, fallback=''):
         if not isinstance(f, dict):
             return fallback or '미분석'
-        black = str(f.get('black') or '').lower()
-        mute = str(f.get('mute') or '').lower()
-        freeze = str(f.get('freeze') or '').lower()
-        if 'error' in (black, mute, freeze):
-            return '검사 오류'
-        found = []
-        if black == 'found':
-            found.append('블랙')
-        if mute == 'found':
-            found.append('무음')
-        if freeze == 'found':
-            found.append('프리즈')
-        if found:
-            return '/'.join(found) + ' 있음'
-        if black == 'ok' and mute == 'ok' and freeze == 'ok':
-            return '정상'
-        if black == 'ok' and mute == 'ok':
-            return '블랙/무음 정상'
-        return fallback or '미분석'
+        return qc_summary_from_status(f.get('black'), f.get('mute'), f.get('freeze')) or '미분석'
 
     def _metadata_for_report(self, fp, p_name=''):
         if not self._path_exists(fp):
