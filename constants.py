@@ -383,7 +383,7 @@ def _rotate_migration_log():
             MIGRATION_LOG_PATH.exists()
             and not MIGRATION_LOG_PATH.is_symlink()
             and MIGRATION_LOG_PATH.is_file()
-            and MIGRATION_LOG_PATH.stat().st_size > MIGRATION_LOG_MAX_BYTES
+            and _path_size(MIGRATION_LOG_PATH) > MIGRATION_LOG_MAX_BYTES
         ):
             stamp = _file_stamp()
             rotated = LOG_DIR / f'migration.log.{stamp}'
@@ -396,8 +396,9 @@ def _rotate_migration_log():
                 backups.append(candidate)
             except Exception:
                 continue
-        backups.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-        for old in backups[MIGRATION_LOG_BACKUP_COUNT:]:
+        backups.sort(key=_path_mtime, reverse=True)
+        keep_count = max(1, _safe_int_value(MIGRATION_LOG_BACKUP_COUNT, 5))
+        for old in backups[keep_count:]:
             try:
                 old.unlink()
             except Exception:
@@ -886,6 +887,12 @@ def _path_mtime(path, default=0.0):
     except Exception:
         return default
 
+def _path_size(path, default=0):
+    try:
+        return int(Path(path).stat().st_size)
+    except Exception:
+        return default
+
 def _safe_cache_child(path):
     root = TMP_DIR.resolve()
     resolved = Path(path).resolve()
@@ -1100,14 +1107,14 @@ def _entry_size(path):
     total = 0
     try:
         if path.is_file():
-            return int(path.stat().st_size)
+            return _path_size(path)
         if path.is_dir():
             for child in path.rglob('*'):
                 try:
                     if child.is_symlink():
                         continue
                     if child.is_file():
-                        total += int(child.stat().st_size)
+                        total += _path_size(child)
                 except Exception:
                     continue
     except Exception:
@@ -1116,7 +1123,7 @@ def _entry_size(path):
 
 def cleanup_old_generated_files(days=AUTO_CLEANUP_DAYS):
     """사용자 데이터 폴더 안의 생성 파일만 보존기간 기준으로 자동 정리한다."""
-    keep_days = max(1.0, min(3650.0, float(days or AUTO_CLEANUP_DAYS)))
+    keep_days = max(1.0, min(3650.0, _safe_float_value(days, AUTO_CLEANUP_DAYS)))
     cutoff = time.time() - keep_days * 86400.0
     try:
         cutoff_text = datetime.fromtimestamp(cutoff).isoformat(timespec='seconds')
@@ -1372,8 +1379,9 @@ def _rotate_named_backups(prefix, keep=10):
                 backups.append(candidate)
             except Exception:
                 continue
-        backups.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-        for old in backups[int(keep):]:
+        backups.sort(key=_path_mtime, reverse=True)
+        keep_count = max(1, _safe_int_value(keep, 10))
+        for old in backups[keep_count:]:
             try:
                 old.unlink()
             except Exception:
@@ -1395,7 +1403,8 @@ def backup_file_snapshot(path, prefix, min_interval_sec=300, keep=10):
                 last = float(marker.read_text(encoding='utf-8') or '0')
             except Exception:
                 last = 0.0
-        if min_interval_sec and now - last < float(min_interval_sec):
+        interval = max(0.0, _safe_float_value(min_interval_sec, 300.0))
+        if interval and now - last < interval:
             return None
         stamp = _file_stamp()
         backup = BACKUP_DIR / f'{prefix}-{stamp}{path.suffix}'
@@ -1843,14 +1852,17 @@ def _diagnostic_recent_files_text(limit=20):
         rows = []
         rows.append(f'SETTINGS_PATH: {SETTINGS_PATH}')
         rows.append('')
-        for i, fp in enumerate((settings.get('recent_files') or [])[:int(limit)], start=1):
+        max_rows = max(1, _safe_int_value(limit, 20))
+        for i, fp in enumerate((settings.get('recent_files') or [])[:max_rows], start=1):
             p = Path(fp)
             state = 'exists' if p.exists() else 'missing'
             details = []
             try:
                 if p.exists():
-                    details.append(format_bytes(p.stat().st_size))
-                    details.append(p.stat().st_mtime and datetime.fromtimestamp(p.stat().st_mtime).isoformat(timespec='seconds'))
+                    details.append(format_bytes(_path_size(p)))
+                    mtime = _path_mtime(p)
+                    if mtime:
+                        details.append(datetime.fromtimestamp(mtime).isoformat(timespec='seconds'))
             except Exception as e:
                 details.append(f'stat-error={e}')
             rows.append(f'{i:02d}. [{state}] {p.name}')
@@ -1929,7 +1941,7 @@ def _diagnostic_db_status_text():
     try:
         if DB_PATH.exists():
             lines.append(f'EXISTS: yes')
-            lines.append(f'SIZE  : {format_bytes(DB_PATH.stat().st_size)}')
+            lines.append(f'SIZE  : {format_bytes(_path_size(DB_PATH))}')
         else:
             lines.append('EXISTS: no')
             return '\n'.join(lines)
@@ -2418,7 +2430,7 @@ def _rotate_large_log_file():
             current.exists()
             and not current.is_symlink()
             and current.is_file()
-            and current.stat().st_size > _LOG_MAX_BYTES
+            and _path_size(current) > _LOG_MAX_BYTES
         ):
             stamp = _file_stamp()
             rotated = LOG_DIR / f'player.log.{stamp}'
@@ -2432,8 +2444,9 @@ def _rotate_large_log_file():
                 backups.append(candidate)
             except Exception:
                 continue
-        backups.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-        for old in backups[_LOG_BACKUP_COUNT:]:
+        backups.sort(key=_path_mtime, reverse=True)
+        keep_count = max(1, _safe_int_value(_LOG_BACKUP_COUNT, 5))
+        for old in backups[keep_count:]:
             try:
                 old.unlink()
             except Exception as e:
