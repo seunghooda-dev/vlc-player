@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QGridLayout, QLabel, QPushButton,
     QListWidget, QListWidgetItem, QTabWidget, QLineEdit, QComboBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
-    QFileDialog, QMenu, QMessageBox, QCheckBox, QStyledItemDelegate,
+    QApplication, QFileDialog, QMenu, QMessageBox, QCheckBox, QStyledItemDelegate,
     QStyle, QStyleOptionViewItem,
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QRect, QUrl
@@ -1304,6 +1304,19 @@ class RightPanel(QWidget):
         self.vp.status_changed.emit(f"  ⚠ 폴더 열기 실패 — {folder}")
         return False
 
+    def _copy_file_path(self, filepath):
+        filepath = self._file_path_text(filepath)
+        if not filepath:
+            return False
+        try:
+            QApplication.clipboard().setText(filepath)
+            self.vp.status_changed.emit(f"  복사됨 — {filepath}")
+            return True
+        except Exception as e:
+            log.warning(f'copy file path failed file={self._path_name(filepath)}: {e}')
+            self.vp.status_changed.emit(f"  ⚠ 경로 복사 실패 — {self._path_name(filepath)}")
+            return False
+
     def _persist_relinked_qc(self, record):
         if not isinstance(record, dict):
             return
@@ -1383,13 +1396,14 @@ class RightPanel(QWidget):
             return
         menu = QMenu(self.exp_list)
         menu.setStyleSheet(self._menu_style())
-        act_cue = act_del = act_relink = act_open_location = act_clean_unavailable = None
+        act_cue = act_del = act_relink = act_open_location = act_copy_path = act_clean_unavailable = None
         if fp:
             if self._file_unavailable_badge(fp):
                 act_relink = menu.addAction("↻   파일 다시 연결")
                 menu.addSeparator()
             act_cue = menu.addAction("▶   CUE  —  화면에 올리기")
             act_open_location = menu.addAction("📁   폴더 열기")
+            act_copy_path = menu.addAction("⧉   경로 복사")
             menu.addSeparator()
             act_del = menu.addAction("✕   목록에서 제거")
         if unavailable:
@@ -1418,6 +1432,8 @@ class RightPanel(QWidget):
                 self.vp.status_changed.emit(f"  ⚠ 다시 연결할 수 없습니다 — {self._path_name(selected, selected)}")
         elif action == act_open_location:
             self._open_file_location(fp)
+        elif action == act_copy_path:
+            self._copy_file_path(fp)
         elif action == act_cue:
             if not self._is_video_file_path(fp):
                 self.vp.status_changed.emit(f"  ⚠ 파일을 찾을 수 없습니다 — {self._path_name(fp)}")
