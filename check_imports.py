@@ -1319,6 +1319,15 @@ def check_core_logic():
         audio_mix.set_channels([8, 7])
         if audio_mix.channels != [8, 7]:
             errors.append(f"  FAIL audio mix channel upper bound: {audio_mix.channels}")
+        audio_mix.set_channels([])
+        if audio_mix.channels != []:
+            errors.append(f"  FAIL audio mix explicit empty channels: {audio_mix.channels}")
+        audio_mix.set_channels(None)
+        if audio_mix.channels != [1, 2]:
+            errors.append(f"  FAIL audio mix default channels after None: {audio_mix.channels}")
+        audio_mix.set_channels(['bad'])
+        if audio_mix.channels != [1, 2]:
+            errors.append(f"  FAIL audio mix invalid channel fallback: {audio_mix.channels}")
         feedback_new = VideoPanel._file_add_feedback_text(3, 3)
         if feedback_new != '✓ 파일 3개 추가 — CUE 또는 더블클릭으로 원본 파일을 바로 재생합니다':
             errors.append(f"  FAIL file add feedback new: {feedback_new}")

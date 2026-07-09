@@ -203,11 +203,23 @@ class AudioMixPlayer(QObject):
 
     def set_channels(self, channels):
         cleaned = []
-        for ch in channels or [1, 2]:
+        if channels is None:
+            source = [1, 2]
+            explicit_empty = False
+        else:
+            if isinstance(channels, (str, bytes)):
+                source = [channels]
+            else:
+                try:
+                    source = list(channels)
+                except TypeError:
+                    source = [channels]
+            explicit_empty = len(source) == 0
+        for ch in source:
             n = self._safe_int(ch, 0)
             if 1 <= n <= 8 and n not in cleaned:
                 cleaned.append(n)
-        self.channels = cleaned or [1, 2]
+        self.channels = [] if explicit_empty else (cleaned or [1, 2])
 
     def set_volume(self, value):
         self.volume = max(0.0, min(1.0, self._safe_float(value, self.volume)))
