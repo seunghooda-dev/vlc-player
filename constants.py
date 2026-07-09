@@ -505,10 +505,10 @@ def _legacy_root_item_info(path):
         'modified': '',
     }
     try:
-        stat = path.stat()
-        info['modified'] = datetime.fromtimestamp(stat.st_mtime).isoformat(timespec='seconds')
+        mtime = _path_mtime(path)
+        info['modified'] = datetime.fromtimestamp(mtime).isoformat(timespec='seconds') if mtime else ''
         if path.is_file():
-            info['size'] = int(stat.st_size)
+            info['size'] = _path_size(path)
         elif path.is_dir():
             try:
                 info['children'] = sum(1 for _ in path.iterdir())
@@ -893,6 +893,15 @@ def _path_size(path, default=0):
     except Exception:
         return default
 
+def _path_newest_time(path, default=0.0):
+    try:
+        stat = Path(path).stat()
+        ctime = _safe_float_value(getattr(stat, 'st_ctime', 0.0), default)
+        mtime = _safe_float_value(getattr(stat, 'st_mtime', 0.0), default)
+        return max(ctime, mtime)
+    except Exception:
+        return default
+
 def _safe_cache_child(path):
     root = TMP_DIR.resolve()
     resolved = Path(path).resolve()
@@ -924,12 +933,8 @@ def _cache_entry_info(path):
     modified = 0.0
     if path.is_file():
         files = 1
-        try:
-            stat = path.stat()
-            bytes_total = stat.st_size
-            modified = stat.st_mtime
-        except Exception:
-            pass
+        bytes_total = _path_size(path)
+        modified = _path_mtime(path)
     elif path.is_dir():
         dirs = 1
         for child in path.rglob('*'):
@@ -938,18 +943,14 @@ def _cache_entry_info(path):
                     continue
                 child_resolved = _safe_cache_child(child)
                 if child_resolved.is_file():
-                    stat = child_resolved.stat()
                     files += 1
-                    bytes_total += stat.st_size
-                    modified = max(modified, stat.st_mtime)
+                    bytes_total += _path_size(child_resolved)
+                    modified = max(modified, _path_mtime(child_resolved))
                 elif child_resolved.is_dir():
                     dirs += 1
             except Exception:
                 continue
-        try:
-            modified = max(modified, path.stat().st_mtime)
-        except Exception:
-            pass
+        modified = max(modified, _path_mtime(path))
     return {
         'name': path.name,
         'path': str(path),
@@ -1082,20 +1083,14 @@ def _safe_generated_root(path):
 
 def _entry_newest_timestamp(path):
     path = Path(path)
-    newest = 0.0
-    try:
-        stat = path.stat()
-        newest = max(float(getattr(stat, 'st_ctime', 0.0) or 0.0), float(stat.st_mtime or 0.0))
-    except Exception:
-        return newest
+    newest = _path_newest_time(path)
     if path.is_dir():
         try:
             for child in path.rglob('*'):
                 try:
                     if child.is_symlink():
                         continue
-                    st = child.stat()
-                    newest = max(newest, float(getattr(st, 'st_ctime', 0.0) or 0.0), float(st.st_mtime or 0.0))
+                    newest = max(newest, _path_newest_time(child))
                 except Exception:
                     continue
         except Exception:
