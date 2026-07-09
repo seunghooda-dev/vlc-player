@@ -1385,10 +1385,14 @@ class RightPanel(QWidget):
         row = row if isinstance(row, dict) else {}
         parts = []
         summary = str(row.get('QC요약') or row.get('QC상태') or '').strip()
+        black_state = str(row.get('블랙상태') or '').strip()
+        mute_state = str(row.get('무음상태') or '').strip()
         if str(row.get('파일존재') or '').upper() == 'N' or summary.startswith('파일'):
             parts.append('파일 없음')
         elif summary == '검사 오류':
             parts.append('검사 오류')
+        elif summary == '미분석' or black_state == '미분석' or mute_state == '미분석':
+            parts.append('미분석')
         for label, state_key, count_key in (
             ('블랙', '블랙상태', '블랙구간'),
             ('무음', '무음상태', '무음구간'),

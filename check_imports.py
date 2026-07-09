@@ -538,12 +538,14 @@ def check_core_logic():
         if not any('복합문제 1' in line for line in report_lines):
             errors.append(f"  FAIL report summary line complex: {report_lines}")
         attention_lines = RightPanel._qc_report_attention_lines(report_rows)
-        if '확인 필요 파일: 3개' not in attention_lines:
+        if '확인 필요 파일: 4개' not in attention_lines:
             errors.append(f"  FAIL report attention count: {attention_lines}")
         if not any('issue.mxf: 블랙 2, 프리즈 1, 메타 확인' in line for line in attention_lines):
             errors.append(f"  FAIL report attention issue detail: {attention_lines}")
         if not any('missing.mxf: 파일 없음' in line for line in attention_lines):
             errors.append(f"  FAIL report attention missing detail: {attention_lines}")
+        if not any('파일: 미분석' in line for line in attention_lines):
+            errors.append(f"  FAIL report attention pending detail: {attention_lines}")
         clean_attention = RightPanel._qc_report_attention_lines([report_rows[0], report_rows[1]])
         if clean_attention != ['확인 필요 파일: 없음']:
             errors.append(f"  FAIL report clean attention: {clean_attention}")
@@ -560,6 +562,19 @@ def check_core_logic():
         })
         if meta_only_fields != {'확인필요': 'Y', '확인사유': '메타 확인'}:
             errors.append(f"  FAIL report attention fields metadata: {meta_only_fields}")
+        pending_fields = RightPanel._qc_report_attention_fields({
+            'QC요약': '미분석',
+            '파일존재': 'Y',
+            '블랙상태': '미분석',
+            '무음상태': '미분석',
+            '프리즈상태': '미분석',
+            '메타정합성': '',
+        })
+        if pending_fields != {'확인필요': 'Y', '확인사유': '미분석'}:
+            errors.append(f"  FAIL report attention fields pending: {pending_fields}")
+        freeze_pending_only_fields = RightPanel._qc_report_attention_fields(report_rows[1])
+        if freeze_pending_only_fields != {'확인필요': 'N', '확인사유': ''}:
+            errors.append(f"  FAIL report attention fields freeze-only pending: {freeze_pending_only_fields}")
         with tempfile.TemporaryDirectory() as tmp_dir:
             report_dir = Path(tmp_dir)
             txt_path = report_dir / 'report.txt'
