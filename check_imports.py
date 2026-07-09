@@ -1394,6 +1394,12 @@ def check_core_logic():
         provisional_unknown_info = VideoPanel._provisional_audio_display_info({}, 8)
         if VideoPanel._audio_channel_display_text(display_probe, provisional_unknown_info) != '8CH':
             errors.append("  FAIL provisional unknown channel display text")
+        provisional_no_audio_info = VideoPanel._provisional_audio_display_info(
+            {'metadata_hint': True, 'audio_stream_count': 0, 'channels': 0},
+            8,
+        )
+        if VideoPanel._audio_channel_display_text(display_probe, provisional_no_audio_info) != '0CH':
+            errors.append("  FAIL provisional no-audio hint display text")
         if not VideoPanel._metadata_hint_says_no_audio({'metadata_hint': True, 'audio_stream_count': 0, 'channels': 0}):
             errors.append("  FAIL metadata hint no-audio detection")
         if VideoPanel._metadata_hint_says_no_audio({'metadata_hint': True, 'audio_stream_count': 1, 'channels': 0}):

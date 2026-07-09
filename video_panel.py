@@ -1585,6 +1585,11 @@ class VideoPanel(QWidget):
     @staticmethod
     def _provisional_audio_display_info(info, provisional_count):
         info = info if isinstance(info, dict) else {}
+        if VideoPanel._metadata_hint_says_no_audio(info):
+            return {
+                'audio_stream_count': 0,
+                'channels': 0,
+            }
         source_count = VideoPanel._audio_source_count_from_info(info)
         visible_count = max(0, VideoPanel._safe_int_value(provisional_count, 0))
         if source_count > visible_count:
@@ -2659,19 +2664,25 @@ class VideoPanel(QWidget):
             max(0, self._safe_int_value(info.get("audio_stream_count", 0), 0)),
             max(0, self._safe_int_value(info.get("channels", 0), 0)),
         )
-        provisional_ch = max(1, min(8, hinted_ch)) if hinted_ch else (8 if p.suffix.lower() == ".mxf" else 2)
+        no_audio_hint = self._metadata_hint_says_no_audio(info)
+        provisional_ch = 0 if no_audio_hint else (
+            max(1, min(8, hinted_ch)) if hinted_ch else (8 if p.suffix.lower() == ".mxf" else 2)
+        )
         self._set_audio_channel_display(self._provisional_audio_display_info(info, provisional_ch))
         for cb, ch_no in self._ch_checks:
-            cb.setChecked(ch_no in (1, 2))
+            cb.setChecked((not no_audio_hint) and ch_no in (1, 2))
             cb.setEnabled(ch_no <= provisional_ch)
-        self._selected_chs = [1, 2]
+        self._selected_chs = [1, 2] if not no_audio_hint else []
         mix_streams, mix_channels = self._provisional_audio_mix_layout(info)
         self.audio_mix.set_file(filepath, mix_streams, mix_channels)
         self.audio_mix.set_channels(self._selected_chs)
         # Metadata is intentionally delayed for playback responsiveness, but
         # meters should still appear immediately with a sensible provisional rail.
         provisional_streams = max(0, self._safe_int_value(info.get("audio_stream_count", 0), 0))
-        self.meter_ctrl.start_file(filepath, provisional_ch, self.player, (1, 2), provisional_streams)
+        if no_audio_hint:
+            self.meter_ctrl.set_playing(False)
+        else:
+            self.meter_ctrl.start_file(filepath, provisional_ch, self.player, (1, 2), provisional_streams)
         self.tc_dur.setText(self._frames_to_tc(self._duration_frames(), include_offset=False))
         self._apply_qc_markers()
         self._res_text.setPlainText(f"{w}\u00d7{h}" if w and h else "")
