@@ -668,6 +668,8 @@ def check_core_logic():
                     'tc_start': '00:00:01;00',
                     'tc_end': '00:00:02;00',
                 }],
+                'meta_status': '확인 필요',
+                'meta_issues': ['DF 타임코드 아님', '소스 TC 없음', '오디오 8CH 초과'],
             },
         )
         if '파일명: copy-me.mxf' not in summary_text or 'QC상태: 블랙 있음' not in summary_text:
@@ -678,6 +680,8 @@ def check_core_logic():
             errors.append(f"  FAIL QC summary copy unanalyzed count should be hidden: {summary_text}")
         if '첫문제: 블랙 00:00:01;00' not in summary_text:
             errors.append(f"  FAIL QC summary copy first issue: {summary_text}")
+        if '메타: 메타 확인: DF 타임코드 아님, 소스 TC 없음 외 1' not in summary_text:
+            errors.append(f"  FAIL QC summary copy metadata issue: {summary_text}")
         if '블랙구간: 00:00:01;00>00:00:02;00(1.000s)' not in summary_text:
             errors.append(f"  FAIL QC summary copy ranges: {summary_text}")
         if '경로: C:/qc/copy-me.mxf' not in summary_text:
@@ -716,9 +720,21 @@ def check_core_logic():
                     'mute_count': 0,
                     'freeze_count': 0,
                 },
+                {
+                    'name': 'meta.mxf',
+                    'filepath': 'C:/qc/meta.mxf',
+                    'black': 'ok',
+                    'mute': 'ok',
+                    'freeze': '',
+                    'black_count': 0,
+                    'mute_count': 0,
+                    'freeze_count': 0,
+                    'meta_status': '확인 필요',
+                    'meta_issues': ['DF 타임코드 아님'],
+                },
             ],
         )
-        if 'MXF QC Player 확인 필요 파일 요약' not in issue_summary_text or '확인 필요 3개' not in issue_summary_text:
+        if 'MXF QC Player 확인 필요 파일 요약' not in issue_summary_text or '확인 필요 4개' not in issue_summary_text:
             errors.append(f"  FAIL issue summary copy header: {issue_summary_text}")
         if 'bad-a.mxf: 블랙 있음 / 블랙 있음 1 / 무음 정상 0 / 프리즈 미분석 / 첫문제 블랙 00:00:04;00' not in issue_summary_text:
             errors.append(f"  FAIL issue summary copy black detail: {issue_summary_text}")
@@ -726,6 +742,8 @@ def check_core_logic():
             errors.append(f"  FAIL issue summary copy error detail: {issue_summary_text}")
         if 'pending.mxf: 미분석 / 블랙 미분석 / 무음 미분석 / 프리즈 미분석' not in issue_summary_text:
             errors.append(f"  FAIL issue summary copy pending detail: {issue_summary_text}")
+        if 'meta.mxf: 블랙/무음 정상 / 블랙 정상 0 / 무음 정상 0 / 프리즈 미분석 / 메타 확인: DF 타임코드 아님' not in issue_summary_text:
+            errors.append(f"  FAIL issue summary copy metadata detail: {issue_summary_text}")
         if '프리즈 미분석 0' in issue_summary_text:
             errors.append(f"  FAIL issue summary copy unanalyzed count should be hidden: {issue_summary_text}")
         empty_issue_summary = RightPanel._issue_summary_clipboard_text(SummaryCopyProbe(), [])

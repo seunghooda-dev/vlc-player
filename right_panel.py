@@ -732,6 +732,36 @@ class RightPanel(QWidget):
             f"<span style='color:{C['yellow']};font-weight:800;'>첫문제 {escape(hint)}</span>"
         )
 
+    @staticmethod
+    def _metadata_issue_text(record, limit=2):
+        record = record if isinstance(record, dict) else {}
+        meta_status = str(record.get('meta_status') or '').strip()
+        if not meta_status or meta_status == '정상':
+            return ''
+        issues = record.get('meta_issues') or []
+        if isinstance(issues, str):
+            issue_parts = [part.strip() for part in issues.replace('/', ',').split(',') if part.strip()]
+        else:
+            try:
+                issue_parts = [str(part).strip() for part in issues if str(part).strip()]
+            except Exception:
+                issue_parts = []
+        if not issue_parts:
+            return '메타 확인'
+        limit = max(1, _safe_int(limit, 2))
+        shown = issue_parts[:limit]
+        suffix = f" 외 {len(issue_parts) - limit}" if len(issue_parts) > limit else ''
+        return f"메타 확인: {', '.join(shown)}{suffix}"
+
+    def _file_meta_issue_hint_html(self, f):
+        hint = self._metadata_issue_text(f)
+        if not hint:
+            return ''
+        return (
+            f" <span style='color:{C['text2']};'>&nbsp;&nbsp;|&nbsp;&nbsp;</span>"
+            f"<span style='color:{C['yellow']};font-weight:800;'>{escape(hint)}</span>"
+        )
+
     def _breakable_name_html(self, name):
         safe = escape(str(name or ''), quote=False)
         for ch in ('_', '-', '.', '(', ')', '[', ']'):
@@ -757,7 +787,8 @@ class RightPanel(QWidget):
             f"<div style=\"font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';"
             f"font-size:12px;color:{C['text0']};font-weight:500;\">"
             f"QC: <span style='color:{badge_color};font-weight:800;'>{escape(badge)}</span>"
-            f"&nbsp;&nbsp;&nbsp;{self._file_status_detail_html(f)}{self._file_first_issue_hint_html(f)}</div>"
+            f"&nbsp;&nbsp;&nbsp;{self._file_status_detail_html(f)}"
+            f"{self._file_first_issue_hint_html(f)}{self._file_meta_issue_hint_html(f)}</div>"
         )
 
     def _empty_file_item_text(self, total_count=0):
@@ -1953,6 +1984,9 @@ class RightPanel(QWidget):
         first_issue = self._first_qc_issue_text(record)
         if first_issue:
             lines.append(f"첫문제: {first_issue}")
+        meta_issue = RightPanel._metadata_issue_text(record)
+        if meta_issue:
+            lines.append(f"메타: {meta_issue}")
         ranges = (
             ('블랙구간', record.get('black_ranges')),
             ('무음구간', record.get('mute_ranges')),
@@ -2003,7 +2037,9 @@ class RightPanel(QWidget):
             detail = self._file_status_detail(record)
             first_issue = self._first_qc_issue_text(record)
             issue_suffix = f" / 첫문제 {first_issue}" if first_issue else ""
-            lines.append(f"- {name}: {badge} / {detail}{issue_suffix}")
+            meta_issue = RightPanel._metadata_issue_text(record)
+            meta_suffix = f" / {meta_issue}" if meta_issue else ""
+            lines.append(f"- {name}: {badge} / {detail}{issue_suffix}{meta_suffix}")
             if fp:
                 lines.append(f"  {fp}")
         return '\n'.join(lines)
@@ -2484,7 +2520,9 @@ class RightPanel(QWidget):
             detail = self._file_status_detail(f)
             first_issue = self._first_qc_issue_text(f)
             issue_hint = f"    첫문제 {first_issue}" if first_issue else ""
-            item_text = f"{prefix}{name}\nQC: {badge}    {detail}{issue_hint}"
+            meta_issue = RightPanel._metadata_issue_text(f)
+            meta_hint = f"    {meta_issue}" if meta_issue else ""
+            item_text = f"{prefix}{name}\nQC: {badge}    {detail}{issue_hint}{meta_hint}"
             item = QListWidgetItem(item_text)
             item.setData(FILE_ITEM_PLAIN_ROLE, item_text)
             item.setData(
