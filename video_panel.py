@@ -40,6 +40,8 @@ from threads    import ProbeThread, TranscodeThread, LoudnessAnalyzeThread
 from meters     import SideMeter, LoudnessMeter, MeterController, mk_btn, mk_label, separator
 
 DIRECT_VLC_EXTS = {'.mxf', '.mp4'}
+EMPTY_STAGE_TEXT = "▶\n\nMXF / MP4 등 영상 파일을 열어주세요\n\n파일 추가 버튼 또는 파일 드래그로 불러오세요"
+INITIAL_EMPTY_STAGE_TEXT = "▶\n\nMXF / MP4 등 영상 파일을 열어주세요\n\n⏏ 파일을 드래그하거나 CUE 버튼을 누르세요"
 
 
 class QCMarkerSlider(QSlider):
@@ -845,7 +847,7 @@ class VideoPanel(QWidget):
         self._scene.addItem(self._video_item)
 
         # 빈화면 라벨 (비디오 없을 때)
-        self.empty_label = QLabel("▶\n\nMXF / MP4 파일을 열어주세요\n\n⏏ 파일을 드래그하거나 CUE 버튼을 누르세요")
+        self.empty_label = QLabel(INITIAL_EMPTY_STAGE_TEXT)
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty_label.setStyleSheet(
             f"color:{C['text2']};font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';"
@@ -2175,7 +2177,7 @@ class VideoPanel(QWidget):
 
         # 화면 초기화
         self._video_item.hide()
-        self.empty_label.setText("▶\n\nMXF / MP4 파일을 열어주세요\n\n파일 추가 버튼 또는 파일 드래그로 불러오세요")
+        self.empty_label.setText(EMPTY_STAGE_TEXT)
         self._empty_proxy.show()
 
         # AI 버튼 비활성화
@@ -3142,7 +3144,7 @@ class VideoPanel(QWidget):
         if not path.is_file():
             return False, '파일이 아닙니다', '폴더나 특수 경로는 열 수 없습니다.'
         if path.suffix.lower() not in VIDEO_EXTS:
-            return False, '지원하지 않는 파일 형식입니다', 'MXF/MP4 같은 지원 영상 파일을 선택하세요.'
+            return False, '지원하지 않는 파일 형식입니다', 'MXF/MP4 등 지원 영상 파일을 선택하세요.'
         try:
             size = path.stat().st_size
         except PermissionError:
@@ -4271,7 +4273,7 @@ class VideoPanel(QWidget):
             self._cue_ready = False
             self._file_loaded_emitted = False
             self._set_loading_state(False)
-            self.empty_label.setText("▶\n\nMXF / MP4 파일을 열어주세요\n\n파일 추가 버튼 또는 파일 드래그로 불러오세요")
+            self.empty_label.setText(EMPTY_STAGE_TEXT)
             self._empty_proxy.show()
             self._video_item.hide()
             self._refresh_clip_list()
