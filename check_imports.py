@@ -122,6 +122,9 @@ def check_core_logic():
         _is_common_playback_fps = staticmethod(RightPanel._is_common_playback_fps)
         _is_ntsc_drop_frame_rate = staticmethod(RightPanel._is_ntsc_drop_frame_rate)
 
+    class MissingFileProbe(Probe):
+        _path_exists = staticmethod(lambda value: False)
+
     try:
         status, issues = RightPanel._metadata_qc_summary(Probe(), {}, 'C:/sample/bad.mxf')
         if status != '확인 필요' or issues != ['메타데이터 확인 실패']:
@@ -202,6 +205,8 @@ def check_core_logic():
         )
         if report_summary != '블랙/무음 있음':
             errors.append(f"  FAIL report QC summary recompute: {report_summary}")
+        if RightPanel._metadata_for_report(MissingFileProbe(), 'C:/missing/sample.mxf', 'sample.mxf') != {}:
+            errors.append("  FAIL report metadata missing-file guard")
 
         if DEFAULT_SETTINGS.get('audio_channels') != [1, 2]:
             errors.append(f"  FAIL default audio channels: {DEFAULT_SETTINGS.get('audio_channels')}")

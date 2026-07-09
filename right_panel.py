@@ -26,7 +26,10 @@ from constants   import (
     friendly_error_title, format_missing_runtime_tools, heavy_analysis_status,
     format_bytes, record_state_event, _path_size,
 )
-from db_models   import probe, sec_to_tc, tc_to_frames, sanitize_qc_ranges, qc_summary_from_status
+from db_models   import (
+    probe, sec_to_tc, tc_to_frames, sanitize_qc_ranges,
+    qc_summary_from_status, load_clip_metadata_hint,
+)
 from threads     import AudioAnalyzeThread, BlackDetectThread, FreezeDetectThread
 from meters      import mk_label
 
@@ -820,6 +823,21 @@ class RightPanel(QWidget):
             return fallback or '미분석'
         return qc_summary_from_status(f.get('black'), f.get('mute'), f.get('freeze')) or fallback or '미분석'
 
+    def _metadata_for_report(self, fp, p_name=''):
+        if not self._path_exists(fp):
+            return {}
+        try:
+            info = load_clip_metadata_hint(fp) or {}
+            if info:
+                return info
+        except Exception as e:
+            log.debug(f'qc report metadata hint skipped file={p_name}: {e}')
+        try:
+            return probe(fp) or {}
+        except Exception as e:
+            log.debug(f'qc report probe skipped file={p_name}: {e}')
+            return {}
+
     def _qc_criteria(self):
         def _value(attr, setting_key, default):
             widget = getattr(self, attr, None)
@@ -951,12 +969,8 @@ class RightPanel(QWidget):
             size = _safe_int(f.get('size', 0), 0)
             if not size:
                 size = _path_size(fp)
-            info = {}
-            try:
-                if self._path_exists(fp):
-                    info = probe(fp) or {}
-            except Exception as e:
-                log.debug(f'qc report probe skipped file={p_name}: {e}')
+            file_exists = self._path_exists(fp)
+            info = self._metadata_for_report(fp, p_name) if file_exists else {}
             metadata_available = bool(info)
             fps = _safe_float(info.get('fps', 0), 0.0)
             duration = _safe_float(info.get('duration', 0), 0.0)
@@ -972,7 +986,7 @@ class RightPanel(QWidget):
                 'QC상태': badge,
                 '파일명': f.get('name') or p_name,
                 '경로': fp,
-                '파일존재': 'Y' if self._path_exists(fp) else 'N',
+                '파일존재': 'Y' if file_exists else 'N',
                 '확장자': f.get('ext') or p_ext,
                 '포맷': info.get('format_short', ''),
                 '코덱': info.get('codec', ''),
