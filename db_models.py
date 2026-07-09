@@ -7,7 +7,7 @@ from datetime import datetime
 from sqlalchemy import create_engine, Column, String, Integer, Float, DateTime, Text, Boolean, text, event
 from sqlalchemy.orm import declarative_base, Session
 
-from constants import BASE_DIR, DB_PATH, FFMPEG, FFPROBE, log, backup_file_snapshot
+from constants import BASE_DIR, DB_PATH, FFMPEG, FFPROBE, log, backup_file_snapshot, _hidden_subprocess_flags
 
 SQLITE_BUSY_TIMEOUT_MS = 30000
 
@@ -175,6 +175,23 @@ def _safe_text(value, default=""):
     text = str(value or "").strip()
     return text if text else default
 
+def _safe_file_snapshot(filepath):
+    path = Path(filepath)
+    try:
+        stat = path.stat()
+        return {
+            "size": _safe_count(getattr(stat, "st_size", 0)),
+            "mtime_ns": _safe_count(getattr(stat, "st_mtime_ns", 0)),
+        }
+    except Exception:
+        return {"size": 0, "mtime_ns": 0}
+
+def _safe_resolved_path_text(filepath):
+    try:
+        return str(Path(filepath).resolve())
+    except Exception:
+        return str(Path(filepath or ""))
+
 def is_df_fps(fps):
     # DF 프레임레이트: 29.97, 59.94, 23.976 등 소수점 fps
     fps = _safe_float(fps, 29.97)
@@ -245,12 +262,10 @@ def sec_fmt(s):
     return f"{int(s//60):02d}:{int(s%60):02d}"
 
 def _probe_cache_key(filepath):
-    try:
-        p = Path(filepath)
-        st = p.stat()
-        return f'{p.resolve()}|{st.st_size}|{st.st_mtime_ns}'
-    except Exception:
+    snapshot = _safe_file_snapshot(filepath)
+    if not snapshot["size"] and not snapshot["mtime_ns"]:
         return ''
+    return f'{_safe_resolved_path_text(filepath)}|{snapshot["size"]}|{snapshot["mtime_ns"]}'
 
 def _probe_cache_get(key):
     if not key:
@@ -306,7 +321,8 @@ def probe(filepath):
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=15)
+            timeout=15,
+            creationflags=_hidden_subprocess_flags())
         if r.returncode != 0: return {}
         d = json.loads(r.stdout or "{}")
         if not isinstance(d, dict):
@@ -314,10 +330,8 @@ def probe(filepath):
         fmt = d.get("format",{})
         if not isinstance(fmt, dict):
             fmt = {}
-        try:
-            mtime_ns = int(Path(filepath).stat().st_mtime_ns)
-        except Exception:
-            mtime_ns = 0
+        file_snapshot = _safe_file_snapshot(filepath)
+        mtime_ns = file_snapshot["mtime_ns"]
         info = {"filename":Path(filepath).name,"filepath":filepath,
                 "duration":_safe_float(fmt.get("duration",0), 0.0),"size":_safe_count(fmt.get("size",0)),
                 "mtime_ns":mtime_ns,
@@ -504,13 +518,9 @@ def load_clip_metadata_hint(filepath):
     if not filepath:
         return {}
     p = Path(filepath)
-    try:
-        stat = p.stat()
-        current_size = int(stat.st_size)
-        current_mtime_ns = int(getattr(stat, "st_mtime_ns", 0) or 0)
-    except Exception:
-        current_size = 0
-        current_mtime_ns = 0
+    snapshot = _safe_file_snapshot(filepath)
+    current_size = snapshot["size"]
+    current_mtime_ns = snapshot["mtime_ns"]
     cid = _clip_id_for_path(filepath)
     try:
         with Session(engine) as s:
@@ -621,11 +631,8 @@ def save_clip(info):
         return ""
     cid = _clip_id_for_path(filepath)
     now = datetime.now()
-    mtime_ns = 0
-    try:
-        mtime_ns = _safe_count(Path(filepath).stat().st_mtime_ns)
-    except Exception:
-        mtime_ns = _safe_count(info.get("mtime_ns", 0))
+    snapshot = _safe_file_snapshot(filepath)
+    mtime_ns = snapshot["mtime_ns"] or _safe_count(info.get("mtime_ns", 0))
     with Session(engine) as s:
         clip = s.get(Clip, cid)
         if not clip:
