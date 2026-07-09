@@ -823,6 +823,14 @@ class RightPanel(QWidget):
         return rows
 
     def _write_qc_report_txt(self, path, rows):
+        rows = [row for row in (rows or []) if isinstance(row, dict)]
+        if not rows:
+            raise ValueError('저장할 QC 리포트 행이 없습니다.')
+
+        def cell(row, key, default='-'):
+            value = row.get(key)
+            return value if value not in (None, '') else default
+
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         tmp = target.with_name(f'.{target.name}.{time.time_ns()}.tmp')
@@ -833,8 +841,8 @@ class RightPanel(QWidget):
         lines.append(f'파일수  : {len(rows)}')
         lines.append('')
         for idx, row in enumerate(rows, 1):
-            lines.append(f"{idx:03d}. {row['파일명']}")
-            lines.append(f"     상태: {row['QC상태']} / {row['QC요약']}")
+            lines.append(f"{idx:03d}. {cell(row, '파일명')}")
+            lines.append(f"     상태: {cell(row, 'QC상태')} / {cell(row, 'QC요약')}")
             lines.append(f"     미디어: {row.get('해상도') or '-'} / {row.get('FPS') or '-'}fps / {row.get('오디오채널') or '-'}CH / {row.get('길이_TC') or '-'}")
             lines.append(f"     정합성: {row.get('메타정합성') or '-'} / {row.get('메타확인사항') or '-'}")
             if row.get('소스타임코드'):
@@ -844,18 +852,18 @@ class RightPanel(QWidget):
                 f"무음 {row.get('무음기준_dB')}dB/{row.get('무음기준_초')}s  "
                 f"프리즈 {row.get('프리즈기준_dB')}dB/{row.get('프리즈기준_초')}s"
             )
-            lines.append(f"     블랙: {row['블랙상태']} {row['블랙구간']}구간")
+            lines.append(f"     블랙: {cell(row, '블랙상태')} {cell(row, '블랙구간', '0')}구간")
             if row.get('블랙구간목록'):
                 lines.append(f"       - {row['블랙구간목록']}")
-            lines.append(f"     무음: {row['무음상태']} {row['무음구간']}구간")
+            lines.append(f"     무음: {cell(row, '무음상태')} {cell(row, '무음구간', '0')}구간")
             if row.get('무음구간목록'):
                 lines.append(f"       - {row['무음구간목록']}")
-            lines.append(f"     프리즈: {row['프리즈상태']} {row['프리즈구간']}구간")
+            lines.append(f"     프리즈: {cell(row, '프리즈상태')} {cell(row, '프리즈구간', '0')}구간")
             if row.get('프리즈구간목록'):
                 lines.append(f"       - {row['프리즈구간목록']}")
-            lines.append(f"     크기: {row['크기']}")
-            lines.append(f"     갱신: {row['갱신시각'] or '-'}")
-            lines.append(f"     경로: {row['경로']}")
+            lines.append(f"     크기: {cell(row, '크기')}")
+            lines.append(f"     갱신: {cell(row, '갱신시각')}")
+            lines.append(f"     경로: {cell(row, '경로')}")
             lines.append('')
         try:
             with tmp.open('w', encoding='utf-8') as fh:

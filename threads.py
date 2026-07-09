@@ -468,7 +468,10 @@ class AudioAnalyzeThread(QThread):
         try:
             if not path.exists():
                 return None
-            data = json.loads(path.read_text(encoding='utf-8'))
+            data = json.loads(path.read_text(encoding='utf-8', errors='replace'))
+            if not isinstance(data, dict):
+                self._discard_index_cache(path, 'invalid root')
+                return None
             if data.get('version') != 2:
                 self._discard_index_cache(path, 'version mismatch')
                 return None
