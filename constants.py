@@ -1191,6 +1191,97 @@ def _settings_data_copy(data):
 def _default_settings_copy():
     return _settings_data_copy(DEFAULT_SETTINGS)
 
+def _settings_str(value, default):
+    try:
+        text = str(value).strip()
+        return text if text else str(default)
+    except Exception:
+        return str(default)
+
+def _settings_int(value, default, min_value=None, max_value=None):
+    try:
+        n = int(value)
+    except Exception:
+        n = int(default)
+    if min_value is not None:
+        n = max(int(min_value), n)
+    if max_value is not None:
+        n = min(int(max_value), n)
+    return n
+
+def _settings_float(value, default, min_value=None, max_value=None):
+    try:
+        n = float(value)
+    except Exception:
+        n = float(default)
+    if min_value is not None:
+        n = max(float(min_value), n)
+    if max_value is not None:
+        n = min(float(max_value), n)
+    return n
+
+def _settings_str_list(value, default, limit=50):
+    if isinstance(value, (str, bytes)) or not isinstance(value, (list, tuple)):
+        value = default
+    out = []
+    for item in value:
+        try:
+            text = str(item).strip()
+        except Exception:
+            continue
+        if text:
+            out.append(text)
+        if len(out) >= int(limit):
+            break
+    return out
+
+def _settings_int_pair(value, default, min_value=1, max_value=10000):
+    if not isinstance(value, (list, tuple)) or len(value) < 2:
+        value = default
+    return [
+        _settings_int(value[0], default[0], min_value, max_value),
+        _settings_int(value[1], default[1], min_value, max_value),
+    ]
+
+def _settings_audio_channels(value):
+    if not isinstance(value, (list, tuple)):
+        value = DEFAULT_SETTINGS['audio_channels']
+    out = []
+    for item in value:
+        try:
+            ch = int(item)
+        except Exception:
+            continue
+        if 1 <= ch <= 8 and ch not in out:
+            out.append(ch)
+    return out or _settings_data_copy(DEFAULT_SETTINGS['audio_channels'])
+
+def _normalize_settings(data):
+    raw = data if isinstance(data, dict) else {}
+    normalized = _default_settings_copy()
+    normalized.update(raw)
+    normalized['volume'] = _settings_int(normalized.get('volume'), DEFAULT_SETTINGS['volume'], 0, 100)
+    normalized['playback_rate'] = _settings_float(
+        normalized.get('playback_rate'), DEFAULT_SETTINGS['playback_rate'], 0.5, 2.0
+    )
+    normalized['audio_channels'] = _settings_audio_channels(normalized.get('audio_channels'))
+    for key in ('black_amount', 'black_threshold', 'mute_threshold', 'mute_duration'):
+        normalized[key] = _settings_str(normalized.get(key), DEFAULT_SETTINGS[key])
+    normalized['last_dir'] = _settings_str(normalized.get('last_dir'), DEFAULT_SETTINGS['last_dir'])
+    normalized['recent_files'] = _settings_str_list(
+        normalized.get('recent_files'), DEFAULT_SETTINGS['recent_files'], limit=50
+    )
+    normalized['recent_dirs'] = _settings_str_list(
+        normalized.get('recent_dirs'), DEFAULT_SETTINGS['recent_dirs'], limit=30
+    )
+    normalized['window_size'] = _settings_int_pair(
+        normalized.get('window_size'), DEFAULT_SETTINGS['window_size'], 640, 10000
+    )
+    normalized['splitter_sizes'] = _settings_int_pair(
+        normalized.get('splitter_sizes'), DEFAULT_SETTINGS['splitter_sizes'], 100, 10000
+    )
+    return normalized
+
 def _settings_log_warning(message):
     try:
         if '_safe_proc_log' in globals():
@@ -1323,7 +1414,7 @@ def load_settings():
                 _write_settings_atomic(data)
             except Exception as write_exc:
                 _settings_log_warning(f'settings.json reset failed: {write_exc}')
-        _settings_cache = _settings_data_copy(data)
+        _settings_cache = _normalize_settings(data)
         return _settings_data_copy(_settings_cache)
 
 def save_settings(**updates):
@@ -1331,7 +1422,7 @@ def save_settings(**updates):
     with _settings_lock:
         data = load_settings()
         data.update(updates)
-        _settings_cache = _settings_data_copy(data)
+        _settings_cache = _normalize_settings(data)
         try:
             backup_file_snapshot(SETTINGS_PATH, 'settings-auto', min_interval_sec=300, keep=12)
             _write_settings_atomic(_settings_cache)
