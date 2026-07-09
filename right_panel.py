@@ -933,6 +933,7 @@ class RightPanel(QWidget):
                     info = probe(fp) or {}
             except Exception as e:
                 log.debug(f'qc report probe skipped file={p_name}: {e}')
+            metadata_available = bool(info)
             fps = _safe_float(info.get('fps', 0), 0.0)
             duration = _safe_float(info.get('duration', 0), 0.0)
             width = _safe_int(info.get('width', 0), 0)
@@ -957,8 +958,8 @@ class RightPanel(QWidget):
                 '프레임모드': frame_mode,
                 '길이_TC': sec_to_tc(duration, fps or 29.97, info.get('df')) if duration else '',
                 '길이_sec': f'{duration:.3f}' if duration else '',
-                '오디오채널': str(channels),
-                '오디오스트림': str(streams),
+                '오디오채널': str(channels) if metadata_available else '',
+                '오디오스트림': str(streams) if metadata_available else '',
                 '소스타임코드': info.get('timecode', '') or '',
                 '비트레이트': str(info.get('bit_rate', '') or ''),
                 '크기': format_bytes(size) if size else '-',
@@ -1001,6 +1002,12 @@ class RightPanel(QWidget):
                 return '-'
             return f'{fps}fps {mode}'.strip()
 
+        def audio_cell(row):
+            channels = row.get('오디오채널')
+            if channels in (None, ''):
+                return '-'
+            return f'{channels}CH'
+
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         tmp = target.with_name(f'.{target.name}.{time.time_ns()}.tmp')
@@ -1013,7 +1020,7 @@ class RightPanel(QWidget):
         for idx, row in enumerate(rows, 1):
             lines.append(f"{idx:03d}. {cell(row, '파일명')}")
             lines.append(f"     상태: {cell(row, 'QC상태')} / {cell(row, 'QC요약')}")
-            lines.append(f"     미디어: {row.get('해상도') or '-'} / {fps_cell(row)} / {row.get('오디오채널') or '-'}CH / {row.get('길이_TC') or '-'}")
+            lines.append(f"     미디어: {row.get('해상도') or '-'} / {fps_cell(row)} / {audio_cell(row)} / {row.get('길이_TC') or '-'}")
             lines.append(f"     정합성: {row.get('메타정합성') or '-'} / {row.get('메타확인사항') or '-'}")
             if row.get('소스타임코드'):
                 lines.append(f"     소스TC: {row['소스타임코드']}")
