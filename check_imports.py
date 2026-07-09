@@ -514,6 +514,12 @@ def check_core_logic():
             errors.append(f"  FAIL QC detail html pending count: {detail_html}")
         if f"color:{C['text2']}" not in detail_html:
             errors.append(f"  FAIL QC detail html pending color: {detail_html}")
+        missing_detail_html = RightPanel._file_status_detail_html(
+            HtmlStatusProbe(),
+            {'filepath': 'C:/missing/file_not_available.mxf', 'black': 'found', 'black_count': 1},
+        )
+        if '파일 접근 상태: 파일 없음' not in missing_detail_html or '블랙 있음' in missing_detail_html:
+            errors.append(f"  FAIL missing file detail html: {missing_detail_html}")
         class FileItemHtmlProbe(HtmlStatusProbe):
             _path_name = staticmethod(RightPanel._path_name)
             _breakable_name_html = RightPanel._breakable_name_html
@@ -529,6 +535,7 @@ def check_core_logic():
             {
                 'name': 'meta.mxf',
                 'filepath': 'C:/qc/meta.mxf',
+                '_availability_override': '',
                 'black': 'ok',
                 'mute': 'ok',
                 'freeze': '',
@@ -956,13 +963,15 @@ def check_core_logic():
             def _qc_piece_text(self, label, state, count):
                 return RightPanel._qc_piece_text(self, label, state, count)
 
-            def _file_status_detail(self, f):
-                return RightPanel._file_status_detail(self, f)
+            def _file_status_detail(self, f, unavailable=None):
+                return RightPanel._file_status_detail(self, f, unavailable=unavailable)
 
             def _ranges_report_text(self, ranges, limit=20):
                 return RightPanel._ranges_report_text(self, ranges, limit)
 
-            def _file_status_badge(self, f, is_cue=False):
+            def _file_status_badge(self, f, is_cue=False, unavailable=None):
+                if unavailable:
+                    return unavailable, '#f00'
                 return qc_summary_from_status(f.get('black'), f.get('mute'), f.get('freeze')), '#fff'
 
         summary_text = RightPanel._qc_summary_clipboard_text(
@@ -970,6 +979,7 @@ def check_core_logic():
             {
                 'name': 'copy-me.mxf',
                 'filepath': 'C:/qc/copy-me.mxf',
+                '_availability_override': '',
                 'black': 'found',
                 'mute': 'ok',
                 'freeze': '',
@@ -1001,6 +1011,24 @@ def check_core_logic():
             errors.append(f"  FAIL QC summary copy ranges: {summary_text}")
         if '경로: C:/qc/copy-me.mxf' not in summary_text:
             errors.append(f"  FAIL QC summary copy path: {summary_text}")
+        missing_summary_text = RightPanel._qc_summary_clipboard_text(
+            SummaryCopyProbe(),
+            {
+                'name': 'missing-copy.mxf',
+                'filepath': 'C:/missing/missing-copy.mxf',
+                'black': 'found',
+                'mute': 'ok',
+                'freeze': '',
+                'black_count': 1,
+                'black_ranges': [{'start': 1.0, 'tc_start': '00:00:01;00'}],
+                'meta_status': '확인 필요',
+                'meta_issues': ['DF 타임코드 아님'],
+            },
+        )
+        if 'QC상태: 파일 없음' not in missing_summary_text or '상세: 파일 접근 상태: 파일 없음' not in missing_summary_text:
+            errors.append(f"  FAIL missing QC summary copy status: {missing_summary_text}")
+        if '첫문제:' in missing_summary_text or '블랙구간:' in missing_summary_text or '메타:' in missing_summary_text:
+            errors.append(f"  FAIL missing QC summary copy stale details hidden: {missing_summary_text}")
 
         class StaleSummaryCopyProbe(SummaryCopyProbe):
             def __init__(self):
@@ -1020,6 +1048,7 @@ def check_core_logic():
         stale_summary_record = {
             'name': 'stale-copy.mxf',
             'filepath': 'C:/qc/stale-copy.mxf',
+            '_availability_override': '',
             'black': 'found',
             'mute': 'ok',
             'freeze': '',
@@ -1038,6 +1067,7 @@ def check_core_logic():
                 {
                     'name': 'bad-a.mxf',
                     'filepath': 'C:/qc/bad-a.mxf',
+                    '_availability_override': '',
                     'black': 'found',
                     'mute': 'ok',
                     'freeze': '',
@@ -1049,6 +1079,7 @@ def check_core_logic():
                 {
                     'name': 'bad-b.mxf',
                     'filepath': 'C:/qc/bad-b.mxf',
+                    '_availability_override': '',
                     'black': 'ok',
                     'mute': 'error',
                     'freeze': '',
@@ -1059,6 +1090,7 @@ def check_core_logic():
                 {
                     'name': 'pending.mxf',
                     'filepath': 'C:/qc/pending.mxf',
+                    '_availability_override': '',
                     'black': '',
                     'mute': '',
                     'freeze': '',
@@ -1069,6 +1101,7 @@ def check_core_logic():
                 {
                     'name': 'meta.mxf',
                     'filepath': 'C:/qc/meta.mxf',
+                    '_availability_override': '',
                     'black': 'ok',
                     'mute': 'ok',
                     'freeze': '',

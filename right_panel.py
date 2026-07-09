@@ -655,6 +655,8 @@ class RightPanel(QWidget):
 
     @staticmethod
     def _availability_for_record(f, availability=None):
+        if isinstance(f, dict) and '_availability_override' in f:
+            return str(f.get('_availability_override') or '')
         if isinstance(availability, dict):
             cached = availability.get(id(f), None)
             if cached is not None:
@@ -693,7 +695,11 @@ class RightPanel(QWidget):
             return "CUE", C['blue']
         return "미분석", C['text2']
 
-    def _file_status_detail(self, f):
+    def _file_status_detail(self, f, unavailable=None):
+        if unavailable is None:
+            unavailable = RightPanel._availability_for_record(f)
+        if unavailable:
+            return f"파일 접근 상태: {unavailable}"
         black_count = _safe_count(f.get("black_count", 0))
         mute_count = _safe_count(f.get("mute_count", 0))
         freeze_count = _safe_count(f.get("freeze_count", 0))
@@ -719,7 +725,11 @@ class RightPanel(QWidget):
             "</span>"
         )
 
-    def _file_status_detail_html(self, f):
+    def _file_status_detail_html(self, f, unavailable=None):
+        if unavailable is None:
+            unavailable = RightPanel._availability_for_record(f)
+        if unavailable:
+            return f"<span style='color:{C['red']};font-weight:800;'>파일 접근 상태: {escape(unavailable)}</span>"
         black_count = _safe_count(f.get("black_count", 0))
         mute_count = _safe_count(f.get("mute_count", 0))
         freeze_count = _safe_count(f.get("freeze_count", 0))
@@ -729,7 +739,11 @@ class RightPanel(QWidget):
         divider = f" <span style='color:{C['text2']};'>/</span> "
         return f"{black}{divider}{mute}{divider}{freeze}"
 
-    def _file_first_issue_hint_html(self, f):
+    def _file_first_issue_hint_html(self, f, unavailable=None):
+        if unavailable is None:
+            unavailable = RightPanel._availability_for_record(f)
+        if unavailable:
+            return ''
         hint = self._first_qc_issue_text(f)
         if not hint:
             return ''
@@ -795,8 +809,9 @@ class RightPanel(QWidget):
             f"<div style=\"font-family:'Segoe UI Variable Text','Segoe UI','Malgun Gothic';"
             f"font-size:12px;color:{C['text0']};font-weight:500;\">"
             f"QC: <span style='color:{badge_color};font-weight:800;'>{escape(badge)}</span>"
-            f"&nbsp;&nbsp;&nbsp;{self._file_status_detail_html(f)}"
-            f"{self._file_first_issue_hint_html(f)}{self._file_meta_issue_hint_html(f)}</div>"
+            f"&nbsp;&nbsp;&nbsp;{self._file_status_detail_html(f, unavailable=unavailable)}"
+            f"{self._file_first_issue_hint_html(f, unavailable=unavailable)}"
+            f"{'' if unavailable else self._file_meta_issue_hint_html(f)}</div>"
         )
 
     def _empty_file_item_text(self, total_count=0):
@@ -2178,27 +2193,29 @@ class RightPanel(QWidget):
             log.debug(f'QC summary stale refresh skipped: {e}')
         fp = self._file_path_text(record.get('filepath'))
         name = record.get('name') or self._path_name(fp, '파일')
-        badge, _ = self._file_status_badge(record, fp == getattr(self.vp, 'cur_file', ''))
+        unavailable = RightPanel._availability_for_record(record)
+        badge, _ = self._file_status_badge(record, fp == getattr(self.vp, 'cur_file', ''), unavailable=unavailable)
         lines = [
             f"파일명: {name}",
             f"QC상태: {badge}",
-            f"상세: {self._file_status_detail(record)}",
+            f"상세: {self._file_status_detail(record, unavailable=unavailable)}",
         ]
-        first_issue = self._first_qc_issue_text(record)
+        first_issue = '' if unavailable else self._first_qc_issue_text(record)
         if first_issue:
             lines.append(f"첫문제: {first_issue}")
-        meta_issue = RightPanel._metadata_issue_text(record, include_label=False)
+        meta_issue = '' if unavailable else RightPanel._metadata_issue_text(record, include_label=False)
         if meta_issue:
             lines.append(f"메타: {meta_issue}")
-        ranges = (
-            ('블랙구간', record.get('black_ranges')),
-            ('무음구간', record.get('mute_ranges')),
-            ('프리즈구간', record.get('freeze_ranges')),
-        )
-        for label, value in ranges:
-            text = self._ranges_report_text(value)
-            if text:
-                lines.append(f"{label}: {text}")
+        if not unavailable:
+            ranges = (
+                ('블랙구간', record.get('black_ranges')),
+                ('무음구간', record.get('mute_ranges')),
+                ('프리즈구간', record.get('freeze_ranges')),
+            )
+            for label, value in ranges:
+                text = self._ranges_report_text(value)
+                if text:
+                    lines.append(f"{label}: {text}")
         if fp:
             lines.append(f"경로: {fp}")
         return '\n'.join(lines)
@@ -2245,11 +2262,12 @@ class RightPanel(QWidget):
         for record in issue_files:
             fp = self._file_path_text(record.get('filepath'))
             name = record.get('name') or self._path_name(fp, '파일')
-            badge, _ = self._file_status_badge(record, fp == current)
-            detail = self._file_status_detail(record)
-            first_issue = self._first_qc_issue_text(record)
+            unavailable = RightPanel._availability_for_record(record)
+            badge, _ = self._file_status_badge(record, fp == current, unavailable=unavailable)
+            detail = self._file_status_detail(record, unavailable=unavailable)
+            first_issue = '' if unavailable else self._first_qc_issue_text(record)
             issue_suffix = f" / 첫문제 {first_issue}" if first_issue else ""
-            meta_issue = RightPanel._metadata_issue_text(record)
+            meta_issue = '' if unavailable else RightPanel._metadata_issue_text(record)
             meta_suffix = f" / {meta_issue}" if meta_issue else ""
             lines.append(f"- {name}: {badge} / {detail}{issue_suffix}{meta_suffix}")
             if fp:
@@ -2731,10 +2749,10 @@ class RightPanel(QWidget):
             prefix = "▶  " if is_cue else ""
             unavailable = RightPanel._availability_for_record(f, availability)
             badge, badge_color = self._file_status_badge(f, is_cue, unavailable=unavailable)
-            detail = self._file_status_detail(f)
-            first_issue = self._first_qc_issue_text(f)
+            detail = self._file_status_detail(f, unavailable=unavailable)
+            first_issue = '' if unavailable else self._first_qc_issue_text(f)
             issue_hint = f"    첫문제 {first_issue}" if first_issue else ""
-            meta_issue = RightPanel._metadata_issue_text(f)
+            meta_issue = '' if unavailable else RightPanel._metadata_issue_text(f)
             meta_hint = f"    {meta_issue}" if meta_issue else ""
             item_text = f"{prefix}{name}\nQC: {badge}    {detail}{issue_hint}{meta_hint}"
             item = QListWidgetItem(item_text)
