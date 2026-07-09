@@ -123,21 +123,32 @@ def _acquire_single_instance():
         kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, ctypes.c_bool, ctypes.c_wchar_p]
         kernel32.CreateMutexW.restype = ctypes.c_void_p
         kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
-        handle = kernel32.CreateMutexW(None, False, APP_MUTEX_NAME)
-        err = ctypes.get_last_error()
-        if not handle:
-            log.warning(f'single instance mutex creation failed: {err}')
-            return True
-        if err == 183:  # ERROR_ALREADY_EXISTS
+        ERROR_ALREADY_EXISTS = 183
+        deadline = time.monotonic() + 2.5
+        waited = False
+        while True:
+            handle = kernel32.CreateMutexW(None, False, APP_MUTEX_NAME)
+            err = ctypes.get_last_error()
+            if not handle:
+                log.warning(f'single instance mutex creation failed: {err}')
+                return True
+            if err != ERROR_ALREADY_EXISTS:
+                _single_instance_handle = handle
+                if waited:
+                    log.info('single instance acquired after stale mutex wait')
+                return True
             try:
                 kernel32.CloseHandle(handle)
             except Exception:
                 pass
-            _activate_existing_window()
-            log.info('중복 실행 차단 — 기존 창 활성화')
-            return False
-        _single_instance_handle = handle
-        return True
+            if _activate_existing_window():
+                log.info('중복 실행 차단 — 기존 창 활성화')
+                return False
+            if time.monotonic() >= deadline:
+                log.info('중복 실행 차단 — 기존 창 미확인')
+                return False
+            waited = True
+            time.sleep(0.25)
     except Exception as e:
         log.warning(f'single instance check failed: {e}')
         return True
