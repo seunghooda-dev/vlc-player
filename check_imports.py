@@ -157,6 +157,39 @@ def check_core_logic():
         normalized = _normalize_settings({'audio_channels': [1, 2, 9, 16, 2, 'bad']})
         if normalized.get('audio_channels') != [1, 2]:
             errors.append(f"  FAIL audio settings channel clamp: {normalized.get('audio_channels')}")
+        damaged_settings = _normalize_settings({
+            'volume': 250,
+            'playback_rate': 9,
+            'black_amount': 150,
+            'black_threshold': 999,
+            'mute_threshold': 12,
+            'mute_duration': -5,
+            'freeze_noise': -999,
+            'freeze_duration': 0,
+            'recent_files': [str(i) for i in range(60)],
+            'recent_dirs': [str(i) for i in range(40)],
+            'window_size': [1, 20000],
+            'splitter_sizes': [0, 20000],
+        })
+        expected_settings = {
+            'volume': 100,
+            'playback_rate': 2.0,
+            'black_amount': '100',
+            'black_threshold': '255',
+            'mute_threshold': '-50',
+            'mute_duration': '0.1',
+            'freeze_noise': '-120',
+            'freeze_duration': '0.1',
+            'window_size': [640, 10000],
+            'splitter_sizes': [100, 10000],
+        }
+        for key, expected in expected_settings.items():
+            if damaged_settings.get(key) != expected:
+                errors.append(f"  FAIL settings clamp {key}: {damaged_settings.get(key)} != {expected}")
+        if len(damaged_settings.get('recent_files', [])) != 50:
+            errors.append(f"  FAIL recent_files limit: {len(damaged_settings.get('recent_files', []))}")
+        if len(damaged_settings.get('recent_dirs', [])) != 30:
+            errors.append(f"  FAIL recent_dirs limit: {len(damaged_settings.get('recent_dirs', []))}")
 
         audio_mix = AudioMixPlayer()
         audio_mix.set_channels([1, 2, 9, 16, 2, 'bad'])
@@ -250,7 +283,7 @@ def main():
         all_ok = False
         for e in logic_errors: print(e)
     else:
-        print("  OK metadata QC, audio channel, video extension, and timecode rules")
+        print("  OK metadata QC, settings, audio channel, video extension, and timecode rules")
 
     print()
     print("=" * 55)
