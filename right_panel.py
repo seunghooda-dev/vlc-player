@@ -458,11 +458,14 @@ class RightPanel(QWidget):
     def _report_menu_state(self):
         all_files = self._file_records()
         visible_files = self._filtered_file_records()
+        latest_report = self._latest_report_path()
         return {
             'all_files': all_files,
             'visible_files': visible_files,
             'all_count': len(all_files),
             'visible_count': len(visible_files),
+            'latest_report': latest_report,
+            'latest_report_name': self._path_name(latest_report, '최근 리포트 없음'),
             'show_visible': (
                 getattr(self, '_filter_key', 'all') != 'all'
                 or len(visible_files) != len(all_files)
@@ -480,6 +483,8 @@ class RightPanel(QWidget):
             act_visible = menu.addAction(f"▣   표시 목록 리포트 저장 ({state['visible_count']}개)")
             act_visible.setEnabled(state['visible_count'] > 0)
         menu.addSeparator()
+        act_latest = menu.addAction(f"↗   최근 리포트 열기 — {state['latest_report_name']}")
+        act_latest.setEnabled(bool(state['latest_report']))
         act_folder = menu.addAction("📁   리포트 폴더 열기")
 
         anchor = getattr(self, 'btn_export', self)
@@ -497,6 +502,8 @@ class RightPanel(QWidget):
                 state['visible_files'],
                 default_prefix=f"qc-visible-{getattr(self, '_filter_key', 'all')}",
             )
+        elif action == act_latest:
+            self._open_report_file(state['latest_report'])
         elif action == act_folder:
             self._open_report_folder()
 
@@ -1425,6 +1432,59 @@ class RightPanel(QWidget):
             self.vp.status_changed.emit(f"  📁 리포트 폴더 열기 — {folder}")
             return True
         self.vp.status_changed.emit(f"  ⚠ 리포트 폴더 열기 실패 — {folder}")
+        return False
+
+    @staticmethod
+    def _latest_report_path_in(folder):
+        try:
+            folder = Path(folder)
+        except Exception:
+            return ''
+        candidates = []
+        for pattern in ('*.csv', '*.txt'):
+            try:
+                candidates.extend(folder.glob(pattern))
+            except Exception:
+                continue
+        files = []
+        for path in candidates:
+            try:
+                if path.is_file():
+                    stat = path.stat()
+                    mtime_ns = getattr(stat, 'st_mtime_ns', int(stat.st_mtime * 1_000_000_000))
+                    files.append((mtime_ns, path.name.lower(), path))
+            except Exception:
+                continue
+        if not files:
+            return ''
+        files.sort()
+        return str(files[-1][2])
+
+    def _latest_report_path(self):
+        return self._latest_report_path_in(REPORT_DIR)
+
+    def _open_report_file(self, filepath=None):
+        filepath = self._file_path_text(filepath) or self._latest_report_path()
+        if not filepath:
+            self.vp.status_changed.emit("  ⚠ 열 수 있는 리포트 파일이 없습니다")
+            return False
+        try:
+            path = Path(filepath)
+        except Exception:
+            self.vp.status_changed.emit("  ⚠ 리포트 경로가 올바르지 않습니다")
+            return False
+        if not path.exists() or not path.is_file():
+            self.vp.status_changed.emit(f"  ⚠ 리포트 파일을 찾을 수 없습니다 — {self._path_name(filepath)}")
+            return False
+        try:
+            ok = QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+        except Exception as e:
+            log.warning(f'open report file failed file={self._path_name(filepath)}: {e}')
+            ok = False
+        if ok:
+            self.vp.status_changed.emit(f"  ↗ 리포트 열기 — {path.name}")
+            return True
+        self.vp.status_changed.emit(f"  ⚠ 리포트 열기 실패 — {path.name}")
         return False
 
     def _copy_file_path(self, filepath):

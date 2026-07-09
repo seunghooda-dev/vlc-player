@@ -309,6 +309,9 @@ def check_core_logic():
             _filtered_file_records = RightPanel._filtered_file_records
             _file_matches_filter = RightPanel._file_matches_filter
             _report_menu_state = RightPanel._report_menu_state
+            _path_name = staticmethod(RightPanel._path_name)
+            def _latest_report_path(self):
+                return 'C:/reports/latest.csv'
             def _file_records(self):
                 return [
                     {'name': 'clean.mxf', 'black': 'ok', 'mute': 'ok', 'freeze': ''},
@@ -326,6 +329,20 @@ def check_core_logic():
             errors.append(f"  FAIL report menu counts: {report_menu_state}")
         if not report_menu_state.get('show_visible'):
             errors.append(f"  FAIL report menu visible scope: {report_menu_state}")
+        if report_menu_state.get('latest_report_name') != 'latest.csv':
+            errors.append(f"  FAIL report menu latest name: {report_menu_state}")
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            (base / 'a-old.csv').write_text('old', encoding='utf-8')
+            (base / 'm-ignore.zip').write_text('zip', encoding='utf-8')
+            (base / 'z-new.txt').write_text('new', encoding='utf-8')
+            latest = RightPanel._latest_report_path_in(base)
+            if Path(latest).name != 'z-new.txt':
+                errors.append(f"  FAIL latest report path: {latest}")
+            empty_dir = base / 'empty'
+            empty_dir.mkdir()
+            if RightPanel._latest_report_path_in(empty_dir) != '':
+                errors.append("  FAIL latest report empty folder")
 
         class SummaryCopyProbe:
             vp = type('VP', (), {'cur_file': ''})()
