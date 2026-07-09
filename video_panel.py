@@ -1507,6 +1507,14 @@ class VideoPanel(QWidget):
             pass
         return default
 
+    @staticmethod
+    def _settings_entries(value):
+        if isinstance(value, (str, bytes)):
+            return [value]
+        if isinstance(value, (list, tuple, set)):
+            return value
+        return []
+
     def _nominal_fps(self):
         return max(1, int(round(self._media_fps())))
 
@@ -1634,9 +1642,12 @@ class VideoPanel(QWidget):
     def _load_last_dir(self):
         try:
             settings = load_settings()
-            for fp in settings.get('recent_files', []):
+            for fp in self._settings_entries(settings.get('recent_files')):
                 try:
-                    p = Path(fp)
+                    text = str(fp or '').strip()
+                    if not text:
+                        continue
+                    p = Path(text)
                     if p.exists() and p.is_file():
                         return str(p.parent)
                 except Exception:
@@ -1644,7 +1655,7 @@ class VideoPanel(QWidget):
             last_dir = self._existing_dir(settings.get('last_dir'))
             if last_dir:
                 return last_dir
-            for folder in settings.get('recent_dirs', []):
+            for folder in self._settings_entries(settings.get('recent_dirs')):
                 recent_dir = self._existing_dir(folder)
                 if recent_dir:
                     return recent_dir
@@ -1668,17 +1679,23 @@ class VideoPanel(QWidget):
     def _prune_recent_entries(self):
         try:
             recent_files = []
-            for fp in self._settings.get('recent_files', []):
+            for fp in self._settings_entries(self._settings.get('recent_files')):
                 try:
-                    p = Path(fp)
+                    text = str(fp or '').strip()
+                    if not text:
+                        continue
+                    p = Path(text)
                     if p.exists() and p.is_file() and p.suffix.lower() in VIDEO_EXTS and str(p) not in recent_files:
                         recent_files.append(str(p))
                 except Exception:
                     pass
             recent_dirs = []
-            for folder in self._settings.get('recent_dirs', []):
+            for folder in self._settings_entries(self._settings.get('recent_dirs')):
                 try:
-                    p = Path(folder)
+                    text = str(folder or '').strip()
+                    if not text:
+                        continue
+                    p = Path(text)
                     if p.exists() and p.is_dir() and str(p) not in recent_dirs:
                         recent_dirs.append(str(p))
                 except Exception:
@@ -1704,10 +1721,16 @@ class VideoPanel(QWidget):
                 return
             folder = str(p)
             recent_dirs = []
-            for item in self._settings.get('recent_dirs', []):
+            for item in self._settings_entries(self._settings.get('recent_dirs')):
                 try:
-                    text = str(item or '')
-                    if text and text != folder and text not in recent_dirs:
+                    text = str(item or '').strip()
+                    if not text or text == folder:
+                        continue
+                    p_item = Path(text)
+                    if not p_item.exists() or not p_item.is_dir():
+                        continue
+                    text = str(p_item)
+                    if text not in recent_dirs:
                         recent_dirs.append(text)
                 except Exception:
                     continue
@@ -1726,9 +1749,9 @@ class VideoPanel(QWidget):
                 return
             fp = str(p)
             recent_files = []
-            for item in self._settings.get('recent_files', []):
+            for item in self._settings_entries(self._settings.get('recent_files')):
                 try:
-                    text = str(item or '')
+                    text = str(item or '').strip()
                     if text and text != fp and text not in recent_files:
                         recent_files.append(text)
                 except Exception:
@@ -1737,7 +1760,8 @@ class VideoPanel(QWidget):
             existing_files = []
             for item in recent_files:
                 try:
-                    if Path(item).exists():
+                    p_item = Path(str(item or '').strip())
+                    if p_item.exists() and p_item.is_file() and p_item.suffix.lower() in VIDEO_EXTS:
                         existing_files.append(item)
                 except Exception:
                     continue
