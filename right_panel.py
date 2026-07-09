@@ -1985,7 +1985,7 @@ class RightPanel(QWidget):
 
     def _seek_first_qc_issue(self, record, filepath=None):
         fp = self._file_path_text(filepath or (record or {}).get('filepath'))
-        if not self._same_path_text(fp, getattr(self.vp, 'cur_file', '')):
+        if not self._can_seek_current_qc_issue_file(fp):
             self.vp.status_changed.emit(f"  ⏳ 첫 문제 이동은 CUE 후 가능합니다 — {self._path_name(fp)}")
             return False
         target = self._first_qc_issue_seek_time(record)
@@ -1998,7 +1998,7 @@ class RightPanel(QWidget):
 
     def _seek_next_qc_issue(self, record, filepath=None):
         fp = self._file_path_text(filepath or (record or {}).get('filepath'))
-        if not self._same_path_text(fp, getattr(self.vp, 'cur_file', '')):
+        if not self._can_seek_current_qc_issue_file(fp):
             self.vp.status_changed.emit(f"  ⏳ 다음 문제 이동은 CUE 후 가능합니다 — {self._path_name(fp)}")
             return False
         try:
@@ -2018,7 +2018,7 @@ class RightPanel(QWidget):
 
     def _seek_previous_qc_issue(self, record, filepath=None):
         fp = self._file_path_text(filepath or (record or {}).get('filepath'))
-        if not self._same_path_text(fp, getattr(self.vp, 'cur_file', '')):
+        if not self._can_seek_current_qc_issue_file(fp):
             self.vp.status_changed.emit(f"  ⏳ 이전 문제 이동은 CUE 후 가능합니다 — {self._path_name(fp)}")
             return False
         try:
@@ -2045,6 +2045,23 @@ class RightPanel(QWidget):
         if bool(getattr(self.vp, '_loading', False)) or bool(getattr(self, '_analysis_active', None)):
             return False
         return self._is_video_file_path(fp)
+
+    def _can_seek_current_qc_issue_file(self, filepath):
+        fp = self._file_path_text(filepath)
+        if not fp:
+            return False
+        if not self._same_path_text(fp, getattr(self.vp, 'cur_file', '')):
+            return False
+        if bool(getattr(self.vp, '_loading', False)):
+            return False
+        ready = getattr(self.vp, '_media_transport_ready', None)
+        if callable(ready):
+            try:
+                return bool(ready())
+            except Exception as e:
+                log.debug(f'qc issue seek readiness check failed: {e}')
+                return False
+        return bool(getattr(self.vp, '_metadata_ready', False) or getattr(self.vp, '_cue_ready', False))
 
     def _run_context_reanalyze(self, kind, filepath):
         fp = self._file_path_text(filepath)
@@ -2162,7 +2179,7 @@ class RightPanel(QWidget):
             if record:
                 act_copy_qc = menu.addAction("⧉   QC 요약 복사")
                 if self._first_qc_issue_seek_time(record) is not None:
-                    if self._same_path_text(fp, getattr(self.vp, 'cur_file', '')):
+                    if self._can_seek_current_qc_issue_file(fp):
                         act_seek_first_issue = menu.addAction("⏱   첫 문제 구간으로 이동")
                         act_seek_prev_issue = menu.addAction("⏮   이전 문제 구간으로 이동")
                         act_seek_next_issue = menu.addAction("⏭   다음 문제 구간으로 이동")

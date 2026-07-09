@@ -721,6 +721,57 @@ def check_core_logic():
         if RightPanel._first_qc_issue_seek_time(SummaryCopyProbe(), {}) is not None:
             errors.append("  FAIL first QC issue seek empty")
 
+        class QcIssueSeekProbe:
+            _file_path_text = staticmethod(RightPanel._file_path_text)
+            _same_path_text = staticmethod(RightPanel._same_path_text)
+            _path_name = staticmethod(RightPanel._path_name)
+            _can_seek_current_qc_issue_file = RightPanel._can_seek_current_qc_issue_file
+            _seek_first_qc_issue = RightPanel._seek_first_qc_issue
+            _first_qc_issue_seek_time = RightPanel._first_qc_issue_seek_time
+            _qc_issue_seek_times = RightPanel._qc_issue_seek_times
+            _qc_issue_markers = RightPanel._qc_issue_markers
+
+            def __init__(self, ready=True, loading=False):
+                self.messages = []
+                self.seeked = []
+                self.vp = type('VP', (), {})()
+                self.vp.cur_file = 'C:/qc/current.mxf'
+                self.vp._loading = loading
+                self.vp._metadata_ready = False
+                self.vp._cue_ready = ready
+                self.vp._media_transport_ready = lambda: bool(ready)
+                self.vp.status_changed = type(
+                    'Signal',
+                    (),
+                    {'emit': lambda _, msg: self.messages.append(msg)},
+                )()
+                self.seek_requested = type(
+                    'Signal',
+                    (),
+                    {'emit': lambda _, sec: self.seeked.append(sec)},
+                )()
+
+        seek_record = {
+            'filepath': 'C:/qc/current.mxf',
+            'black_ranges': [{'start': 4.0}],
+            'mute_ranges': [],
+            'freeze_ranges': [],
+        }
+        seek_ready_probe = QcIssueSeekProbe(ready=True)
+        if not RightPanel._can_seek_current_qc_issue_file(seek_ready_probe, 'C:/qc/current.mxf'):
+            errors.append("  FAIL QC issue seek current ready")
+        if not RightPanel._seek_first_qc_issue(seek_ready_probe, seek_record, 'C:/qc/current.mxf'):
+            errors.append("  FAIL QC issue seek first ready result")
+        if seek_ready_probe.seeked != [4.0]:
+            errors.append(f"  FAIL QC issue seek emit: {seek_ready_probe.seeked}")
+        seek_not_ready_probe = QcIssueSeekProbe(ready=False)
+        if RightPanel._can_seek_current_qc_issue_file(seek_not_ready_probe, 'C:/qc/current.mxf'):
+            errors.append("  FAIL QC issue seek should wait for cue")
+        if RightPanel._seek_first_qc_issue(seek_not_ready_probe, seek_record, 'C:/qc/current.mxf'):
+            errors.append("  FAIL QC issue seek should be blocked before cue")
+        if seek_not_ready_probe.seeked:
+            errors.append(f"  FAIL blocked QC issue seek emitted: {seek_not_ready_probe.seeked}")
+
         class ReanalyzeProbe:
             _file_path_text = staticmethod(RightPanel._file_path_text)
             _same_path_text = staticmethod(RightPanel._same_path_text)
