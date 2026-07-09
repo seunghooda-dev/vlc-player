@@ -110,6 +110,9 @@ preflight_check.bat
 
 This verifies bundled tools or PATH tools, runs a strict runtime check, runs a
 startup smoke test, and confirms the deployment helper scripts are present.
+It also warns when release support files are missing, including the Korean quick
+guide, update policy, sample checklist, sample set, Desktop shortcut installer,
+icon, and third-party notices.
 
 UI Layout Check
 ---------------

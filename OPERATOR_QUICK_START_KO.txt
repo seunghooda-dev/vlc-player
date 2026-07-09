@@ -51,6 +51,10 @@ C:\vld player\release\MXF QC Player V.1.0
 
 preflight_check.bat
 
+이 검사는 실행 파일, VLC/FFmpeg 도구, 쓰기 권한, 기본 실행 가능 여부와 함께
+운영 안내, 업데이트 정책, 샘플 체크리스트, 바로가기 설치 파일, 아이콘,
+라이선스 고지 파일 누락 여부를 경고로 표시합니다.
+
 실제 MXF 샘플 하나를 빠르게 검증하려면:
 
 smoke_mxf_test.bat "C:\path\sample.mxf"
