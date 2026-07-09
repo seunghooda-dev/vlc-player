@@ -850,6 +850,32 @@ def check_core_logic():
         if idle_cancel_probe.cancelled or not idle_cancel_probe.messages:
             errors.append(f"  FAIL idle analysis cancel message: {idle_cancel_probe.cancelled}/{idle_cancel_probe.messages}")
 
+        class ElapsedCancelProbe:
+            _finish_cancel_elapsed_timer = RightPanel._finish_cancel_elapsed_timer
+
+            def __init__(self):
+                self.calls = []
+
+            def _finish_black_elapsed_timer(self, prefix='BLACK'):
+                self.calls.append(('black', prefix))
+
+            def _finish_audio_elapsed_timer(self, prefix='MUTE'):
+                self.calls.append(('audio', prefix))
+
+            def _finish_freeze_elapsed_timer(self, prefix='FREEZE'):
+                self.calls.append(('freeze', prefix))
+
+        elapsed_cancel_probe = ElapsedCancelProbe()
+        for kind in ('black', 'audio', 'freeze', 'batch', None):
+            RightPanel._finish_cancel_elapsed_timer(elapsed_cancel_probe, kind)
+        expected_elapsed_cancel = [
+            ('black', 'BLACK STOP'),
+            ('audio', 'MUTE STOP'),
+            ('freeze', 'FREEZE STOP'),
+        ]
+        if elapsed_cancel_probe.calls != expected_elapsed_cancel:
+            errors.append(f"  FAIL cancel elapsed timer routing: {elapsed_cancel_probe.calls}")
+
         class RemoveProbe(Probe):
             _is_video_file_path = staticmethod(RightPanel._is_video_file_path)
             _same_path_text = staticmethod(RightPanel._same_path_text)

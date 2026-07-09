@@ -2760,6 +2760,7 @@ class RightPanel(QWidget):
                 self.freeze_status.setText(f"  ⏹ {reason} — 프리즈 검출 중단")
             except Exception:
                 pass
+        self._finish_cancel_elapsed_timer(active_kind)
         if had_work:
             try:
                 self.vp.ai_lbl.setText(f"⏹ {reason} — 분석 작업 중단")
@@ -2771,7 +2772,7 @@ class RightPanel(QWidget):
             self._batch_queue = []
             self._batch_current = None
             self._batch_current_info = {}
-            self._finish_batch_elapsed_timer()
+            self._finish_batch_elapsed_timer(prefix='BATCH STOP')
             try:
                 self.exp_path.setText(f"⏹ {reason} — 일괄 검수 중단")
             except Exception:
@@ -3911,6 +3912,14 @@ class RightPanel(QWidget):
         if h:
             return f'{h:02d}:{m:02d}:{s:02d}'
         return f'{m:02d}:{s:02d}'
+
+    def _finish_cancel_elapsed_timer(self, kind):
+        if kind == 'black':
+            self._finish_black_elapsed_timer(prefix='BLACK STOP')
+        elif kind == 'audio':
+            self._finish_audio_elapsed_timer(prefix='MUTE STOP')
+        elif kind == 'freeze':
+            self._finish_freeze_elapsed_timer(prefix='FREEZE STOP')
 
     def _start_black_elapsed_timer(self):
         self._black_elapsed_start = time.monotonic()
