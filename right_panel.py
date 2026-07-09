@@ -1755,6 +1755,32 @@ class RightPanel(QWidget):
             self.vp.status_changed.emit("  ⚠ 문제 요약 복사 실패")
             return False
 
+    def _first_qc_issue_seek_time(self, record):
+        if not isinstance(record, dict):
+            return None
+        starts = []
+        for key in ('black_ranges', 'mute_ranges', 'freeze_ranges'):
+            for item in sanitize_qc_ranges(record.get(key)):
+                start = _safe_float(item.get('start'), None)
+                if start is not None and start >= 0:
+                    starts.append(start)
+        if not starts:
+            return None
+        return min(starts)
+
+    def _seek_first_qc_issue(self, record, filepath=None):
+        fp = self._file_path_text(filepath or (record or {}).get('filepath'))
+        if not self._same_path_text(fp, getattr(self.vp, 'cur_file', '')):
+            self.vp.status_changed.emit(f"  ⏳ 첫 문제 이동은 CUE 후 가능합니다 — {self._path_name(fp)}")
+            return False
+        target = self._first_qc_issue_seek_time(record)
+        if target is None:
+            self.vp.status_changed.emit(f"  확인할 문제 구간이 없습니다 — {self._path_name(fp)}")
+            return False
+        self.seek_requested.emit(float(target))
+        self.vp.status_changed.emit(f"  첫 문제 구간으로 이동 — {target:.3f}s")
+        return True
+
     def _can_reanalyze_current_file(self, filepath):
         fp = self._file_path_text(filepath)
         if not fp:
@@ -1865,6 +1891,7 @@ class RightPanel(QWidget):
         menu = QMenu(self.exp_list)
         menu.setStyleSheet(self._menu_style())
         act_cue = act_del = act_relink = act_open_location = act_copy_path = act_copy_qc = None
+        act_seek_first_issue = act_seek_issue_need_cue = None
         act_re_black = act_re_audio = act_re_freeze = act_re_need_cue = None
         act_export_visible = act_export_one = act_reset_qc = act_clean_unavailable = None
         record = self._file_record_for_path(fp)
@@ -1879,6 +1906,12 @@ class RightPanel(QWidget):
             act_copy_path = menu.addAction("⧉   경로 복사")
             if record:
                 act_copy_qc = menu.addAction("⧉   QC 요약 복사")
+                if self._first_qc_issue_seek_time(record) is not None:
+                    if self._same_path_text(fp, getattr(self.vp, 'cur_file', '')):
+                        act_seek_first_issue = menu.addAction("⏱   첫 문제 구간으로 이동")
+                    else:
+                        act_seek_issue_need_cue = menu.addAction("ⓘ   첫 문제 이동은 CUE 후 가능")
+                        act_seek_issue_need_cue.setEnabled(False)
             if visible_files and (
                 getattr(self, '_filter_key', 'all') != 'all'
                 or len(visible_files) != len(all_files)
@@ -1932,6 +1965,8 @@ class RightPanel(QWidget):
             self._copy_file_path(fp)
         elif action == act_copy_qc:
             self._copy_qc_summary(record)
+        elif action == act_seek_first_issue:
+            self._seek_first_qc_issue(record, fp)
         elif action == act_re_black:
             self._run_context_reanalyze('black', fp)
         elif action == act_re_audio:

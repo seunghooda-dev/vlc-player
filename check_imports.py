@@ -569,6 +569,18 @@ def check_core_logic():
         empty_issue_summary = RightPanel._issue_summary_clipboard_text(SummaryCopyProbe(), [])
         if '확인 필요 파일 없음' not in empty_issue_summary:
             errors.append(f"  FAIL issue summary copy empty: {empty_issue_summary}")
+        first_issue_time = RightPanel._first_qc_issue_seek_time(
+            SummaryCopyProbe(),
+            {
+                'black_ranges': [{'start': 4.0, 'end': 5.0, 'duration': 1.0}],
+                'mute_ranges': [{'start': 1.25, 'end': 2.0, 'duration': 0.75}],
+                'freeze_ranges': [{'start': 3.0, 'end': 4.0, 'duration': 1.0}],
+            },
+        )
+        if abs((first_issue_time or 0) - 1.25) > 0.0001:
+            errors.append(f"  FAIL first QC issue seek time: {first_issue_time}")
+        if RightPanel._first_qc_issue_seek_time(SummaryCopyProbe(), {}) is not None:
+            errors.append("  FAIL first QC issue seek empty")
 
         class ReanalyzeProbe:
             _file_path_text = staticmethod(RightPanel._file_path_text)
