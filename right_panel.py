@@ -624,9 +624,26 @@ class RightPanel(QWidget):
             return '오류'
         return '미분석'
 
-    def _file_status_badge(self, f, is_cue=False):
+    @staticmethod
+    def _availability_for_record(f, availability=None):
+        if isinstance(availability, dict):
+            cached = availability.get(id(f), None)
+            if cached is not None:
+                return cached
+        return RightPanel._file_unavailable_badge((f or {}).get("filepath"))
+
+    @staticmethod
+    def _file_availability_map(files):
+        return {
+            id(f): RightPanel._file_unavailable_badge(f.get("filepath"))
+            for f in (files or [])
+            if isinstance(f, dict)
+        }
+
+    def _file_status_badge(self, f, is_cue=False, unavailable=None):
         f = f or {}
-        unavailable = RightPanel._file_unavailable_badge(f.get("filepath"))
+        if unavailable is None:
+            unavailable = RightPanel._availability_for_record(f)
         if unavailable:
             return unavailable, C['red']
         analysis = f.get("analysis")
@@ -692,10 +709,12 @@ class RightPanel(QWidget):
             safe = safe.replace(ch, f"{ch}&#8203;")
         return safe
 
-    def _file_item_html(self, f, prefix, badge, badge_color):
+    def _file_item_html(self, f, prefix, badge, badge_color, unavailable=None):
         f = f or {}
+        if unavailable is None:
+            unavailable = RightPanel._availability_for_record(f)
         issue = (
-            bool(RightPanel._file_unavailable_badge(f.get("filepath")))
+            bool(unavailable)
             or str(f.get("black") or '').lower() in ('found', 'error')
             or str(f.get("mute") or '').lower() in ('found', 'error')
             or str(f.get("freeze") or '').lower() in ('found', 'error')
@@ -748,11 +767,13 @@ class RightPanel(QWidget):
         return self._file_matches_filter_key(f, getattr(self, '_filter_key', 'all'))
 
     @staticmethod
-    def _file_matches_filter_key(f, key):
+    def _file_matches_filter_key(f, key, unavailable=None):
         f = f or {}
         if key == 'all':
             return True
-        unavailable = bool(RightPanel._file_unavailable_badge(f.get('filepath')))
+        if unavailable is None:
+            unavailable = RightPanel._availability_for_record(f)
+        unavailable = bool(unavailable)
         if unavailable:
             return key in ('issues', 'error')
         black = str(f.get('black') or '').lower()
@@ -780,12 +801,12 @@ class RightPanel(QWidget):
         return FILE_FILTER_LABELS.get(getattr(self, '_filter_key', 'all'), '전체')
 
     @staticmethod
-    def _filter_counts(files):
+    def _filter_counts(files, availability=None):
         files = [f for f in (files or []) if isinstance(f, dict)]
         counts = {key: 0 for key in FILE_FILTER_KEYS}
         for f in files:
             counts['all'] += 1
-            unavailable = bool(RightPanel._file_unavailable_badge(f.get('filepath')))
+            unavailable = bool(RightPanel._availability_for_record(f, availability))
             if unavailable:
                 counts['issues'] += 1
                 counts['error'] += 1
@@ -830,8 +851,8 @@ class RightPanel(QWidget):
             return f"{label}{joiner}{count}"
         return label
 
-    def _update_filter_buttons(self, files):
-        counts = self._filter_counts(files)
+    def _update_filter_buttons(self, files, availability=None):
+        counts = self._filter_counts(files, availability)
         current_key = getattr(self, '_filter_key', 'all')
         compact = self._compact_filter_labels(self.width())
         self._filter_compact = compact
@@ -907,7 +928,7 @@ class RightPanel(QWidget):
         )
         self.batch_summary.show()
 
-    def _status_summary_text(self, files):
+    def _status_summary_text(self, files, availability=None):
         files = [f for f in (files or []) if isinstance(f, dict)]
         counts = {
             "미분석": 0,
@@ -926,7 +947,12 @@ class RightPanel(QWidget):
             "검사중": 0,
         }
         for f in files:
-            badge, _ = self._file_status_badge(f, f.get("filepath") == self.vp.cur_file)
+            unavailable = RightPanel._availability_for_record(f, availability)
+            badge, _ = self._file_status_badge(
+                f,
+                f.get("filepath") == self.vp.cur_file,
+                unavailable=unavailable,
+            )
             if "검사중" in badge:
                 counts["검사중"] += 1
             elif badge in counts:
@@ -2258,7 +2284,16 @@ class RightPanel(QWidget):
         # info 없어도 파일 목록만 갱신 (파일 추가/제거 시 호출)
         self.exp_list.clear()
         all_files = self._file_records()
-        files = [f for f in all_files if self._file_matches_filter(f)]
+        availability = self._file_availability_map(all_files)
+        filter_key = getattr(self, '_filter_key', 'all')
+        files = [
+            f for f in all_files
+            if self._file_matches_filter_key(
+                f,
+                filter_key,
+                unavailable=RightPanel._availability_for_record(f, availability),
+            )
+        ]
         cue_fp = self.vp.cur_file
         can_use_files = bool(self._video_file_records()) and not bool(getattr(self.vp, '_loading', False)) and not bool(getattr(self, '_analysis_active', None))
         if hasattr(self, 'btn_batch'):
@@ -2270,13 +2305,13 @@ class RightPanel(QWidget):
             )
         if hasattr(self, 'btn_batch_cancel'):
             self.btn_batch_cancel.setEnabled(bool(getattr(self, '_batch_active', False)))
-        self._update_filter_buttons(all_files)
+        self._update_filter_buttons(all_files, availability)
 
         # 경로 표시: CUE 파일 기준, 없으면 첫 번째 파일 기준
         base_fp = self._file_path_text(cue_fp) or (
             self._file_path_text(all_files[0].get("filepath", "")) if all_files else ""
         )
-        summary = self._status_summary_text(all_files)
+        summary = self._status_summary_text(all_files, availability)
         if base_fp:
             base_parent = self._path_parent_text(base_fp)
             self.exp_path.setText(
@@ -2305,14 +2340,18 @@ class RightPanel(QWidget):
             name = _safe_text(f.get("name"), self._path_name(fp))
             is_cue = (fp == cue_fp)
             prefix = "▶  " if is_cue else ""
-            badge, badge_color = self._file_status_badge(f, is_cue)
+            unavailable = RightPanel._availability_for_record(f, availability)
+            badge, badge_color = self._file_status_badge(f, is_cue, unavailable=unavailable)
             detail = self._file_status_detail(f)
             first_issue = self._first_qc_issue_text(f)
             issue_hint = f"    첫문제 {first_issue}" if first_issue else ""
             item_text = f"{prefix}{name}\nQC: {badge}    {detail}{issue_hint}"
             item = QListWidgetItem(item_text)
             item.setData(FILE_ITEM_PLAIN_ROLE, item_text)
-            item.setData(FILE_ITEM_HTML_ROLE, self._file_item_html(f, prefix, badge, badge_color))
+            item.setData(
+                FILE_ITEM_HTML_ROLE,
+                self._file_item_html(f, prefix, badge, badge_color, unavailable=unavailable),
+            )
             item.setSizeHint(QSize(0, self._file_item_height(item_text)))
             item.setData(Qt.ItemDataRole.UserRole, fp)
             updated = f.get("qc_updated_at") or "-"

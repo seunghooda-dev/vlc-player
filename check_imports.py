@@ -268,6 +268,17 @@ def check_core_logic():
                     f"  FAIL filter count parity {key}: "
                     f"{filter_counts.get(key)} != {expected_by_filter}"
                 )
+        cached_availability = {id(record): '' for record in filter_count_records}
+        cached_filter_counts = RightPanel._filter_counts(filter_count_records, cached_availability)
+        for key, expected in filter_counts.items():
+            if cached_filter_counts.get(key) != expected:
+                errors.append(
+                    f"  FAIL cached filter count parity {key}: "
+                    f"{cached_filter_counts.get(key)} != {expected}"
+                )
+        missing_record = {'filepath': 'C:/missing/file_not_available.mxf', 'black': 'ok', 'mute': 'ok', 'freeze': 'ok'}
+        if RightPanel._file_matches_filter_key(missing_record, 'issues', unavailable='파일 없음') is not True:
+            errors.append("  FAIL cached missing file issue filter")
         if RightPanel._filter_button_text('issues', 3) != '문제 3':
             errors.append("  FAIL filter button text issues")
         if RightPanel._filter_button_text('issues', 3, compact=True) != '문제3':
