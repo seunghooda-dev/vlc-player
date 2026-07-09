@@ -681,39 +681,24 @@ class RightPanel(QWidget):
             issues.append('파일 접근 불가')
         if ext and f'.{ext}' not in VIDEO_EXTS:
             issues.append('지원 형식 아님')
-        try:
-            width = int(info.get('width', 0) or 0)
-            height = int(info.get('height', 0) or 0)
-        except Exception:
-            width = height = 0
+        width = _safe_int(info.get('width', 0), 0)
+        height = _safe_int(info.get('height', 0), 0)
         if not width or not height:
             issues.append('해상도 정보 없음')
         elif (width, height) != (1920, 1080):
             issues.append(f'HD 1920x1080 아님({width}x{height})')
-        try:
-            fps = float(info.get('fps', 0) or 0)
-        except Exception:
-            fps = 0.0
+        fps = _safe_float(info.get('fps', 0), 0.0)
         if not fps:
             issues.append('FPS 정보 없음')
         elif not (abs(fps - 29.97) < 0.08 or abs(fps - 59.94) < 0.12):
             issues.append(f'방송 DF 기준 FPS 확인({fps:.3f})')
         elif not bool(info.get('df')):
             issues.append('DF 타임코드 아님')
-        try:
-            duration = float(info.get('duration', 0) or 0)
-        except Exception:
-            duration = 0.0
+        duration = _safe_float(info.get('duration', 0), 0.0)
         if duration <= 0:
             issues.append('길이 정보 없음')
-        try:
-            channels = int(info.get('channels', 0) or 0)
-        except Exception:
-            channels = 0
-        try:
-            streams = int(info.get('audio_stream_count', 0) or 0)
-        except Exception:
-            streams = 0
+        channels = _safe_int(info.get('channels', 0), 0)
+        streams = _safe_int(info.get('audio_stream_count', 0), 0)
         if channels < 2 and streams < 2:
             issues.append('오디오 1/2CH 확인 필요')
         elif max(channels, streams) > 8:
@@ -731,15 +716,13 @@ class RightPanel(QWidget):
             return ''
         parts = []
         for r in ranges[:limit]:
-            start = r.get('tc_start') or f"{float(r.get('start', 0) or 0):.3f}s"
-            end = r.get('tc_end') or f"{float(r.get('end', 0) or 0):.3f}s"
+            start = r.get('tc_start') or f"{_safe_float(r.get('start', 0), 0.0):.3f}s"
+            end = r.get('tc_end') or f"{_safe_float(r.get('end', 0), 0.0):.3f}s"
             dur = r.get('duration')
             suffix = ''
             if dur is not None:
-                try:
-                    suffix = f"({float(dur):.3f}s)"
-                except Exception:
-                    suffix = ''
+                dur_s = _safe_float(dur, None)
+                suffix = f"({dur_s:.3f}s)" if dur_s is not None else ''
             parts.append(f"{start}>{end}{suffix}")
         if len(ranges) > limit:
             parts.append(f"...+{len(ranges) - limit}")
@@ -1279,13 +1262,13 @@ class RightPanel(QWidget):
         return False
 
     def _analysis_timeout_seconds(self, duration=None):
-        try:
-            if duration is None:
-                duration = float(getattr(self.vp, 'duration', 0) or self.vp.cur_info.get('duration', 0) or 0)
-            else:
-                duration = float(duration or 0)
-        except Exception:
-            duration = 0
+        if duration is None:
+            duration = _safe_float(
+                getattr(self.vp, 'duration', 0) or self.vp.cur_info.get('duration', 0),
+                0.0,
+            )
+        else:
+            duration = _safe_float(duration, 0.0)
         return int(max(120, min(3600, duration * 4 + 60)))
 
     def _next_analysis_seq(self, kind, filepath):
@@ -1520,7 +1503,7 @@ class RightPanel(QWidget):
         heavy = heavy_analysis_status()
         if heavy.get('running'):
             owner = heavy.get('owner') or '분석'
-            elapsed = float(heavy.get('elapsed') or 0.0)
+            elapsed = _safe_float(heavy.get('elapsed'), 0.0)
             if hasattr(self.vp, 'status_changed'):
                 self.vp.status_changed.emit(f"  ⏳ {owner} 정리 중 — {elapsed:.1f}s")
             return False
@@ -1586,12 +1569,12 @@ class RightPanel(QWidget):
             pass
 
     def _parse_detection_values(self):
-        amount = int(float(self.black_amount.text()))
-        threshold = int(float(self.black_threshold.text()))
+        amount = _safe_int(self.black_amount.text(), 98)
+        threshold = _safe_int(self.black_threshold.text(), 32)
         amount = max(1, min(100, amount))
         threshold = max(0, min(255, threshold))
-        thr = float(self.spin_threshold.text())
-        dur = float(self.spin_duration.text())
+        thr = _safe_float(self.spin_threshold.text(), -50.0)
+        dur = max(0.1, _safe_float(self.spin_duration.text(), 1.0))
         self.black_amount.setText(str(amount))
         self.black_threshold.setText(str(threshold))
         self.spin_threshold.setText(f'{thr:g}')
@@ -1600,21 +1583,15 @@ class RightPanel(QWidget):
         return amount, threshold, thr, dur
 
     def _batch_timeout_seconds(self):
-        duration = 0.0
-        try:
-            duration = float((self._batch_current_info or {}).get('duration', 0) or 0)
-        except Exception:
-            duration = 0.0
+        duration = _safe_float((self._batch_current_info or {}).get('duration', 0), 0.0)
         return self._analysis_timeout_seconds(duration)
 
     def _batch_tc_offset_frames(self, info):
         try:
             return tc_to_frames(info.get('timecode', ''), info.get('fps', 29.97), info.get('df'))
         except Exception:
-            try:
-                return int(round(float(info.get('tc_offset', 0.0) or 0.0) * float(info.get('fps', 29.97) or 29.97)))
-            except Exception:
-                return 0
+            fps = max(1.0, _safe_float(info.get('fps', 29.97), 29.97))
+            return int(round(_safe_float(info.get('tc_offset', 0.0), 0.0) * fps))
 
     def _run_batch_qc(self):
         files = [f for f in getattr(self.vp, '_files', []) if f.get('filepath')]
@@ -1811,7 +1788,7 @@ class RightPanel(QWidget):
         QTimer.singleShot(80, self._start_next_batch_file)
 
     def _finish_batch_qc(self):
-        elapsed = time.monotonic() - float(self._batch_started_at or time.monotonic())
+        elapsed = time.monotonic() - _safe_float(self._batch_started_at, time.monotonic())
         total = int(self._batch_total or 0)
         self._batch_active = False
         self._batch_queue = []
@@ -1876,18 +1853,11 @@ class RightPanel(QWidget):
             self.tabs.setCurrentWidget(self.black_list.parentWidget())
             self.black_status.setText("  ⏳ 다른 분석이 진행 중입니다")
             return
-        try:
-            amount = int(float(self.black_amount.text()))
-            threshold = int(float(self.black_threshold.text()))
-            amount = max(1, min(100, amount))
-            threshold = max(0, min(255, threshold))
-            self.black_amount.setText(str(amount))
-            self.black_threshold.setText(str(threshold))
-            self._save_detection_settings()
-        except ValueError:
-            self.black_status.setText("  ⚠ 검정%/밝기 값을 숫자로 입력하세요")
-            self._finish_analysis_mode()
-            return
+        amount = max(1, min(100, _safe_int(self.black_amount.text(), 98)))
+        threshold = max(0, min(255, _safe_int(self.black_threshold.text(), 32)))
+        self.black_amount.setText(str(amount))
+        self.black_threshold.setText(str(threshold))
+        self._save_detection_settings()
 
         self.tabs.setCurrentWidget(self.black_list.parentWidget())
         self.btn_run_black.setEnabled(False)
@@ -2007,12 +1977,14 @@ class RightPanel(QWidget):
             self.black_list.addItem(item)
         else:
             for idx, r in enumerate(ranges, 1):
-                frames = int(r.get('frames', 1))
-                dur_s = float(r.get('duration', 0))
-                label = (f"  #{idx:03d}  {r['tc_start']}  →  {r['tc_end']}"
+                frames = max(1, _safe_int(r.get('frames', 1), 1))
+                dur_s = max(0.0, _safe_float(r.get('duration', 0), 0.0))
+                tc_start = r.get('tc_start') or f"{_safe_float(r.get('start', 0), 0.0):.3f}s"
+                tc_end = r.get('tc_end') or f"{_safe_float(r.get('end', 0), 0.0):.3f}s"
+                label = (f"  #{idx:03d}  {tc_start}  →  {tc_end}"
                          f"   ({frames}f / {dur_s:.3f}초)")
                 item = QListWidgetItem(label)
-                item.setData(Qt.ItemDataRole.UserRole, r['start'])
+                item.setData(Qt.ItemDataRole.UserRole, _safe_float(r.get('start', 0), 0.0))
                 item.setForeground(QColor(C['yellow'] if frames == 1 else C['orange']))
                 self.black_list.addItem(item)
         self.black_status.setText(self._black_done_label(len(ranges)))
@@ -2262,14 +2234,11 @@ class RightPanel(QWidget):
             self.tabs.setCurrentWidget(self.mute_list.parentWidget())
             self.audio_status.setText("  ⏳ 뮤트 검출이 이미 진행 중입니다")
             return
-        try:
-            thr = float(self.spin_threshold.text())
-            dur = float(self.spin_duration.text())
-            self.spin_threshold.setText(f'{thr:g}')
-            self.spin_duration.setText(f'{dur:g}')
-            self._save_detection_settings()
-        except ValueError:
-            self.audio_status.setText("  ⚠ 임계값/최소지속시간을 숫자로 입력하세요"); return
+        thr = _safe_float(self.spin_threshold.text(), -50.0)
+        dur = max(0.1, _safe_float(self.spin_duration.text(), 1.0))
+        self.spin_threshold.setText(f'{thr:g}')
+        self.spin_duration.setText(f'{dur:g}')
+        self._save_detection_settings()
         if not self._begin_analysis_mode('audio', '뮤트 검출'):
             self.tabs.setCurrentWidget(self.mute_list.parentWidget())
             self.audio_status.setText("  ⏳ 다른 분석이 진행 중입니다")
@@ -2415,17 +2384,13 @@ class RightPanel(QWidget):
             self.tabs.setCurrentWidget(self.freeze_list.parentWidget())
             self.freeze_status.setText("  ⏳ 프리즈 검출이 이미 진행 중입니다")
             return
-        try:
-            noise = float(self.freeze_noise.text())
-            if noise > 0:
-                noise = -abs(noise)
-            duration = max(0.1, float(self.freeze_duration.text()))
-            self.freeze_noise.setText(f'{noise:g}')
-            self.freeze_duration.setText(f'{duration:g}')
-            self._save_detection_settings()
-        except ValueError:
-            self.freeze_status.setText("  ⚠ 민감도/최소지속시간을 숫자로 입력하세요")
-            return
+        noise = _safe_float(self.freeze_noise.text(), -60.0)
+        if noise > 0:
+            noise = -abs(noise)
+        duration = max(0.1, _safe_float(self.freeze_duration.text(), 1.0))
+        self.freeze_noise.setText(f'{noise:g}')
+        self.freeze_duration.setText(f'{duration:g}')
+        self._save_detection_settings()
         if not self._begin_analysis_mode('freeze', '프리즈 검출'):
             self.tabs.setCurrentWidget(self.freeze_list.parentWidget())
             self.freeze_status.setText("  ⏳ 다른 분석이 진행 중입니다")
@@ -2489,12 +2454,14 @@ class RightPanel(QWidget):
             self.freeze_list.addItem(item)
         else:
             for idx, r in enumerate(ranges, 1):
-                frames = int(r.get('frames', 1))
-                dur_s = float(r.get('duration', 0))
-                label = (f"  #{idx:03d}  {r['tc_start']}  →  {r['tc_end']}"
+                frames = max(1, _safe_int(r.get('frames', 1), 1))
+                dur_s = max(0.0, _safe_float(r.get('duration', 0), 0.0))
+                tc_start = r.get('tc_start') or f"{_safe_float(r.get('start', 0), 0.0):.3f}s"
+                tc_end = r.get('tc_end') or f"{_safe_float(r.get('end', 0), 0.0):.3f}s"
+                label = (f"  #{idx:03d}  {tc_start}  →  {tc_end}"
                          f"   ({frames}f / {dur_s:.3f}초)")
                 item = QListWidgetItem(label)
-                item.setData(Qt.ItemDataRole.UserRole, r['start'])
+                item.setData(Qt.ItemDataRole.UserRole, _safe_float(r.get('start', 0), 0.0))
                 item.setForeground(QColor(C['purple']))
                 self.freeze_list.addItem(item)
         self.freeze_status.setText(self._freeze_done_label(len(ranges)))
