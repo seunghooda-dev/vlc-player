@@ -30,6 +30,12 @@ if errorlevel 1 (
     if errorlevel 1 exit /b %errorlevel%
 )
 
+if exist "ArchiveTagger.spec" (
+    echo.
+    echo [WARN] Legacy ArchiveTagger.spec exists locally.
+    echo        build.bat does not use it; current builds use the MXF QC Player name.
+)
+
 echo.
 echo [PASS] Development check completed.
 exit /b 0
