@@ -462,7 +462,7 @@ class AudioAnalyzeThread(QThread):
             .encode('utf-8', 'ignore')
         ).hexdigest()
         cache_dir = TMP_DIR / 'audio_index'
-        cache_dir.mkdir(exist_ok=True)
+        cache_dir.mkdir(parents=True, exist_ok=True)
         return cache_dir / f'{key}.json'
 
     def _load_index_cache(self, path):

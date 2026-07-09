@@ -1056,8 +1056,8 @@ def cleanup_runtime_cache():
             target = _safe_cache_child(path)
             target.relative_to(root)
             if target.is_dir():
-                deleted_files += int(item.get('files', 0))
-                deleted_dirs += int(item.get('dirs', 0))
+                deleted_files += _safe_int_value(item.get('files', 0), 0)
+                deleted_dirs += _safe_int_value(item.get('dirs', 0), 0)
                 shutil.rmtree(target)
             elif target.is_file():
                 deleted_files += 1
@@ -1066,7 +1066,11 @@ def cleanup_runtime_cache():
         except Exception as e:
             failed.append(f"{path}: {e}")
     after = cache_summary()
-    freed = max(0, int(before.get('total_bytes', 0)) - int(after.get('total_bytes', 0)))
+    freed = max(
+        0,
+        _safe_int_value(before.get('total_bytes', 0), 0)
+        - _safe_int_value(after.get('total_bytes', 0), 0)
+    )
     return {
         'before': before,
         'after': after,
@@ -1195,7 +1199,7 @@ def cleanup_old_generated_files(days=AUTO_CLEANUP_DAYS):
         'failed': failed,
         'skipped': skipped,
         'deleted_count': len(deleted),
-        'freed_bytes': sum(int(item.get('bytes', 0) or 0) for item in deleted),
+        'freed_bytes': sum(_safe_int_value(item.get('bytes', 0), 0) for item in deleted),
     }
 
 DEFAULT_SETTINGS = {
