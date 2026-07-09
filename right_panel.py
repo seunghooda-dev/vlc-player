@@ -876,12 +876,20 @@ class RightPanel(QWidget):
             raise
 
     def _write_qc_report_csv(self, path, rows):
+        rows = [row for row in (rows or []) if isinstance(row, dict)]
+        if not rows:
+            raise ValueError('저장할 QC 리포트 행이 없습니다.')
+        fieldnames = []
+        for row in rows:
+            for key in row.keys():
+                if key not in fieldnames:
+                    fieldnames.append(key)
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         tmp = target.with_name(f'.{target.name}.{time.time_ns()}.tmp')
         try:
             with tmp.open('w', encoding='utf-8-sig', newline='') as fh:
-                writer = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
+                writer = csv.DictWriter(fh, fieldnames=fieldnames)
                 writer.writeheader()
                 writer.writerows(rows)
                 fh.flush()
