@@ -597,6 +597,7 @@ class RightPanel(QWidget):
         }.get(getattr(self, '_filter_key', 'all'), '전체')
 
     def _batch_summary_counts(self, files):
+        files = [f for f in (files or []) if isinstance(f, dict)]
         counts = {
             'total': len(files),
             'normal': 0,
@@ -646,6 +647,7 @@ class RightPanel(QWidget):
         self.batch_summary.show()
 
     def _status_summary_text(self, files):
+        files = [f for f in (files or []) if isinstance(f, dict)]
         counts = {
             "미분석": 0,
             "정상": 0,
@@ -745,7 +747,7 @@ class RightPanel(QWidget):
         }
 
     def _iter_report_files(self):
-        files = list(getattr(self.vp, '_files', []) or [])
+        files = self._file_records()
         sort_key = getattr(self, '_sort_key', 'name')
         sort_asc = getattr(self, '_sort_asc', True)
         if sort_key == 'name':
@@ -755,6 +757,9 @@ class RightPanel(QWidget):
         elif sort_key == 'added' and not sort_asc:
             files = list(reversed(files))
         return files
+
+    def _file_records(self):
+        return [f for f in (getattr(self.vp, '_files', []) or []) if isinstance(f, dict)]
 
     def _qc_report_rows(self):
         rows = []
@@ -1006,7 +1011,7 @@ class RightPanel(QWidget):
     def refresh_explorer(self):
         # info 없어도 파일 목록만 갱신 (파일 추가/제거 시 호출)
         self.exp_list.clear()
-        all_files = list(self.vp._files)
+        all_files = self._file_records()
         files = [f for f in all_files if self._file_matches_filter(f)]
         cue_fp = self.vp.cur_file
         can_use_files = bool(all_files) and not bool(getattr(self.vp, '_loading', False)) and not bool(getattr(self, '_analysis_active', None))
