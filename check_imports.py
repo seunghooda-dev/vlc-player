@@ -111,7 +111,7 @@ def check_core_logic():
         from constants import C, DEFAULT_SETTINGS, VIDEO_EXTS, _normalize_settings
         import db_models as dbm
         from db_models import frames_to_tc, is_df_fps, qc_summary_from_status, tc_to_frames
-        from threads import AudioAnalyzeThread
+        from threads import AudioAnalyzeThread, TranscodeThread
         from video_panel import AudioMixPlayer, DIRECT_VLC_EXTS, VideoPanel
     except Exception as e:
         return [f"  FAIL core logic import: {e}"]
@@ -1426,6 +1426,18 @@ def check_core_logic():
         audio_mix.set_channels(['bad'])
         if audio_mix.channels != [1, 2]:
             errors.append(f"  FAIL audio mix invalid channel fallback: {audio_mix.channels}")
+        transcode = TranscodeThread('C:/qc/no_audio.mxf', [(1, 2)])
+        if transcode._build_filter([], [(1, 2)]) is not None:
+            errors.append("  FAIL no-audio transcode filter should be video-only")
+        fallback_audio_fc = transcode._build_filter(None, [(1, 2)])
+        if not fallback_audio_fc or '[0:a]' not in fallback_audio_fc:
+            errors.append(f"  FAIL unknown-audio transcode fallback: {fallback_audio_fc}")
+        no_audio_cmd = transcode._make_cmd('C:/qc/out.mp4', None, duration=1)
+        if '-an' not in no_audio_cmd or '[aout]' in no_audio_cmd:
+            errors.append(f"  FAIL no-audio transcode command: {no_audio_cmd}")
+        no_audio_remux = transcode._make_remux_cmd('C:/qc/out.mov', None)
+        if '-an' not in no_audio_remux or '[aout]' in no_audio_remux:
+            errors.append(f"  FAIL no-audio remux command: {no_audio_remux}")
         feedback_new = VideoPanel._file_add_feedback_text(3, 3)
         if feedback_new != '✓ 파일 3개 추가 — CUE 또는 더블클릭으로 원본 파일을 바로 재생합니다':
             errors.append(f"  FAIL file add feedback new: {feedback_new}")

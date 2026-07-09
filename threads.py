@@ -222,9 +222,14 @@ class TranscodeThread(QThread):
             terminate_child_process(self._proc, 'transcode ffmpeg')
 
     def _build_filter(self, audio_streams, pairs):
-        audio_streams = [self._safe_stream_channels(ch) for ch in (audio_streams or [])]
+        if audio_streams is None:
+            audio_streams = [2]
+        else:
+            audio_streams = [self._safe_stream_channels(ch) for ch in audio_streams]
+        if not audio_streams:
+            return None
         n_streams  = len(audio_streams)
-        total_ch   = sum(audio_streams) if audio_streams else 2
+        total_ch   = sum(audio_streams)
         multi_mono = n_streams > 1 and all(c == 1 for c in audio_streams)
         cleaned_pairs = []
         for pair in pairs or [(1, 2)]:
@@ -264,18 +269,34 @@ class TranscodeThread(QThread):
             return ";".join(pans) + f";{mix}amix=inputs={len(pairs)}:normalize=0[aout]"
 
     def _make_cmd(self, out_path, audio_fc, duration=None):
-        fc = f"[0:v]scale=-2:720[vout];{audio_fc}"
+        fc = f"[0:v]scale=-2:720[vout]"
+        if audio_fc:
+            fc = f"{fc};{audio_fc}"
         cmd = [FFMPEG,"-y","-i",self.fp]
         if duration:
             cmd += ["-t", str(duration)]
-        cmd += ["-filter_complex", fc,
-                "-map","[vout]","-map","[aout]",
-                "-vcodec","libx264","-preset","ultrafast","-crf","28","-threads","0",
-                "-acodec","aac","-ac","2","-b:a","128k",
-                out_path]
+        cmd += [
+            "-filter_complex", fc,
+            "-map", "[vout]",
+            "-vcodec", "libx264", "-preset", "ultrafast", "-crf", "28", "-threads", "0",
+        ]
+        if audio_fc:
+            cmd += ["-map", "[aout]", "-acodec", "aac", "-ac", "2", "-b:a", "128k"]
+        else:
+            cmd += ["-an"]
+        cmd += [out_path]
         return cmd
 
     def _make_remux_cmd(self, out_path, audio_fc):
+        if not audio_fc:
+            return [
+                FFMPEG, "-y", "-i", self.fp,
+                "-map", "0:v:0",
+                "-c:v", "copy",
+                "-an",
+                "-movflags", "+faststart",
+                out_path,
+            ]
         return [FFMPEG, "-y", "-i", self.fp,
                 "-filter_complex", audio_fc,
                 "-map", "0:v:0", "-map", "[aout]",
@@ -351,15 +372,22 @@ class TranscodeThread(QThread):
                 timeout=15,
                 creationflags=_hidden_flags(),
             )
-            audio_streams = []
+            audio_streams = None
             if pr.returncode == 0:
-                data = _j.loads(pr.stdout or "{}")
-                streams = data.get("streams", []) if isinstance(data, dict) else []
-                if not isinstance(streams, list):
-                    streams = []
-                for s in streams:
-                    if isinstance(s, dict) and s.get("codec_type") == "audio":
-                        audio_streams.append(self._safe_stream_channels(s.get("channels", 1)))
+                try:
+                    data = _j.loads(pr.stdout or "{}")
+                    streams = data.get("streams", []) if isinstance(data, dict) else []
+                    if not isinstance(streams, list):
+                        streams = []
+                    audio_streams = []
+                    for s in streams:
+                        if isinstance(s, dict) and s.get("codec_type") == "audio":
+                            audio_streams.append(self._safe_stream_channels(s.get("channels", 1)))
+                except Exception as e:
+                    log.warning(f'transcode audio probe parse failed; using first-audio fallback: {e}')
+                    audio_streams = None
+            else:
+                log.warning(f'transcode audio probe failed rc={pr.returncode}; using first-audio fallback')
 
             pairs    = self.ch_pair if isinstance(self.ch_pair, list) else [self.ch_pair]
             audio_fc = self._build_filter(audio_streams, pairs)
