@@ -175,9 +175,23 @@ def _safe_text(value, default=""):
     text = str(value or "").strip()
     return text if text else default
 
-def _safe_file_snapshot(filepath):
-    path = Path(filepath)
+def _safe_media_file_path(filepath):
     try:
+        text = str(filepath or "").strip()
+        if not text:
+            return None
+        path = Path(text)
+        if path.exists() and path.is_file():
+            return path
+    except Exception:
+        pass
+    return None
+
+def _safe_file_snapshot(filepath):
+    try:
+        path = Path(str(filepath or "").strip())
+        if not path.is_file():
+            return {"size": 0, "mtime_ns": 0}
         stat = path.stat()
         return {
             "size": _safe_count(getattr(stat, "st_size", 0)),
@@ -297,6 +311,11 @@ def _probe_cache_set(key, info):
 
 def probe(filepath):
     try:
+        path = _safe_media_file_path(filepath)
+        if path is None:
+            log.debug(f'probe skipped invalid media path: {filepath}')
+            return {}
+        filepath = str(path)
         cache_key = _probe_cache_key(filepath)
         cached = _probe_cache_get(cache_key)
         if cached is not None:
@@ -517,7 +536,10 @@ def load_qc_status(filepath):
 def load_clip_metadata_hint(filepath):
     if not filepath:
         return {}
-    p = Path(filepath)
+    p = _safe_media_file_path(filepath)
+    if p is None:
+        return {}
+    filepath = str(p)
     snapshot = _safe_file_snapshot(filepath)
     current_size = snapshot["size"]
     current_mtime_ns = snapshot["mtime_ns"]
