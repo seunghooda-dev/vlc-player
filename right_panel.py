@@ -1158,8 +1158,32 @@ class RightPanel(QWidget):
             if isinstance(f, dict) and self._same_path_text(f.get('filepath'), target):
                 f['meta_status'] = status
                 f['meta_issues'] = list(issues or [])
+                f['_meta_qc_hint_checked'] = True
                 break
         return status, issues
+
+    def _restore_metadata_qc_from_hint(self, record):
+        if not isinstance(record, dict):
+            return False
+        if str(record.get('meta_status') or '').strip():
+            return True
+        if bool(record.get('_meta_qc_hint_checked')):
+            return False
+        record['_meta_qc_hint_checked'] = True
+        fp = self._file_path_text(record.get('filepath'))
+        if not fp:
+            return False
+        try:
+            info = load_clip_metadata_hint(fp) or {}
+        except Exception as e:
+            log.debug(f'metadata qc restore hint failed file={self._path_name(fp)}: {e}')
+            return False
+        if not info:
+            return False
+        status, issues = RightPanel._metadata_qc_summary(self, info, fp)
+        record['meta_status'] = status
+        record['meta_issues'] = list(issues or [])
+        return True
 
     def _ranges_report_text(self, ranges, limit=20):
         ranges = sanitize_qc_ranges(ranges)
@@ -1370,6 +1394,7 @@ class RightPanel(QWidget):
                 continue
             if not self._file_path_text(f.get('filepath')):
                 continue
+            self._restore_metadata_qc_from_hint(f)
             records.append(f)
         return records
 

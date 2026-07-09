@@ -107,6 +107,7 @@ def check_core_logic():
     """UI를 띄우지 않고 방송 QC 핵심 판정만 회귀 검사."""
     errors = []
     try:
+        import right_panel as rpm
         from right_panel import FILE_FILTER_TIPS, RightPanel
         from constants import C, DEFAULT_SETTINGS, VIDEO_EXTS, _normalize_settings
         import db_models as dbm
@@ -254,6 +255,27 @@ def check_core_logic():
         status, issues = RightPanel._metadata_qc_summary(Probe(), dict(base, fps=29.97, df=False), '')
         if 'DF 타임코드 아님' not in issues:
             errors.append(f"  FAIL 29.97 NDF detection: {status} / {issues}")
+
+        class MetadataRestoreProbe(Probe):
+            _restore_metadata_qc_from_hint = RightPanel._restore_metadata_qc_from_hint
+
+        original_hint_loader = rpm.load_clip_metadata_hint
+        try:
+            rpm.load_clip_metadata_hint = lambda fp: dict(
+                base,
+                filepath=fp,
+                fps=29.97,
+                df=True,
+                channels=0,
+                audio_stream_count=0,
+            )
+            restore_record = {'filepath': 'C:/sample/no_audio_cached.mxf'}
+            if not RightPanel._restore_metadata_qc_from_hint(MetadataRestoreProbe(), restore_record):
+                errors.append(f"  FAIL metadata QC restore result: {restore_record}")
+            if restore_record.get('meta_status') != '확인 필요' or '오디오 없음' not in restore_record.get('meta_issues', []):
+                errors.append(f"  FAIL metadata QC restore record: {restore_record}")
+        finally:
+            rpm.load_clip_metadata_hint = original_hint_loader
 
         status, issues = RightPanel._metadata_qc_summary(
             Probe(),
