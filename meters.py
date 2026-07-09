@@ -31,6 +31,27 @@ def _finite_float(text):
     return value if math.isfinite(value) else None
 
 
+def _safe_sequence(values):
+    if values is None or isinstance(values, (str, bytes)):
+        return []
+    try:
+        return list(values)
+    except TypeError:
+        return []
+
+
+def _unit_float(value, default=0.0):
+    parsed = _finite_float(value)
+    if parsed is None:
+        parsed = default
+    return max(0.0, min(1.0, parsed))
+
+
+def _lkfs_float(value, default=-99.0):
+    parsed = _finite_float(value)
+    return parsed if parsed is not None else default
+
+
 def mk_btn(text, w=None, h=26, color=None, bg=None):
     b = QPushButton(text)
     if w: b.setFixedWidth(w)
@@ -78,8 +99,10 @@ class SideMeter(QWidget):
 
     def set_levels(self, levels, peaks):
         count = len(self.channel_numbers)
-        self._levels = list(levels[:count])
-        self._peaks  = list(peaks[:count])
+        level_values = [_unit_float(v) for v in _safe_sequence(levels)[:count]]
+        peak_values = [_unit_float(v) for v in _safe_sequence(peaks)[:count]]
+        self._levels = level_values + [0.0] * max(0, count - len(level_values))
+        self._peaks  = peak_values + [0.0] * max(0, count - len(peak_values))
         self.update()
 
     def paintEvent(self, e):
@@ -100,8 +123,8 @@ class SideMeter(QWidget):
         for i in range(n):
             ch_num  = self.channel_numbers[i]
             y       = i * (ROW + GAP)
-            lv      = self._levels[i] if i < len(self._levels) else 0.0
-            pk      = self._peaks[i]  if i < len(self._peaks)  else 0.0
+            lv      = _unit_float(self._levels[i] if i < len(self._levels) else 0.0)
+            pk      = _unit_float(self._peaks[i]  if i < len(self._peaks)  else 0.0)
             is_clip = lv > 0.92
 
             if self.left:
@@ -237,14 +260,17 @@ class LoudnessMeter(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setStyleSheet("background:transparent;")
     def update_lkfs(self, m, s, i):
-        self._lkfs_m=m; self._lkfs_s=s; self._lkfs_i=i; self.update()
+        self._lkfs_m = _lkfs_float(m)
+        self._lkfs_s = _lkfs_float(s)
+        self._lkfs_i = _lkfs_float(i)
+        self.update()
     def set_analysis_pending(self, message='SCAN'):
         self._qc_i = None
         self._qc_status = message or 'SCAN'
         self.update()
     def set_analysis_result(self, integrated, lra=None, true_peak=None):
-        self._qc_i = integrated
-        self._qc_status = 'QC'
+        self._qc_i = _finite_float(integrated)
+        self._qc_status = 'QC' if self._qc_i is not None else 'ERR'
         self.update()
     def set_analysis_error(self, message='ERR'):
         self._qc_i = None
@@ -281,8 +307,10 @@ class LoudnessMeter(QWidget):
                             (-24,-40,QColor(0,60,20,120)),(-40,-60,QColor(0,30,15,100))]:
             ty=ly(top); by=ly(bot); p.fillRect(BAR_X,ty,BAR_W,by-ty,col)
         # 레벨 바는 Short-term LKFS 기준으로 표시한다.
-        if self._lkfs_s > -70.0:
-            my=ly(max(self._lkfs_s, LMIN)); fh=BAR_Y+BAR_H-my
+        lkfs_s = _lkfs_float(self._lkfs_s)
+        qc_i = _finite_float(self._qc_i)
+        if lkfs_s > -70.0:
+            my=ly(max(lkfs_s, LMIN)); fh=BAR_Y+BAR_H-my
             if fh>0:
                 g=QLinearGradient(BAR_X,BAR_Y,BAR_X,BAR_Y+BAR_H)
                 g.setColorAt(0.0,QColor(255,17,17,220)); g.setColorAt(0.25,QColor(255,153,0,220))
@@ -298,16 +326,16 @@ class LoudnessMeter(QWidget):
                 p.drawText(0,gy-6,W,12,Qt.AlignmentFlag.AlignHCenter|Qt.AlignmentFlag.AlignVCenter,str(db))
         p.setFont(QFont('Segoe UI Variable',7,QFont.Weight.Bold)); p.setPen(QColor('#555a68'))
         p.drawText(0,0,W,LBL_H,Qt.AlignmentFlag.AlignHCenter|Qt.AlignmentFlag.AlignVCenter,'LKFS')
-        s_str=f'{self._lkfs_s:.1f}' if self._lkfs_s>LMIN else '---'
-        show_i = bool(self._qc_i is not None or (self._qc_status and self._qc_status != 'LIVE'))
-        if self._qc_i is not None:
-            i_str=f'{self._qc_i:.1f}' if self._qc_i>LMIN else '---'
+        s_str=f'{lkfs_s:.1f}' if lkfs_s>LMIN else '---'
+        show_i = bool(qc_i is not None or (self._qc_status and self._qc_status != 'LIVE'))
+        if qc_i is not None:
+            i_str=f'{qc_i:.1f}' if qc_i>LMIN else '---'
         elif show_i:
             i_str=self._qc_status[:6]
         else:
             i_str=''
-        s_col=meter_color(self._lkfs_s)
-        i_col=QColor('#8fb4ff') if self._qc_i is not None else QColor('#ff9f43') if self._qc_status else QColor('#7d879e')
+        s_col=meter_color(lkfs_s)
+        i_col=QColor('#8fb4ff') if qc_i is not None else QColor('#ff9f43') if self._qc_status else QColor('#7d879e')
 
         p.fillRect(0,H-BOT_H,W,BOT_H,QColor(0,0,0,95))
         p.setPen(QColor(255,255,255,24))
@@ -571,8 +599,10 @@ class MeterController(QObject):
         # 오디오 미터는 항상 원본의 전체 채널 레벨을 보여준다.
         # 선택 채널은 출력 라우팅/LKFS 기준으로만 사용하고,
         # 미터 표시 자체는 숨기지 않는다.
-        src_levels = list(levels[:8]) + [0.0] * max(0, 8 - len(levels[:8]))
-        src_peaks  = list(peaks[:8]) + [0.0] * max(0, 8 - len(peaks[:8]))
+        level_values = _safe_sequence(levels)[:8]
+        peak_values = _safe_sequence(peaks)[:8]
+        src_levels = level_values + [0.0] * max(0, 8 - len(level_values))
+        src_peaks  = peak_values + [0.0] * max(0, 8 - len(peak_values))
         odd_lv = [src_levels[i] for i in range(0,8,2)]
         odd_pk = [src_peaks[i]  for i in range(0,8,2)]
         evn_lv = [src_levels[i] for i in range(1,8,2)]
