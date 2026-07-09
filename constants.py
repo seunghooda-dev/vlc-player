@@ -1899,20 +1899,32 @@ def _latest_report_text(patterns, max_chars=40000):
 
 _STATE_TIMELINE = deque(maxlen=240)
 _STATE_TIMELINE_LOCK = threading.RLock()
+_STATE_KEY_MAX_CHARS = 60
+_STATE_MESSAGE_MAX_CHARS = 240
+_STATE_FIELD_MAX_CHARS = 500
+
+def _state_event_text(value, limit=_STATE_FIELD_MAX_CHARS):
+    try:
+        text = str(value)
+    except Exception:
+        return '<unprintable>'
+    text = text.replace('\r', '\\r').replace('\n', '\\n')
+    max_len = max(8, _safe_int_value(limit, _STATE_FIELD_MAX_CHARS))
+    if len(text) > max_len:
+        return text[:max_len - 3] + '...'
+    return text
 
 def record_state_event(category, message='', **fields):
     """Keep a tiny in-memory timeline for diagnosing the last moments before a hang."""
     try:
         row = {
             'ts': datetime.now().isoformat(timespec='seconds'),
-            'category': str(category or 'state'),
-            'message': str(message or ''),
+            'category': _state_event_text(category or 'state', 80),
+            'message': _state_event_text(message or '', _STATE_MESSAGE_MAX_CHARS),
         }
         for key, value in fields.items():
-            try:
-                row[str(key)] = str(value)
-            except Exception:
-                row[str(key)] = '<unprintable>'
+            safe_key = _state_event_text(key, _STATE_KEY_MAX_CHARS)
+            row[safe_key] = _state_event_text(value, _STATE_FIELD_MAX_CHARS)
         with _STATE_TIMELINE_LOCK:
             _STATE_TIMELINE.append(row)
     except Exception:
