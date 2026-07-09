@@ -174,6 +174,22 @@ def check_core_logic():
         if 'DF 타임코드 아님' not in issues:
             errors.append(f"  FAIL 29.97 NDF detection: {status} / {issues}")
 
+        status, issues = RightPanel._metadata_qc_summary(
+            Probe(),
+            dict(base, fps=29.97, df=True, channels=0, audio_stream_count=0),
+            '',
+        )
+        if '오디오 없음' not in issues or '오디오 1/2CH 확인 필요' in issues:
+            errors.append(f"  FAIL no-audio metadata detection: {status} / {issues}")
+
+        status, issues = RightPanel._metadata_qc_summary(
+            Probe(),
+            dict(base, fps=29.97, df=True, channels=1, audio_stream_count=1),
+            '',
+        )
+        if '오디오 1/2CH 확인 필요' not in issues or '오디오 없음' in issues:
+            errors.append(f"  FAIL mono audio metadata detection: {status} / {issues}")
+
         qc_counts = RightPanel._batch_summary_counts(Probe(), [
             {'black': 'ok', 'mute': 'ok', 'freeze': 'ok'},
             {'black': 'ok', 'mute': 'ok', 'freeze': ''},

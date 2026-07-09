@@ -1138,7 +1138,9 @@ class RightPanel(QWidget):
             issues.append('길이 정보 없음')
         channels = _safe_int(info.get('channels', 0), 0)
         streams = _safe_int(info.get('audio_stream_count', 0), 0)
-        if channels < 2 and streams < 2:
+        if channels <= 0 and streams <= 0:
+            issues.append('오디오 없음')
+        elif channels < 2 and streams < 2:
             issues.append('오디오 1/2CH 확인 필요')
         elif max(channels, streams) > 8:
             issues.append('오디오 8CH 초과')
