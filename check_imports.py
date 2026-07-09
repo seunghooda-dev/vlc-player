@@ -254,6 +254,7 @@ def check_core_logic():
             ('done', {'black': 'ok', 'mute': '', 'freeze': ''}, False, 'done excludes mute pending'),
             ('attention', {'black': '', 'mute': '', 'freeze': ''}, True, 'attention includes untouched file'),
             ('attention', {'black': 'ok', 'mute': 'ok', 'freeze': ''}, False, 'attention excludes clean partial normal'),
+            ('attention', {'black': 'ok', 'mute': 'ok', 'freeze': '', 'meta_status': '확인 필요'}, True, 'attention includes metadata warning'),
             ('attention', {'black': 'ok', 'mute': 'ok', 'freeze': 'found'}, True, 'attention includes freeze issue'),
             ('pending', {'black': '', 'mute': '', 'freeze': ''}, True, 'pending includes untouched file'),
             ('pending', {'black': 'found', 'mute': '', 'freeze': ''}, True, 'pending includes partial analysis'),

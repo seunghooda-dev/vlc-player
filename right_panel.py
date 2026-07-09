@@ -1197,7 +1197,10 @@ class RightPanel(QWidget):
         if any(state in ('found', 'error') for state in (black, mute, freeze)):
             return True
         completed = ('ok', 'found', 'error')
-        return black not in completed or mute not in completed
+        if black not in completed or mute not in completed:
+            return True
+        meta_status = str(f.get('meta_status') or '').strip()
+        return bool(meta_status and meta_status != '정상')
 
     def _attention_file_records(self):
         files = [
@@ -2509,6 +2512,16 @@ class RightPanel(QWidget):
         self._update_file_item_size_hints()
 
     def _update_explorer(self, info, clip_id):
+        meta_status = ''
+        meta_issues = []
+        if info:
+            meta_fp = info.get("filepath", "") or self.vp.cur_file or ""
+            meta_status, meta_issues = self._metadata_qc_summary(info, meta_fp)
+            for f in (getattr(self.vp, '_files', []) or []):
+                if isinstance(f, dict) and self._same_path_text(f.get('filepath'), meta_fp):
+                    f['meta_status'] = meta_status
+                    f['meta_issues'] = list(meta_issues or [])
+                    break
         # 파일 목록 갱신
         self.refresh_explorer()
         # 메타 패널: CUE된 파일 정보 표시
@@ -2534,7 +2547,6 @@ class RightPanel(QWidget):
         self.meta_labels["timecode"].setText(_safe_text(info.get("timecode"), "—"))
         sz = _safe_int(info.get("size", 0), 0)
         self.meta_labels["size"].setText(f"{sz/1024/1024:.1f} MB" if sz else "—")
-        meta_status, meta_issues = self._metadata_qc_summary(info, info.get("filepath", "") or self.vp.cur_file or "")
         meta_text = meta_status if not meta_issues else f"{meta_status}: {', '.join(meta_issues[:2])}"
         if len(meta_issues) > 2:
             meta_text += f" 외 {len(meta_issues) - 2}"
