@@ -1545,9 +1545,9 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
 
     result = {'code': 1, 'started_ms': 0, 'finished': False}
     deadline = time.monotonic() + 55.0
-    max_seconds = max(1.0, float(max_seconds or 30.0))
-    play_seconds = max(1.0, min(max_seconds, float(play_seconds or 5.0)))
-    check_interval = max(2.0, float(check_interval or 15.0))
+    max_seconds = max(1.0, _safe_float(max_seconds, 30.0))
+    play_seconds = max(1.0, min(max_seconds, _safe_float(play_seconds, 5.0)))
+    check_interval = max(2.0, _safe_float(check_interval, 15.0))
     sample = str(path)
     log.info(f'mxf {mode} test start: file={path.name} play_seconds={play_seconds:.1f}')
 
@@ -1555,7 +1555,7 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
         if result.get('finished'):
             return
         result['finished'] = True
-        result['code'] = int(code)
+        result['code'] = _safe_int(code, 1)
         if code == 0:
             log.info(f'mxf {mode} test PASS: {message}')
         else:
@@ -1579,8 +1579,9 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
         QTimer.singleShot(300, _close_window)
 
     def _check_playback(final=True):
-        now_ms = int(win.vp.player.position() or 0)
-        moved_ms = max(0, now_ms - int(result.get('started_ms') or 0))
+        now_ms = _safe_int(win.vp.player.position(), 0)
+        started_ms = _safe_int(result.get('started_ms'), 0)
+        moved_ms = max(0, now_ms - started_ms)
         audio_expected = bool(win.vp._audio_mix_expected())
         audio_status = win.vp.audio_mix.process_status()
         audio_ok = True if not audio_expected else bool(win.vp.audio_mix.is_running())
@@ -1590,7 +1591,7 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
             f'audio_expected={audio_expected} audio_ok={audio_ok} '
             f'audio={audio_status} children={children}'
         )
-        if moved_ms < max(800, int(play_seconds * 350)):
+        if moved_ms < max(800, _safe_int(play_seconds * 350, 800)):
             return _finish(7, f'playback did not advance enough ({moved_ms}ms)')
         if not audio_ok:
             return _finish(8, f'audio process not running: {audio_status}')
@@ -1600,10 +1601,11 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
         if result.get('finished'):
             return
         now = time.monotonic()
-        now_ms = int(win.vp.player.position() or 0)
-        prev_ms = int(result.get('last_ms') or result.get('started_ms') or 0)
+        now_ms = _safe_int(win.vp.player.position(), 0)
+        started_ms = _safe_int(result.get('started_ms'), 0)
+        prev_ms = _safe_int(result.get('last_ms'), started_ms)
         interval_moved = max(0, now_ms - prev_ms)
-        total_moved = max(0, now_ms - int(result.get('started_ms') or 0))
+        total_moved = max(0, now_ms - started_ms)
         audio_expected = bool(win.vp._audio_mix_expected())
         audio_status = win.vp.audio_mix.process_status()
         audio_ok = True if not audio_expected else bool(win.vp.audio_mix.is_running())
@@ -1619,15 +1621,15 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
         if state != QMediaPlayer.PlaybackState.PlayingState:
             return _finish(10, f'playback stopped unexpectedly: state={state}')
         if interval_moved < 300:
-            result['stalled_count'] = int(result.get('stalled_count') or 0) + 1
+            result['stalled_count'] = _safe_int(result.get('stalled_count'), 0) + 1
         else:
             result['stalled_count'] = 0
-        if int(result.get('stalled_count') or 0) >= 2:
+        if _safe_int(result.get('stalled_count'), 0) >= 2:
             return _finish(11, f'playback stalled: pos={now_ms}ms')
         result['last_ms'] = now_ms
-        if now >= float(result.get('end_at') or 0):
+        if now >= _safe_float(result.get('end_at'), 0.0):
             return _check_playback(final=True)
-        QTimer.singleShot(int(check_interval * 1000), _check_stability_progress)
+        QTimer.singleShot(_safe_int(check_interval * 1000, 15000), _check_stability_progress)
 
     def _poll_cue():
         if not win.vp.cur_file:
@@ -1635,18 +1637,18 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
         if win.vp.cur_file != sample:
             return _finish(5, 'loaded file changed unexpectedly')
         if not getattr(win.vp, '_loading', False) and getattr(win.vp, '_cue_ready', False) and getattr(win.vp, '_metadata_ready', False):
-            result['started_ms'] = int(win.vp.player.position() or 0)
-            duration_ms = int(win.vp.player.media_length() or 0)
-            if mode == 'stability' and duration_ms > 0 and duration_ms < int(play_seconds * 1000) + 1500:
+            result['started_ms'] = _safe_int(win.vp.player.position(), 0)
+            duration_ms = _safe_int(win.vp.player.media_length(), 0)
+            if mode == 'stability' and duration_ms > 0 and duration_ms < _safe_int(play_seconds * 1000, 0) + 1500:
                 return _finish(12, f'sample shorter than requested: duration={duration_ms}ms play={play_seconds:.1f}s')
             log.info(f'mxf {mode} cue ready: file={path.name} pos={result["started_ms"]}ms duration={duration_ms}ms')
             win.vp.player.play()
             if mode == 'stability':
                 result['last_ms'] = result['started_ms']
                 result['end_at'] = time.monotonic() + play_seconds
-                QTimer.singleShot(int(check_interval * 1000), _check_stability_progress)
+                QTimer.singleShot(_safe_int(check_interval * 1000, 15000), _check_stability_progress)
             else:
-                QTimer.singleShot(int(play_seconds * 1000), _check_playback)
+                QTimer.singleShot(_safe_int(play_seconds * 1000, 5000), _check_playback)
             return
         if time.monotonic() > deadline:
             return _finish(6, 'CUE/metadata timeout')
@@ -1718,7 +1720,7 @@ def _run_ui_layout_check():
             ('file list height', rp.exp_list.height(), 120),
         ]
         for name, actual, minimum in checks:
-            if int(actual) < int(minimum):
+            if _safe_int(actual, 0) < _safe_int(minimum, 0):
                 return f'{label}: {name} too small actual={actual} min={minimum}'
         log.info(
             f'ui layout check ok: {label} window={win.width()}x{win.height()} '
