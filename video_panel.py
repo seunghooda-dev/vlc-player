@@ -3831,6 +3831,18 @@ class VideoPanel(QWidget):
         ]
         return selected or [1, 2]
 
+    @staticmethod
+    def _audio_channel_label(channels):
+        cleaned = []
+        for ch in channels or []:
+            try:
+                n = int(ch)
+            except Exception:
+                continue
+            if 1 <= n <= 8 and n not in cleaned:
+                cleaned.append(n)
+        return ",".join(str(ch) for ch in cleaned) if cleaned else "오디오 없음"
+
     def _on_ch_select(self):
         if getattr(self, '_loading', False): return
         selected = [
@@ -3853,7 +3865,7 @@ class VideoPanel(QWidget):
             if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
                 self._reset_audio_recovery()
                 self._schedule_audio_mix(delay_ms=120, restart=True)
-            label = "/".join(str(ch) for ch in selected)
+            label = self._audio_channel_label(selected).replace(",", "/")
             self.ai_lbl.setText(f"✓ CH {label} 믹스 출력  |  LKFS 기준은 1/2CH")
             record_state_event('audio-mix', 'channel selection changed', file=Path(self.cur_file).name, channels=selected)
 
@@ -4294,20 +4306,22 @@ class VideoPanel(QWidget):
             record_state_event('transport', 'pause requested', file=Path(self.cur_file).name, pos=f'{self.player.position()}ms')
             self.player.pause()
         else:
+            selected_channels = self._get_selected_audio_channels()
+            channel_label = self._audio_channel_label(selected_channels)
             log.info(
                 f'play request: start file={Path(self.cur_file).name} '
                 f'pos={self.player.position()}ms metadata={self._metadata_ready} cue={self._cue_ready} '
-                f'ch={self._get_selected_audio_channels()}'
+                f'ch={channel_label}'
             )
             record_state_event(
                 'transport',
                 'play requested',
                 file=Path(self.cur_file).name,
                 pos=f'{self.player.position()}ms',
-                channels=self._get_selected_audio_channels(),
+                channels=selected_channels,
             )
             self.status_changed.emit(
-                f"  ▶ PLAY 요청 — {Path(self.cur_file).name} | CH {','.join(map(str, self._get_selected_audio_channels()))}"
+                f"  ▶ PLAY 요청 — {Path(self.cur_file).name} | {channel_label}"
             )
             self.player.play()
 
