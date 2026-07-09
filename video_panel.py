@@ -1576,6 +1576,21 @@ class VideoPanel(QWidget):
         else:
             self.lbl_ch.setToolTip("표시/출력 오디오 채널 수")
 
+    @staticmethod
+    def _provisional_audio_display_info(info, provisional_count):
+        info = info if isinstance(info, dict) else {}
+        source_count = max(
+            max(0, VideoPanel._safe_int_value(info.get('audio_stream_count', 0), 0)),
+            max(0, VideoPanel._safe_int_value(info.get('channels', 0), 0)),
+        )
+        visible_count = max(0, VideoPanel._safe_int_value(provisional_count, 0))
+        if source_count > visible_count:
+            return info
+        return {
+            'audio_stream_count': visible_count,
+            'channels': visible_count,
+        }
+
     def _metadata_or_cue_ready(self):
         return bool(
             getattr(self, '_metadata_ready', False)
@@ -2637,10 +2652,7 @@ class VideoPanel(QWidget):
             max(0, self._safe_int_value(info.get("channels", 0), 0)),
         )
         provisional_ch = max(1, min(8, hinted_ch)) if hinted_ch else (8 if p.suffix.lower() == ".mxf" else 2)
-        self._set_audio_channel_display({
-            'audio_stream_count': provisional_ch,
-            'channels': provisional_ch,
-        })
+        self._set_audio_channel_display(self._provisional_audio_display_info(info, provisional_ch))
         for cb, ch_no in self._ch_checks:
             cb.setChecked(ch_no in (1, 2))
             cb.setEnabled(ch_no <= provisional_ch)

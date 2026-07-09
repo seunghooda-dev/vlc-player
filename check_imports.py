@@ -1380,6 +1380,15 @@ def check_core_logic():
             errors.append("  FAIL 8-channel display text")
         if VideoPanel._audio_channel_display_text(display_probe, {'audio_stream_count': 0, 'channels': 0}) != '0CH':
             errors.append("  FAIL no-audio channel display text")
+        provisional_display_info = VideoPanel._provisional_audio_display_info(
+            {'audio_stream_count': 16, 'channels': 1},
+            8,
+        )
+        if VideoPanel._audio_channel_display_text(display_probe, provisional_display_info) != '8CH/16CH':
+            errors.append("  FAIL provisional capped source channel display text")
+        provisional_unknown_info = VideoPanel._provisional_audio_display_info({}, 8)
+        if VideoPanel._audio_channel_display_text(display_probe, provisional_unknown_info) != '8CH':
+            errors.append("  FAIL provisional unknown channel display text")
         class AudioRestartProbe:
             _safe_int_value = staticmethod(VideoPanel._safe_int_value)
             _metadata_audio_restart_required = VideoPanel._metadata_audio_restart_required
