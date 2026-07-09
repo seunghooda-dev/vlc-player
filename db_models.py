@@ -1,7 +1,7 @@
 """
 db_models.py — SQLAlchemy ORM 모델, DB 초기화, 유틸 함수
 """
-import sys, json, subprocess, hashlib, threading
+import sys, json, subprocess, hashlib, threading, math
 from pathlib import Path
 from datetime import datetime
 from sqlalchemy import create_engine, Column, String, Integer, Float, DateTime, Text, Boolean, text, event
@@ -381,19 +381,29 @@ def _sanitize_qc_ranges(ranges, limit=2000):
         for key in ("start", "end", "duration"):
             if key in item and item.get(key) is not None:
                 try:
-                    row[key] = round(float(item.get(key)), 3)
+                    value = float(item.get(key))
+                    if not math.isfinite(value):
+                        continue
+                    row[key] = round(max(0.0, value), 3)
                 except Exception:
                     pass
         for key in ("frames",):
             if key in item and item.get(key) is not None:
                 try:
-                    row[key] = max(0, int(item.get(key)))
+                    value = float(item.get(key))
+                    if not math.isfinite(value):
+                        continue
+                    row[key] = max(0, int(value))
                 except Exception:
                     pass
         for key in ("tc_start", "tc_end"):
             value = str(item.get(key) or "").strip()
             if value:
                 row[key] = value[:32]
+        if "start" not in row:
+            continue
+        if "start" in row and "end" in row and row["end"] < row["start"]:
+            continue
         if row:
             cleaned.append(row)
         if len(cleaned) >= limit:
