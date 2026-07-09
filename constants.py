@@ -378,12 +378,24 @@ def _file_stamp():
     return datetime.now().strftime('%Y%m%d_%H%M%S_%f')
 
 def _rotate_migration_log():
+    def _local_size(path):
+        try:
+            return int(Path(path).stat().st_size)
+        except Exception:
+            return 0
+
+    def _local_mtime(path):
+        try:
+            return float(Path(path).stat().st_mtime)
+        except Exception:
+            return 0.0
+
     try:
         if (
             MIGRATION_LOG_PATH.exists()
             and not MIGRATION_LOG_PATH.is_symlink()
             and MIGRATION_LOG_PATH.is_file()
-            and _path_size(MIGRATION_LOG_PATH) > MIGRATION_LOG_MAX_BYTES
+            and _local_size(MIGRATION_LOG_PATH) > MIGRATION_LOG_MAX_BYTES
         ):
             stamp = _file_stamp()
             rotated = LOG_DIR / f'migration.log.{stamp}'
@@ -396,8 +408,11 @@ def _rotate_migration_log():
                 backups.append(candidate)
             except Exception:
                 continue
-        backups.sort(key=_path_mtime, reverse=True)
-        keep_count = max(1, _safe_int_value(MIGRATION_LOG_BACKUP_COUNT, 5))
+        backups.sort(key=_local_mtime, reverse=True)
+        try:
+            keep_count = max(1, int(MIGRATION_LOG_BACKUP_COUNT))
+        except Exception:
+            keep_count = 5
         for old in backups[keep_count:]:
             try:
                 old.unlink()
