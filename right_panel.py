@@ -195,6 +195,28 @@ class RightPanel(QWidget):
         self.seek_requested.connect(video_panel.seek_to)
         video_panel.file_loaded.connect(self._on_file_loaded)
 
+    @staticmethod
+    def _compact_filter_labels(width):
+        return _safe_int(width, 9999) < 430
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if not getattr(self, '_filter_btns', None):
+            return
+        compact = self._compact_filter_labels(self.width())
+        if compact == getattr(self, '_filter_compact', None):
+            return
+        self._filter_compact = compact
+        QTimer.singleShot(0, self._refresh_filter_buttons)
+
+    def _refresh_filter_buttons(self):
+        if not getattr(self, '_filter_btns', None):
+            return
+        try:
+            self._update_filter_buttons(self._file_records())
+        except Exception as e:
+            log.debug(f'filter button refresh skipped: {e}')
+
     # ── EXPLORER ─────────────────────────────────────────
     def _build_explorer(self):
         w = QWidget()
@@ -777,11 +799,8 @@ class RightPanel(QWidget):
     def _update_filter_buttons(self, files):
         counts = self._filter_counts(files)
         current_key = getattr(self, '_filter_key', 'all')
-        compact = False
-        try:
-            compact = self.width() < 430
-        except Exception:
-            compact = False
+        compact = self._compact_filter_labels(self.width())
+        self._filter_compact = compact
         for key, btn in getattr(self, '_filter_btns', {}).items():
             btn.setChecked(key == current_key)
             count = counts.get(key, 0)

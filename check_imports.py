@@ -269,6 +269,10 @@ def check_core_logic():
             errors.append("  FAIL filter button text zero-detail")
         if RightPanel._filter_button_text('all', 0) != '전체 0':
             errors.append("  FAIL filter button text all-zero")
+        if RightPanel._compact_filter_labels(429) is not True:
+            errors.append("  FAIL compact filter width below threshold")
+        if RightPanel._compact_filter_labels(430) is not False:
+            errors.append("  FAIL compact filter width threshold")
         class EmptyFileListProbe(Probe):
             _filter_key = 'issues'
             _filter_label = RightPanel._filter_label
