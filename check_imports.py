@@ -487,6 +487,7 @@ def check_core_logic():
 
         class SummaryCopyProbe:
             _iter_report_files = RightPanel._iter_report_files
+            _qc_issue_seek_times = RightPanel._qc_issue_seek_times
             vp = type('VP', (), {'cur_file': ''})()
 
             def _file_path_text(self, value):
@@ -579,6 +580,38 @@ def check_core_logic():
         )
         if abs((first_issue_time or 0) - 1.25) > 0.0001:
             errors.append(f"  FAIL first QC issue seek time: {first_issue_time}")
+        issue_times = RightPanel._qc_issue_seek_times(
+            SummaryCopyProbe(),
+            {
+                'black_ranges': [{'start': 4.0}, {'start': 1.25}],
+                'mute_ranges': [{'start': 1.25}],
+                'freeze_ranges': [{'start': 3.0}],
+            },
+        )
+        if issue_times != [1.25, 3.0, 4.0]:
+            errors.append(f"  FAIL QC issue seek times sorted: {issue_times}")
+        next_issue_time = RightPanel._next_qc_issue_seek_time(
+            SummaryCopyProbe(),
+            {
+                'black_ranges': [{'start': 4.0}],
+                'mute_ranges': [{'start': 1.25}],
+                'freeze_ranges': [{'start': 3.0}],
+            },
+            1.25,
+        )
+        if abs((next_issue_time or 0) - 3.0) > 0.0001:
+            errors.append(f"  FAIL next QC issue seek time: {next_issue_time}")
+        wrap_issue_time = RightPanel._next_qc_issue_seek_time(
+            SummaryCopyProbe(),
+            {
+                'black_ranges': [{'start': 4.0}],
+                'mute_ranges': [{'start': 1.25}],
+                'freeze_ranges': [{'start': 3.0}],
+            },
+            4.5,
+        )
+        if abs((wrap_issue_time or 0) - 1.25) > 0.0001:
+            errors.append(f"  FAIL next QC issue seek wrap: {wrap_issue_time}")
         if RightPanel._first_qc_issue_seek_time(SummaryCopyProbe(), {}) is not None:
             errors.append("  FAIL first QC issue seek empty")
 
