@@ -483,6 +483,8 @@ class RightPanel(QWidget):
         act_all.setEnabled(state['all_count'] > 0)
         act_issues = menu.addAction(f"▣   문제 파일 리포트 저장 ({state['issue_count']}개)")
         act_issues.setEnabled(state['issue_count'] > 0)
+        act_copy_issues = menu.addAction(f"⧉   문제 요약 복사 ({state['issue_count']}개)")
+        act_copy_issues.setEnabled(state['issue_count'] > 0)
         act_visible = None
         if state['show_visible']:
             act_visible = menu.addAction(f"▣   표시 목록 리포트 저장 ({state['visible_count']}개)")
@@ -504,6 +506,8 @@ class RightPanel(QWidget):
             self._export_qc_report(state['all_files'], default_prefix='qc-report')
         elif action == act_issues:
             self._export_qc_report(state['issue_files'], default_prefix='qc-issues')
+        elif action == act_copy_issues:
+            self._copy_issue_summary(state['issue_files'])
         elif action == act_visible:
             self._export_qc_report(
                 state['visible_files'],
@@ -1712,6 +1716,43 @@ class RightPanel(QWidget):
         except Exception as e:
             log.warning(f'copy QC summary failed file={self._path_name(record.get("filepath"))}: {e}')
             self.vp.status_changed.emit(f"  ⚠ QC 요약 복사 실패 — {self._path_name(record.get('filepath'))}")
+            return False
+
+    def _issue_summary_clipboard_text(self, files=None):
+        issue_files = self._iter_report_files(files) if files is not None else self._issue_file_records()
+        lines = ["MXF QC Player 문제 파일 요약"]
+        try:
+            total = len(self._file_records()) if files is None else None
+        except Exception:
+            total = None
+        if total is not None:
+            lines.append(f"전체 {total}개 / 문제 {len(issue_files)}개")
+        else:
+            lines.append(f"문제 {len(issue_files)}개")
+        if not issue_files:
+            lines.append("확인 필요 파일 없음")
+            return '\n'.join(lines)
+        current = getattr(self.vp, 'cur_file', '')
+        for record in issue_files:
+            fp = self._file_path_text(record.get('filepath'))
+            name = record.get('name') or self._path_name(fp, '파일')
+            badge, _ = self._file_status_badge(record, fp == current)
+            detail = self._file_status_detail(record)
+            lines.append(f"- {name}: {badge} / {detail}")
+            if fp:
+                lines.append(f"  {fp}")
+        return '\n'.join(lines)
+
+    def _copy_issue_summary(self, files=None):
+        try:
+            text = self._issue_summary_clipboard_text(files)
+            QApplication.clipboard().setText(text)
+            count = len(self._iter_report_files(files)) if files is not None else len(self._issue_file_records())
+            self.vp.status_changed.emit(f"  문제 요약 복사됨 — {count}개")
+            return True
+        except Exception as e:
+            log.warning(f'copy issue summary failed: {e}')
+            self.vp.status_changed.emit("  ⚠ 문제 요약 복사 실패")
             return False
 
     def _can_reanalyze_current_file(self, filepath):

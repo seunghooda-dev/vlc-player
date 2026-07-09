@@ -486,6 +486,7 @@ def check_core_logic():
                 errors.append(f"  FAIL CSV report attention values: {saved_rows[2] if len(saved_rows) > 2 else saved_rows}")
 
         class SummaryCopyProbe:
+            _iter_report_files = RightPanel._iter_report_files
             vp = type('VP', (), {'cur_file': ''})()
 
             def _file_path_text(self, value):
@@ -534,6 +535,40 @@ def check_core_logic():
             errors.append(f"  FAIL QC summary copy ranges: {summary_text}")
         if '경로: C:/qc/copy-me.mxf' not in summary_text:
             errors.append(f"  FAIL QC summary copy path: {summary_text}")
+        issue_summary_text = RightPanel._issue_summary_clipboard_text(
+            SummaryCopyProbe(),
+            [
+                {
+                    'name': 'bad-a.mxf',
+                    'filepath': 'C:/qc/bad-a.mxf',
+                    'black': 'found',
+                    'mute': 'ok',
+                    'freeze': '',
+                    'black_count': 1,
+                    'mute_count': 0,
+                    'freeze_count': 0,
+                },
+                {
+                    'name': 'bad-b.mxf',
+                    'filepath': 'C:/qc/bad-b.mxf',
+                    'black': 'ok',
+                    'mute': 'error',
+                    'freeze': '',
+                    'black_count': 0,
+                    'mute_count': 0,
+                    'freeze_count': 0,
+                },
+            ],
+        )
+        if 'MXF QC Player 문제 파일 요약' not in issue_summary_text or '문제 2개' not in issue_summary_text:
+            errors.append(f"  FAIL issue summary copy header: {issue_summary_text}")
+        if 'bad-a.mxf: 블랙 있음 / 블랙 있음 1 / 무음 정상 0 / 프리즈 미분석 0' not in issue_summary_text:
+            errors.append(f"  FAIL issue summary copy black detail: {issue_summary_text}")
+        if 'bad-b.mxf: 검사 오류 / 블랙 정상 0 / 무음 오류 0 / 프리즈 미분석 0' not in issue_summary_text:
+            errors.append(f"  FAIL issue summary copy error detail: {issue_summary_text}")
+        empty_issue_summary = RightPanel._issue_summary_clipboard_text(SummaryCopyProbe(), [])
+        if '확인 필요 파일 없음' not in empty_issue_summary:
+            errors.append(f"  FAIL issue summary copy empty: {empty_issue_summary}")
 
         class ReanalyzeProbe:
             _file_path_text = staticmethod(RightPanel._file_path_text)
