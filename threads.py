@@ -20,6 +20,7 @@ from constants import (
     FFMPEG, FFPROBE, FFPLAY, TMP_DIR, VIDEO_EXTS, log,
     register_child_process, unregister_child_process, terminate_child_process,
     acquire_heavy_analysis_slot, release_heavy_analysis_slot,
+    _hidden_subprocess_flags,
 )
 from db_models import (
     sec_to_tc, frames_to_tc,
@@ -27,17 +28,16 @@ from db_models import (
     probe as probe_media,
 )
 
-_CREATE_NO_WINDOW = 0x08000000
 _BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
 _WARMUP_RECENT_PROBE_MAX_BYTES = 2 * 1024 * 1024 * 1024
 
 def _hidden_flags():
-    return _CREATE_NO_WINDOW if os.name == 'nt' else 0
+    return _hidden_subprocess_flags()
 
 def _analysis_flags():
     # Heavy FFmpeg scans should not steal priority from the Qt/VLC UI thread.
     if os.name == 'nt':
-        return _CREATE_NO_WINDOW | _BELOW_NORMAL_PRIORITY_CLASS
+        return _hidden_subprocess_flags() | _BELOW_NORMAL_PRIORITY_CLASS
     return 0
 
 def _safe_float(value, default=0.0):
