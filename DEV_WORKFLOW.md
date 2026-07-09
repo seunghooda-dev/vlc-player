@@ -10,6 +10,17 @@ change needs to be tested as a packaged app or prepared for release.
 3. Run `dev_run.bat` to start `main.py` directly.
 4. Commit and push source changes after verification.
 
+`dev_check.bat` is the default fast gate. It runs import consistency checks,
+Python bytecode compilation, `git diff --check`, and lightweight regression
+checks for metadata QC, settings normalization, audio channel clamping, supported
+video extensions, and DF/NDF timecode conversion. It does not launch playback or
+build an EXE, so it should stay quick enough to run after ordinary source edits.
+
+If `ArchiveTagger.spec` exists locally, `dev_check.bat` prints a warning. That
+file is a legacy ignored artifact and is not used by the current build path.
+Current packaged builds are driven by `build.bat` and use the `MXF QC Player`
+name.
+
 `dev_run.bat` does not build `dist\MXF QC Player.exe`. If the packaged EXE is
 already running, close it before starting the source version so the single
 instance guard does not activate the wrong window.
