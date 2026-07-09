@@ -28,7 +28,7 @@ from constants   import (
 )
 from db_models   import (
     probe, sec_to_tc, tc_to_frames, sanitize_qc_ranges,
-    qc_summary_from_status, load_clip_metadata_hint,
+    qc_summary_from_status, load_clip_metadata_hint, update_clip_qc,
 )
 from threads     import AudioAnalyzeThread, BlackDetectThread, FreezeDetectThread
 from meters      import mk_label
@@ -1252,6 +1252,87 @@ class RightPanel(QWidget):
         self._update_explorer(self.vp.cur_info, self.vp.cur_id or "")
         return removed
 
+    @classmethod
+    def _same_path_text(cls, left, right):
+        left = cls._file_path_text(left)
+        right = cls._file_path_text(right)
+        if not left or not right:
+            return False
+        try:
+            return Path(left).resolve() == Path(right).resolve()
+        except Exception:
+            return left.casefold() == right.casefold()
+
+    def _persist_relinked_qc(self, record):
+        if not isinstance(record, dict):
+            return
+        filepath = self._file_path_text(record.get('filepath'))
+        if not filepath:
+            return
+        states = (
+            str(record.get('black') or '').lower(),
+            str(record.get('mute') or '').lower(),
+            str(record.get('freeze') or '').lower(),
+        )
+        if not any(state in ('ok', 'found', 'error') for state in states):
+            return
+        try:
+            saved = update_clip_qc(
+                filepath,
+                black=record.get('black'),
+                mute=record.get('mute'),
+                freeze=record.get('freeze'),
+                black_count=record.get('black_count'),
+                mute_count=record.get('mute_count'),
+                freeze_count=record.get('freeze_count'),
+                black_ranges=record.get('black_ranges'),
+                mute_ranges=record.get('mute_ranges'),
+                freeze_ranges=record.get('freeze_ranges'),
+            )
+            if saved:
+                record['qc_summary'] = saved.get('summary') or record.get('qc_summary') or '미분석'
+                record['qc_updated_at'] = saved.get('updated_at')
+        except Exception as e:
+            log.warning(f'relinked QC persist failed file={self._path_name(filepath)}: {e}')
+
+    def _relink_file_record_path(self, old_path, new_path):
+        old_path = self._file_path_text(old_path)
+        if not old_path:
+            return 'missing-source'
+        if not self._is_video_file_path(new_path):
+            return 'invalid-target'
+        new_p = Path(new_path)
+        new_path = str(new_p)
+        target = None
+        duplicate = None
+        for f in self._file_records():
+            fp = self._file_path_text(f.get('filepath'))
+            if self._same_path_text(fp, old_path):
+                target = f
+            elif self._same_path_text(fp, new_path):
+                duplicate = f
+        if target is None:
+            return 'missing-source'
+        if duplicate is not None:
+            self._remove_file_records_by_paths([old_path])
+            return 'duplicate-removed'
+
+        target['filepath'] = new_path
+        target['name'] = new_p.name
+        target['ext'] = new_p.suffix.upper().lstrip('.') or target.get('ext') or '-'
+        target['size'] = _path_size(new_p)
+        if self._same_path_text(getattr(self.vp, 'cur_file', ''), old_path):
+            self.vp.cur_file = new_path
+        self._persist_relinked_qc(target)
+        try:
+            self.vp._remember_recent_file(new_path)
+        except Exception as e:
+            log.debug(f'relinked recent save skipped: {e}')
+        self.vp._refresh_clip_list()
+        self._update_explorer(self.vp.cur_info, self.vp.cur_id or "")
+        record_state_event('file-list', 'relinked', old=self._path_name(old_path), new=self._path_name(new_path))
+        return 'relinked'
+
     def _exp_context_menu(self, pos):
         from PyQt6.QtWidgets import QMenu
         item = self.exp_list.itemAt(pos)
@@ -1261,8 +1342,11 @@ class RightPanel(QWidget):
             return
         menu = QMenu(self.exp_list)
         menu.setStyleSheet(self._menu_style())
-        act_cue = act_del = act_clean_unavailable = None
+        act_cue = act_del = act_relink = act_clean_unavailable = None
         if fp:
+            if self._file_unavailable_badge(fp):
+                act_relink = menu.addAction("↻   파일 다시 연결")
+                menu.addSeparator()
             act_cue = menu.addAction("▶   CUE  —  화면에 올리기")
             menu.addSeparator()
             act_del = menu.addAction("✕   목록에서 제거")
@@ -1273,6 +1357,23 @@ class RightPanel(QWidget):
         action = menu.exec(self.exp_list.mapToGlobal(pos))
         if action is None:
             return
+        elif action == act_relink:
+            start_dir = self._path_parent_text(fp) or str(Path.home())
+            selected, _ = QFileDialog.getOpenFileName(
+                self,
+                '파일 다시 연결',
+                start_dir,
+                'Video Files (*.mxf *.mp4 *.mov *.mts *.m2ts *.mkv *.avi);;All Files (*)',
+            )
+            if not selected:
+                return
+            result = self._relink_file_record_path(fp, selected)
+            if result == 'relinked':
+                self.vp.status_changed.emit(f"  ↻ 파일 다시 연결 — {self._path_name(selected)}")
+            elif result == 'duplicate-removed':
+                self.vp.status_changed.emit(f"  ↻ 이미 목록에 있는 파일입니다 — 기존 접근 불가 항목 제거")
+            else:
+                self.vp.status_changed.emit(f"  ⚠ 다시 연결할 수 없습니다 — {self._path_name(selected, selected)}")
         elif action == act_cue:
             if not self._is_video_file_path(fp):
                 self.vp.status_changed.emit(f"  ⚠ 파일을 찾을 수 없습니다 — {self._path_name(fp)}")

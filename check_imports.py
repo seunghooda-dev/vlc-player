@@ -3,7 +3,8 @@ check_imports.py — 모듈 간 import 정합성 자동 검증
 실행: python check_imports.py
 모듈 분리 후, 새 기능 추가 후 항상 실행하세요.
 """
-import re, ast, sys
+import re, ast, sys, tempfile
+from pathlib import Path
 
 FILES = [
     'constants.py', 'db_models.py', 'threads.py',
@@ -278,6 +279,11 @@ def check_core_logic():
             errors.append("  FAIL report metadata missing-file guard")
 
         class RemoveProbe(Probe):
+            _is_video_file_path = staticmethod(RightPanel._is_video_file_path)
+            _same_path_text = staticmethod(RightPanel._same_path_text)
+            _path_name = staticmethod(RightPanel._path_name)
+            _remove_file_records_by_paths = RightPanel._remove_file_records_by_paths
+
             def __init__(self):
                 self.updated = 0
                 self.vp = type('VP', (), {})()
@@ -292,9 +298,16 @@ def check_core_logic():
                 self.vp.ejected = 0
                 self.vp._refresh_clip_list = lambda: setattr(self.vp, 'refreshed', self.vp.refreshed + 1)
                 self.vp.eject_clip = lambda: setattr(self.vp, 'ejected', self.vp.ejected + 1)
+                self.vp._remember_recent_file = lambda path: None
 
             def _update_explorer(self, info, clip_id):
                 self.updated += 1
+
+            def _file_records(self):
+                return [f for f in self.vp._files if isinstance(f, dict) and f.get('filepath')]
+
+            def _persist_relinked_qc(self, record):
+                return None
 
         remove_probe = RemoveProbe()
         removed = RightPanel._remove_file_records_by_paths(remove_probe, ['C:/missing/remove_me.mxf'])
@@ -308,6 +321,50 @@ def check_core_logic():
         removed = RightPanel._remove_file_records_by_paths(remove_cue_probe, ['C:/missing/remove_me.mxf'])
         if removed != 1 or remove_cue_probe.vp.ejected != 1:
             errors.append("  FAIL remove current missing-file eject path")
+
+        relink_probe = RemoveProbe()
+        relink_probe.vp._files = [
+            {
+                'filepath': 'C:/missing/relink_me.mxf',
+                'name': 'relink_me.mxf',
+                'black': '',
+                'mute': '',
+                'freeze': '',
+            }
+        ]
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            relink_target = Path(tmp_dir) / 'relinked_target.mxf'
+            relink_target.write_bytes(b'test')
+            result = RightPanel._relink_file_record_path(
+                relink_probe,
+                'C:/missing/relink_me.mxf',
+                str(relink_target),
+            )
+            record = relink_probe.vp._files[0]
+            if result != 'relinked':
+                errors.append(f"  FAIL relink missing-file result: {result}")
+            if record.get('filepath') != str(relink_target) or record.get('name') != relink_target.name:
+                errors.append(f"  FAIL relink missing-file target fields: {record}")
+            if record.get('ext') != 'MXF' or record.get('size') != 4:
+                errors.append(f"  FAIL relink missing-file metadata fields: {record}")
+            if relink_probe.vp.refreshed != 1 or relink_probe.updated != 1:
+                errors.append("  FAIL relink missing-file refresh path")
+
+        duplicate_probe = RemoveProbe()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            duplicate_target = Path(tmp_dir) / 'already_listed.mxf'
+            duplicate_target.write_bytes(b'test')
+            duplicate_probe.vp._files = [
+                {'filepath': 'C:/missing/relink_me.mxf', 'name': 'relink_me.mxf'},
+                {'filepath': str(duplicate_target), 'name': 'already_listed.mxf'},
+            ]
+            result = RightPanel._relink_file_record_path(
+                duplicate_probe,
+                'C:/missing/relink_me.mxf',
+                str(duplicate_target),
+            )
+            if result != 'duplicate-removed' or len(duplicate_probe.vp._files) != 1:
+                errors.append(f"  FAIL relink duplicate handling: result={result} files={duplicate_probe.vp._files}")
 
         if DEFAULT_SETTINGS.get('audio_channels') != [1, 2]:
             errors.append(f"  FAIL default audio channels: {DEFAULT_SETTINGS.get('audio_channels')}")
