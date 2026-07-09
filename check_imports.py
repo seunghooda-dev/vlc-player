@@ -249,6 +249,9 @@ def check_core_logic():
             ('normal', {'black': 'ok', 'mute': 'ok', 'freeze': 'found'}, False, 'normal excludes freeze issue'),
             ('done', {'black': 'found', 'mute': 'ok', 'freeze': ''}, True, 'done includes black/mute completed'),
             ('done', {'black': 'ok', 'mute': '', 'freeze': ''}, False, 'done excludes mute pending'),
+            ('attention', {'black': '', 'mute': '', 'freeze': ''}, True, 'attention includes untouched file'),
+            ('attention', {'black': 'ok', 'mute': 'ok', 'freeze': ''}, False, 'attention excludes clean partial normal'),
+            ('attention', {'black': 'ok', 'mute': 'ok', 'freeze': 'found'}, True, 'attention includes freeze issue'),
             ('pending', {'black': '', 'mute': '', 'freeze': ''}, True, 'pending includes untouched file'),
             ('pending', {'black': 'found', 'mute': '', 'freeze': ''}, True, 'pending includes partial analysis'),
             ('pending', {'black': 'ok', 'mute': 'ok', 'freeze': ''}, False, 'pending excludes completed black/mute'),
@@ -260,6 +263,7 @@ def check_core_logic():
             ('error', {'black': 'ok', 'mute': 'error', 'freeze': 'found'}, True, 'error filter includes any error'),
             ('error', {'filepath': 'C:/missing/file_not_available.mxf', 'black': 'ok', 'mute': 'ok', 'freeze': 'ok'}, True, 'error filter includes missing file'),
             ('normal', {'filepath': 'C:/missing/file_not_available.mxf', 'black': 'ok', 'mute': 'ok', 'freeze': 'ok'}, False, 'normal excludes missing file'),
+            ('attention', {'filepath': 'C:/missing/file_not_available.mxf', 'black': 'ok', 'mute': 'ok', 'freeze': 'ok'}, True, 'attention includes missing file'),
             ('pending', {'filepath': 'C:/missing/file_not_available.mxf', 'black': '', 'mute': '', 'freeze': ''}, False, 'pending excludes missing file'),
         ]
         for key, file_state, expected, label in filter_cases:
@@ -277,6 +281,7 @@ def check_core_logic():
         expected_filter_counts = {
             'all': 5,
             'done': 3,
+            'attention': 4,
             'pending': 1,
             'issues': 3,
             'black': 1,
@@ -310,8 +315,12 @@ def check_core_logic():
             errors.append("  FAIL cached missing file issue filter")
         if RightPanel._filter_button_text('issues', 3) != '문제 3':
             errors.append("  FAIL filter button text issues")
+        if RightPanel._filter_button_text('attention', 4) != '확인 4':
+            errors.append("  FAIL filter button text attention")
         if RightPanel._filter_button_text('issues', 3, compact=True) != '문제3':
             errors.append("  FAIL compact filter button text issues")
+        if RightPanel._filter_button_text('attention', 4, compact=True) != '확인4':
+            errors.append("  FAIL compact filter button text attention")
         if RightPanel._filter_button_text('all', 0, compact=True) != '전체0':
             errors.append("  FAIL compact filter button text all-zero")
         if RightPanel._filter_button_text('mute', 0) != '무음':

@@ -35,10 +35,11 @@ from meters      import mk_label
 
 FILE_ITEM_HTML_ROLE = Qt.ItemDataRole.UserRole.value + 10
 FILE_ITEM_PLAIN_ROLE = Qt.ItemDataRole.UserRole.value + 11
-FILE_FILTER_KEYS = ('all', 'done', 'pending', 'issues', 'black', 'mute', 'freeze', 'error', 'normal')
+FILE_FILTER_KEYS = ('all', 'done', 'attention', 'pending', 'issues', 'black', 'mute', 'freeze', 'error', 'normal')
 FILE_FILTER_LABELS = {
     'all': '전체',
     'done': '완료',
+    'attention': '확인',
     'pending': '미분석',
     'issues': '문제',
     'black': '블랙',
@@ -50,8 +51,9 @@ FILE_FILTER_LABELS = {
 FILE_FILTER_TIPS = {
     'all': '모든 파일 보기',
     'done': '일괄 검수 기준인 블랙/무음 검사가 완료된 파일만 보기',
+    'attention': '미분석, 발견, 오류, 파일 없음 등 확인이 필요한 파일만 보기',
     'pending': '블랙/무음 검사가 아직 완료되지 않은 파일만 보기',
-    'issues': '블랙/무음/프리즈 발견 또는 검사 오류가 있는 파일만 보기',
+    'issues': '블랙/무음/프리즈 발견, 검사 오류, 파일 없음만 보기',
     'black': '블랙 구간이 발견된 파일만 보기',
     'mute': '무음 구간이 발견된 파일만 보기',
     'freeze': '정지 화면 구간이 발견된 파일만 보기',
@@ -802,12 +804,14 @@ class RightPanel(QWidget):
             unavailable = RightPanel._availability_for_record(f)
         unavailable = bool(unavailable)
         if unavailable:
-            return key in ('issues', 'error')
+            return key in ('attention', 'issues', 'error')
         black = str(f.get('black') or '').lower()
         mute = str(f.get('mute') or '').lower()
         freeze = str(f.get('freeze') or '').lower()
         if key == 'done':
             return black in ('ok', 'found') and mute in ('ok', 'found')
+        if key == 'attention':
+            return RightPanel._file_needs_report_attention(f, unavailable=unavailable)
         if key == 'pending':
             return black not in ('ok', 'found', 'error') or mute not in ('ok', 'found', 'error')
         if key == 'issues':
@@ -835,6 +839,7 @@ class RightPanel(QWidget):
             counts['all'] += 1
             unavailable = bool(RightPanel._availability_for_record(f, availability))
             if unavailable:
+                counts['attention'] += 1
                 counts['issues'] += 1
                 counts['error'] += 1
                 continue
@@ -847,6 +852,8 @@ class RightPanel(QWidget):
                 counts['done'] += 1
             if black not in ('ok', 'found', 'error') or mute not in ('ok', 'found', 'error'):
                 counts['pending'] += 1
+            if RightPanel._file_needs_report_attention(f, unavailable=''):
+                counts['attention'] += 1
 
             has_error = black == 'error' or mute == 'error' or freeze == 'error'
             has_issue = (
@@ -873,7 +880,7 @@ class RightPanel(QWidget):
     def _filter_button_text(key, count, compact=False):
         label = FILE_FILTER_LABELS.get(key, key)
         count = _safe_count(count)
-        if key in ('all', 'done', 'pending', 'issues') or count > 0:
+        if key in ('all', 'done', 'attention', 'pending', 'issues') or count > 0:
             joiner = '' if compact else ' '
             return f"{label}{joiner}{count}"
         return label
@@ -1169,10 +1176,11 @@ class RightPanel(QWidget):
         return self._iter_report_files(files)
 
     @staticmethod
-    def _file_needs_report_attention(f):
+    def _file_needs_report_attention(f, unavailable=None):
         if not isinstance(f, dict):
             return False
-        unavailable = RightPanel._file_unavailable_badge(f.get('filepath'))
+        if unavailable is None:
+            unavailable = RightPanel._file_unavailable_badge(f.get('filepath'))
         if unavailable:
             return True
         black = str(f.get('black') or '').strip().lower()
