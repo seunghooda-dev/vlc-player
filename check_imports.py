@@ -112,7 +112,7 @@ def check_core_logic():
         import db_models as dbm
         from db_models import frames_to_tc, is_df_fps, qc_summary_from_status, sanitize_qc_ranges, tc_to_frames
         from threads import AudioAnalyzeThread, TranscodeThread
-        from video_panel import AudioMixPlayer, DIRECT_VLC_EXTS, VideoPanel
+        from video_panel import AudioMixPlayer, DIRECT_VLC_EXTS, QCMarkerSlider, VideoPanel
     except Exception as e:
         return [f"  FAIL core logic import: {e}"]
 
@@ -215,6 +215,14 @@ def check_core_logic():
             errors.append(f"  FAIL QC range end repair: {repaired_ranges}")
         if repaired_ranges[1].get('duration') != 1.5:
             errors.append(f"  FAIL QC range duration repair: {repaired_ranges}")
+        slider_ranges = QCMarkerSlider._clean_ranges([
+            {'start': 2.0, 'duration': 1.25},
+            {'start': 4.0, 'end': 5.0},
+        ])
+        if slider_ranges[0].get('end') != 3.25:
+            errors.append(f"  FAIL slider QC range end repair: {slider_ranges}")
+        if abs(slider_ranges[1].get('duration', 0.0) - 1.0) > 0.0001:
+            errors.append(f"  FAIL slider QC range duration repair: {slider_ranges}")
 
         status, issues = RightPanel._metadata_qc_summary(Probe(), {}, 'C:/sample/bad.mxf')
         if status != '확인 필요' or issues != ['메타데이터 확인 실패']:

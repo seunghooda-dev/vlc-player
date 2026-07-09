@@ -71,12 +71,19 @@ class QCMarkerSlider(QSlider):
             start = cls._finite_seconds(item.get("start"))
             if start is None:
                 continue
-            end = cls._finite_seconds(item.get("end"), start)
+            duration = cls._finite_seconds(item.get("duration"))
+            end = cls._finite_seconds(item.get("end"))
+            if end is None and duration is not None:
+                end = start + duration
+            if end is None:
+                end = start
             if end < start:
                 continue
             row = dict(item)
             row["start"] = start
             row["end"] = end
+            if duration is None:
+                row["duration"] = max(0.0, end - start)
             cleaned.append(row)
         return cleaned
 
