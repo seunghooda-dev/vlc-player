@@ -694,7 +694,12 @@ class RightPanel(QWidget):
     def _qc_piece_html(self, label, state, count):
         text = self._qc_status_text(state, label)
         raw_state = str(state or '').lower()
-        color = C['red'] if raw_state in ('found', 'error') else C['text0']
+        if raw_state in ('found', 'error'):
+            color = C['red']
+        elif self._qc_status_has_count(state):
+            color = C['text0']
+        else:
+            color = C['text2']
         weight = 800 if raw_state in ('found', 'error') else 500
         count_suffix = f" {_safe_count(count)}" if self._qc_status_has_count(state) else ""
         return (

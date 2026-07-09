@@ -108,7 +108,7 @@ def check_core_logic():
     errors = []
     try:
         from right_panel import RightPanel
-        from constants import DEFAULT_SETTINGS, VIDEO_EXTS, _normalize_settings
+        from constants import C, DEFAULT_SETTINGS, VIDEO_EXTS, _normalize_settings
         from db_models import frames_to_tc, is_df_fps, qc_summary_from_status, tc_to_frames
         from video_panel import AudioMixPlayer, DIRECT_VLC_EXTS, VideoPanel
     except Exception as e:
@@ -215,6 +215,24 @@ def check_core_logic():
             errors.append(f"  FAIL status summary complex count: {status_summary}")
         if "파일 없음 1" not in status_summary:
             errors.append(f"  FAIL status summary missing-file count: {status_summary}")
+        class HtmlStatusProbe(Probe):
+            _qc_piece_html = RightPanel._qc_piece_html
+            _file_status_detail_html = RightPanel._file_status_detail_html
+            _qc_status_has_count = staticmethod(RightPanel._qc_status_has_count)
+
+            def _qc_status_text(self, value, kind):
+                return RightPanel._qc_status_text(self, value, kind)
+
+        detail_html = RightPanel._file_status_detail_html(
+            HtmlStatusProbe(),
+            {'black': 'ok', 'mute': 'found', 'freeze': '', 'black_count': 0, 'mute_count': 2},
+        )
+        if '무음 있음 2' not in detail_html or f"color:{C['red']}" not in detail_html:
+            errors.append(f"  FAIL QC detail html issue color/count: {detail_html}")
+        if '프리즈 미분석' not in detail_html or '프리즈 미분석 0' in detail_html:
+            errors.append(f"  FAIL QC detail html pending count: {detail_html}")
+        if f"color:{C['text2']}" not in detail_html:
+            errors.append(f"  FAIL QC detail html pending color: {detail_html}")
         badge_cases = [
             ({'black': 'ok', 'mute': 'ok', 'freeze': ''}, '블랙/무음 정상', 'partial badge'),
             ({'black': 'ok', 'mute': 'ok', 'freeze': 'ok'}, '정상', 'normal badge'),
