@@ -824,6 +824,17 @@ class RightPanel(QWidget):
         except Exception:
             return False
 
+    @classmethod
+    def _is_video_file_path(cls, value):
+        text = cls._file_path_text(value)
+        if not text:
+            return False
+        try:
+            p = Path(text)
+            return p.exists() and p.is_file() and p.suffix.lower() in VIDEO_EXTS
+        except Exception:
+            return False
+
     def _file_records(self):
         records = []
         for f in (getattr(self.vp, '_files', []) or []):
@@ -1696,7 +1707,7 @@ class RightPanel(QWidget):
             return int(round(_safe_float(info.get('tc_offset', 0.0), 0.0) * fps))
 
     def _run_batch_qc(self):
-        files = [f for f in getattr(self.vp, '_files', []) if f.get('filepath')]
+        files = self._file_records()
         if not files:
             QMessageBox.information(self, '일괄 검수', '파일 목록에 검수할 영상 파일이 없습니다.')
             return
@@ -1720,7 +1731,7 @@ class RightPanel(QWidget):
             return
 
         self._batch_active = True
-        self._batch_queue = [f.get('filepath') for f in files]
+        self._batch_queue = [self._file_path_text(f.get('filepath')) for f in files]
         self._batch_total = len(self._batch_queue)
         self._batch_current = None
         self._batch_current_info = {}
@@ -1739,10 +1750,11 @@ class RightPanel(QWidget):
             self._finish_batch_qc()
             return
         fp = self._batch_queue.pop(0)
+        fp = self._file_path_text(fp)
         self._batch_current = fp
         idx = self._batch_total - len(self._batch_queue)
-        file_name = Path(fp).name
-        if not Path(fp).exists():
+        file_name = self._path_name(fp)
+        if not self._is_video_file_path(fp):
             if hasattr(self.vp, '_set_file_status'):
                 self.vp._set_file_status(
                     fp,
@@ -1754,7 +1766,7 @@ class RightPanel(QWidget):
                     mute_count=0,
                     mute_ranges=[],
                 )
-            log.warning(f'batch qc skipped missing file: {fp}')
+            log.warning(f'batch qc skipped invalid file: {fp or "-"}')
             QTimer.singleShot(50, self._start_next_batch_file)
             return
         try:
@@ -1785,7 +1797,7 @@ class RightPanel(QWidget):
         if not self._should_update_analysis_progress(f'batch:{kind}', message, min_interval=0.7):
             return
         idx = self._batch_total - len(self._batch_queue)
-        file_name = Path(self._batch_current or '').name
+        file_name = self._path_name(self._batch_current)
         label = '블랙' if kind == 'black' else '뮤트'
         self.exp_path.setText(f"⏳ 일괄 검수 {idx}/{self._batch_total} — {label}: {file_name}")
         if kind == 'black':
@@ -1812,7 +1824,7 @@ class RightPanel(QWidget):
                 black_count=len(ranges),
                 black_ranges=ranges,
             )
-        log.info(f'batch qc black done file={Path(fp).name} ranges={len(ranges)}')
+        log.info(f'batch qc black done file={self._path_name(fp)} ranges={len(ranges)}')
         self._start_batch_audio()
 
     def _on_batch_black_error(self, err, seq=None):
@@ -1827,7 +1839,7 @@ class RightPanel(QWidget):
             self._black_thread = None
         if hasattr(self.vp, '_set_file_status'):
             self.vp._set_file_status(fp, analysis='mute', black='error', black_count=0, black_ranges=[])
-        log.error(f'batch qc black error file={Path(fp or "").name}: {err}')
+        log.error(f'batch qc black error file={self._path_name(fp)}: {err}')
         self._start_batch_audio()
 
     def _start_batch_audio(self):
@@ -1835,7 +1847,13 @@ class RightPanel(QWidget):
             return
         fp = self._batch_current
         idx = self._batch_total - len(self._batch_queue)
-        file_name = Path(fp).name
+        file_name = self._path_name(fp)
+        if not self._is_video_file_path(fp):
+            if hasattr(self.vp, '_set_file_status'):
+                self.vp._set_file_status(fp, analysis=None, mute='error', mute_count=0, mute_ranges=[])
+            log.warning(f'batch qc audio skipped invalid file: {fp or "-"}')
+            QTimer.singleShot(50, self._start_next_batch_file)
+            return
         self.exp_path.setText(f"⏳ 일괄 검수 {idx}/{self._batch_total} — 뮤트: {file_name}")
         self.vp.ai_lbl.setText(f"🔇 일괄 검수 {idx}/{self._batch_total} — {file_name}")
         fps = self._batch_current_info.get('fps', 29.97)
@@ -1871,7 +1889,7 @@ class RightPanel(QWidget):
                 mute_count=len(mutes),
                 mute_ranges=mutes,
             )
-        log.info(f'batch qc audio done file={Path(fp).name} mutes={len(mutes)}')
+        log.info(f'batch qc audio done file={self._path_name(fp)} mutes={len(mutes)}')
         QTimer.singleShot(80, self._start_next_batch_file)
 
     def _on_batch_audio_error(self, err, seq=None):
@@ -1886,7 +1904,7 @@ class RightPanel(QWidget):
             self._audio_thread = None
         if hasattr(self.vp, '_set_file_status'):
             self.vp._set_file_status(fp, analysis=None, mute='error', mute_count=0, mute_ranges=[])
-        log.error(f'batch qc audio error file={Path(fp or "").name}: {err}')
+        log.error(f'batch qc audio error file={self._path_name(fp)}: {err}')
         QTimer.singleShot(80, self._start_next_batch_file)
 
     def _finish_batch_qc(self):
@@ -1907,7 +1925,7 @@ class RightPanel(QWidget):
             except Exception as e:
                 log.warning(f'batch qc auto report failed: {e}')
         suffix = f" / 리포트 {Path(report).name}" if report else ""
-        counts = self._batch_summary_counts(list(getattr(self.vp, '_files', []) or []))
+        counts = self._batch_summary_counts(self._file_records())
         issue_total = counts['black'] + counts['mute'] + counts['freeze'] + counts['both'] + counts['error']
         summary = (
             f"일괄 검수 완료 | 총 {total} | 정상 {counts['normal']} | "
