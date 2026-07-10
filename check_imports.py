@@ -158,8 +158,8 @@ def check_core_logic():
             errors.append("  FAIL MXF smoke test should verify channel changes during playback")
         if '_current_process_media_children' not in main_source or 'stray media children after cleanup' not in main_source:
             errors.append("  FAIL MXF smoke test should verify stray ffmpeg/ffplay cleanup")
-        if "'channels': list(self.channels or [])" not in video_source:
-            errors.append("  FAIL audio mix process status should expose selected channels")
+        if "'channels': list(self.effective_channels())" not in video_source or "'requested_channels': list(self.channels or [])" not in video_source:
+            errors.append("  FAIL audio mix process status should expose effective and requested channels")
         if '--db-smoke-test' not in main_source or 'load_qc_status' not in main_source or 'update_clip_qc' not in main_source:
             errors.append("  FAIL DB smoke test should verify QC persistence")
         if 'stale QC hidden after file replacement' not in main_source or 'stale_loaded_after_replace' not in main_source:
@@ -170,6 +170,8 @@ def check_core_logic():
             errors.append("  FAIL settings smoke test should verify save/reload/normalization")
         if '--diagnostic-smoke-test' not in main_source or 'diagnostic zip generated and verified' not in main_source:
             errors.append("  FAIL diagnostic smoke test should verify generated ZIP contents")
+        if 'storage_summary.json' not in main_source or '_diagnostic_storage_summary' not in constants_source:
+            errors.append("  FAIL diagnostic report should include user-data storage summary")
         if '--qc-report-smoke-test' not in main_source or 'CSV/TXT reports generated and verified' not in main_source:
             errors.append("  FAIL QC report smoke test should verify CSV/TXT report files")
         if '--cleanup-smoke-test' not in main_source or 'generated cleanup stayed inside user data' not in main_source:
@@ -2005,6 +2007,20 @@ def check_core_logic():
         audio_mix.set_channels(['bad'])
         if audio_mix.channels != [1, 2]:
             errors.append(f"  FAIL audio mix invalid channel fallback: {audio_mix.channels}")
+        audio_mix.set_file('C:/qc/mono.mp4', audio_stream_count=1, channel_count=1)
+        audio_mix.set_channels([1, 2])
+        if audio_mix.effective_channels() != [1]:
+            errors.append(f"  FAIL audio mix mono effective channels: {audio_mix.effective_channels()}")
+        if audio_mix.process_status().get('channels') != [1] or audio_mix.process_status().get('requested_channels') != [1, 2]:
+            errors.append(f"  FAIL audio mix mono status channels: {audio_mix.process_status()}")
+        audio_mix.set_file('C:/qc/stereo.mp4', audio_stream_count=1, channel_count=2)
+        audio_mix.set_channels([1, 2])
+        if audio_mix.effective_channels() != [1, 2]:
+            errors.append(f"  FAIL audio mix stereo effective channels: {audio_mix.effective_channels()}")
+        audio_mix.set_file('C:/qc/eight_channel.mxf', audio_stream_count=8, channel_count=8)
+        audio_mix.set_channels([7, 9])
+        if audio_mix.effective_channels() != [7]:
+            errors.append(f"  FAIL audio mix source upper clamp: {audio_mix.effective_channels()}")
         transcode = TranscodeThread('C:/qc/no_audio.mxf', [(1, 2)])
         if transcode._build_filter([], [(1, 2)]) is not None:
             errors.append("  FAIL no-audio transcode filter should be video-only")

@@ -228,6 +228,28 @@ class AudioMixPlayer(QObject):
                 cleaned.append(n)
         self.channels = [] if explicit_empty else (cleaned or [1, 2])
 
+    def _max_output_channel(self):
+        if not self.audio_layout_known:
+            return 8
+        if self.audio_stream_count > 1:
+            return max(1, min(8, self.audio_stream_count))
+        if self.channel_count > 0:
+            return max(1, min(8, self.channel_count))
+        return 0
+
+    def effective_channels(self):
+        source_max = self._max_output_channel()
+        cleaned = []
+        for ch in self.channels or []:
+            n = self._safe_int(ch, 0)
+            if 1 <= n <= 8 and (source_max <= 0 or n <= source_max) and n not in cleaned:
+                cleaned.append(n)
+        if cleaned:
+            return cleaned
+        if source_max > 0:
+            return [1]
+        return []
+
     def set_volume(self, value):
         self.volume = max(0.0, min(1.0, self._safe_float(value, self.volume)))
 
@@ -269,7 +291,8 @@ class AudioMixPlayer(QObject):
             'playing': bool(self._playing),
             'ffmpeg': self._proc_state(self._ffmpeg),
             'ffplay': self._proc_state(self._ffplay),
-            'channels': list(self.channels or []),
+            'channels': list(self.effective_channels()),
+            'requested_channels': list(self.channels or []),
         }
 
     def diagnostic_status(self):
@@ -278,7 +301,8 @@ class AudioMixPlayer(QObject):
             'ffmpeg_pid': getattr(self._ffmpeg, 'pid', None),
             'ffplay_pid': getattr(self._ffplay, 'pid', None),
             'file': self.filepath,
-            'channels': list(self.channels or []),
+            'channels': list(self.effective_channels()),
+            'requested_channels': list(self.channels or []),
             'rate': round(self._safe_float(self.rate, 1.0), 3),
             'volume_percent': int(round(self._safe_float(self.volume, 0.0) * 100)),
             'audio_stream_count': max(0, self._safe_int(self.audio_stream_count, 0)),
@@ -429,7 +453,7 @@ class AudioMixPlayer(QObject):
 
     def _build_filter(self):
         channels = []
-        for ch in self.channels or [1, 2]:
+        for ch in self.effective_channels() or [1, 2]:
             n = max(1, min(8, self._safe_int(ch, 0)))
             if n not in channels:
                 channels.append(n)

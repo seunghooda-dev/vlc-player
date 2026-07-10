@@ -2354,6 +2354,8 @@ def _run_diagnostic_smoke_test():
             'environment.txt',
             'runtime.json',
             'db_status.txt',
+            'storage_summary.json',
+            'storage_summary.txt',
             'child_processes.json',
             'state_timeline.json',
             'state_timeline.txt',
@@ -2366,6 +2368,8 @@ def _run_diagnostic_smoke_test():
             missing = sorted(required - names)
             manifest = json.loads(zf.read('manifest.json').decode('utf-8'))
             runtime_payload = json.loads(zf.read('runtime.json').decode('utf-8'))
+            storage_payload = json.loads(zf.read('storage_summary.json').decode('utf-8'))
+            storage_text = zf.read('storage_summary.txt').decode('utf-8', 'replace')
             environment_text = zf.read('environment.txt').decode('utf-8', 'replace')
             db_status_text = zf.read('db_status.txt').decode('utf-8', 'replace')
 
@@ -2374,6 +2378,8 @@ def _run_diagnostic_smoke_test():
             ('manifest path matches', manifest.get('report_path') == str(report)),
             ('manifest user data present', bool(manifest.get('user_data_dir'))),
             ('runtime payload has ok flag', 'ok' in runtime_payload),
+            ('storage payload has sections', bool(storage_payload.get('sections')) and 'backups' in storage_payload.get('sections', {})),
+            ('storage text present', '사용자 데이터 저장소 요약' in storage_text and '릴리즈 백업' in storage_text),
             ('environment text present', '실행 환경' in environment_text or 'Runtime' in environment_text or len(environment_text) > 20),
             ('db status present', 'DB_PATH:' in db_status_text),
             ('report non-empty', report.stat().st_size > 500),

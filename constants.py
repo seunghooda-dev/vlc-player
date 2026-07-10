@@ -2087,6 +2087,113 @@ def _diagnostic_db_status_text():
         lines.append(f'DB CHECK ERROR: {e}')
     return '\n'.join(lines)
 
+def _diagnostic_path_stats(path):
+    path = Path(path)
+    stats = {
+        'path': str(path),
+        'exists': path.exists(),
+        'files': 0,
+        'dirs': 0,
+        'bytes': 0,
+        'human_bytes': '0B',
+        'modified': '',
+        'error': '',
+    }
+    try:
+        if not path.exists():
+            return stats
+        stats['modified'] = datetime.fromtimestamp(_path_mtime(path)).isoformat(timespec='seconds') if _path_mtime(path) else ''
+        if path.is_file():
+            stats['files'] = 1
+            stats['bytes'] = _path_size(path)
+        elif path.is_dir():
+            for child in path.rglob('*'):
+                try:
+                    if child.is_symlink():
+                        continue
+                    if child.is_dir():
+                        stats['dirs'] += 1
+                    elif child.is_file():
+                        stats['files'] += 1
+                        stats['bytes'] += _path_size(child)
+                except Exception:
+                    continue
+        stats['human_bytes'] = format_bytes(stats['bytes'])
+    except Exception as e:
+        stats['error'] = str(e)
+    return stats
+
+def _diagnostic_storage_summary():
+    sections = [
+        ('user_data', USER_DATA_DIR),
+        ('settings', SETTINGS_PATH),
+        ('database', DB_PATH),
+        ('logs', LOG_DIR),
+        ('tmp', TMP_DIR),
+        ('backups', BACKUP_DIR),
+        ('reports', REPORT_DIR),
+    ]
+    data = {
+        'cleanup_days': AUTO_CLEANUP_DAYS,
+        'release_backup_keep_count': RELEASE_BACKUP_KEEP_COUNT,
+        'sections': {name: _diagnostic_path_stats(path) for name, path in sections},
+        'release_backups': {
+            'path': str(BACKUP_DIR / 'release'),
+            'count': 0,
+            'latest_txt': '',
+            'entries': [],
+        },
+    }
+    release_root = BACKUP_DIR / 'release'
+    try:
+        latest = release_root / 'latest.txt'
+        if latest.exists():
+            data['release_backups']['latest_txt'] = latest.read_text(encoding='utf-8', errors='replace').strip()
+        if release_root.exists():
+            dirs = [p for p in release_root.iterdir() if p.is_dir() and not p.is_symlink()]
+            dirs.sort(key=lambda p: p.name, reverse=True)
+            data['release_backups']['count'] = len(dirs)
+            for path in dirs[:10]:
+                item = _diagnostic_path_stats(path)
+                item['name'] = path.name
+                data['release_backups']['entries'].append(item)
+    except Exception as e:
+        data['release_backups']['error'] = str(e)
+    return data
+
+def _format_diagnostic_storage_summary(summary=None):
+    summary = summary or _diagnostic_storage_summary()
+    lines = []
+    lines.append('사용자 데이터 저장소 요약')
+    lines.append('=' * 52)
+    lines.append(f"자동 정리 기준: {summary.get('cleanup_days')}일")
+    lines.append(f"릴리즈 백업 보존: 최신 {summary.get('release_backup_keep_count')}개")
+    lines.append('')
+    lines.append('섹션별 용량')
+    lines.append('-' * 52)
+    for name, item in (summary.get('sections') or {}).items():
+        lines.append(
+            f"{name:10s} | files={item.get('files', 0):>5} dirs={item.get('dirs', 0):>4} "
+            f"size={item.get('human_bytes', '-'):>10} exists={item.get('exists')}"
+        )
+        lines.append(f"  path={item.get('path')}")
+        if item.get('error'):
+            lines.append(f"  error={item.get('error')}")
+    release = summary.get('release_backups') or {}
+    lines.append('')
+    lines.append('릴리즈 백업')
+    lines.append('-' * 52)
+    lines.append(f"path={release.get('path')}")
+    lines.append(f"count={release.get('count')} latest={release.get('latest_txt') or '-'}")
+    if release.get('error'):
+        lines.append(f"error={release.get('error')}")
+    for item in release.get('entries') or []:
+        lines.append(
+            f"- {item.get('name')}: {item.get('human_bytes')} "
+            f"files={item.get('files')} modified={item.get('modified') or '-'}"
+        )
+    return '\n'.join(lines)
+
 def create_diagnostic_report(destination=None, runtime=None, max_log_lines=1500):
     """Create a compact zip report for field troubleshooting."""
     runtime = runtime or check_runtime_environment()
@@ -2109,11 +2216,14 @@ def create_diagnostic_report(destination=None, runtime=None, max_log_lines=1500)
     }
     tmp_out = out.with_name(f'.{out.name}.{os.getpid()}.{threading.get_ident()}.tmp')
     try:
+        storage_summary = _diagnostic_storage_summary()
         with zipfile.ZipFile(tmp_out, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
             zf.writestr('manifest.json', json.dumps(manifest, ensure_ascii=False, indent=2))
             zf.writestr('environment.txt', format_runtime_environment(runtime))
             zf.writestr('runtime.json', json.dumps(runtime, ensure_ascii=False, indent=2, default=str))
             zf.writestr('db_status.txt', _diagnostic_db_status_text())
+            zf.writestr('storage_summary.json', json.dumps(storage_summary, ensure_ascii=False, indent=2, default=str))
+            zf.writestr('storage_summary.txt', _format_diagnostic_storage_summary(storage_summary))
             zf.writestr('child_processes.json', json.dumps(runtime_child_process_status(), ensure_ascii=False, indent=2))
             zf.writestr('state_timeline.json', json.dumps(runtime_state_timeline(), ensure_ascii=False, indent=2))
             zf.writestr('state_timeline.txt', format_state_timeline())
