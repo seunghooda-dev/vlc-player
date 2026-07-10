@@ -24,7 +24,7 @@ from PyQt6.QtMultimedia import QMediaPlayer
 
 from constants    import (
     C, STYLE, LOG_DIR, TMP_DIR, BASE_DIR, RESOURCE_DIR, REPORT_DIR, APP_DIR, USER_DATA_DIR,
-    SETTINGS_PATH, DB_PATH, log, APP_FONT_QT,
+    SETTINGS_PATH, DB_PATH, log, APP_FONT_QT, VIDEO_EXTS,
     check_runtime_environment, format_runtime_environment, format_runtime_startup_alert,
     cleanup_child_processes, cleanup_orphan_audio_processes, runtime_child_process_status,
     cache_summary, cleanup_runtime_cache, cleanup_old_generated_files, format_bytes, format_cache_summary,
@@ -1617,25 +1617,31 @@ Get-CimInstance Win32_Process |
         log.debug(f'current process media child scan skipped: {e}')
         return []
 
-def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_interval=0.0, mode='smoke'):
+def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_interval=0.0, mode='smoke', allow_supported_media=False):
     _setup_global_exception_handler()
     path = Path(filepath or '')
+    label = 'media' if allow_supported_media else 'mxf'
     if not path.exists() or not path.is_file():
-        log.error(f'mxf smoke test failed: sample not found {filepath}')
+        log.error(f'{label} smoke test failed: sample not found {filepath}')
         return 2
-    if path.suffix.lower() != '.mxf':
+    suffix = path.suffix.lower()
+    if allow_supported_media:
+        if suffix not in VIDEO_EXTS:
+            log.error(f'media smoke test failed: unsupported media extension {filepath}')
+            return 2
+    elif suffix != '.mxf':
         log.error(f'mxf smoke test failed: sample is not MXF {filepath}')
         return 2
 
     app = QApplication(sys.argv)
     _configure_app_style(app)
     if not _acquire_single_instance():
-        log.error('mxf smoke test failed: MXF QC Player is already running')
+        log.error(f'{label} smoke test failed: MXF QC Player is already running')
         return 3
 
     runtime = check_runtime_environment()
     if not runtime.get('ok'):
-        log.error(f"mxf smoke test failed: runtime check {runtime.get('problems')}")
+        log.error(f"{label} smoke test failed: runtime check {runtime.get('problems')}")
         return 4
 
     win = MainWindow()
@@ -1648,7 +1654,7 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
     play_seconds = max(1.0, min(max_seconds, _safe_float(play_seconds, 5.0)))
     check_interval = max(2.0, _safe_float(check_interval, 15.0))
     sample = str(path)
-    log.info(f'mxf {mode} test start: file={path.name} play_seconds={play_seconds:.1f}')
+    log.info(f'{label} {mode} test start: file={path.name} play_seconds={play_seconds:.1f}')
 
     def _checked_audio_channels():
         return [
@@ -1693,7 +1699,7 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
             ]
             if status_channels != expected:
                 return f'{stage}: audio mix channels {status_channels} != default {expected}'
-        log.info(f'mxf {mode} default audio check ok: stage={stage} channels={expected}')
+        log.info(f'{label} {mode} default audio check ok: stage={stage} channels={expected}')
         return ''
 
     def _check_audio_route_restore():
@@ -1714,7 +1720,7 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
         if not audio_ok:
             return _finish(25, f'audio route restore process not running: {win.vp.audio_mix.process_status()}')
         moved_ms = max(0, _safe_int(win.vp.player.position(), 0) - _safe_int(result.get('started_ms'), 0))
-        log.info(f'mxf {mode} audio route restore ok: channels={expected} moved={moved_ms}ms')
+        log.info(f'{label} {mode} audio route restore ok: channels={expected} moved={moved_ms}ms')
         return _finish(0, f'cue/play/audio/route ok moved={moved_ms}ms')
 
     def _check_audio_route_change():
@@ -1737,7 +1743,7 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
             return _finish(21, f'audio route selection failed: selected={selected} checked={checked} target={target}')
         if not win.vp.audio_mix.is_running() or status_channels != target:
             return _finish(22, f'audio route mix failed: status={audio_status} target={target}')
-        log.info(f'mxf {mode} audio route change ok: channels={target} moved={route_moved_ms}ms')
+        log.info(f'{label} {mode} audio route change ok: channels={target} moved={route_moved_ms}ms')
         default_channels = _expected_default_audio_channels() or [1, 2]
         _set_checked_audio_channels(default_channels)
         win.vp._on_ch_select()
@@ -1753,11 +1759,11 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
             if cb.isEnabled()
         }
         if not set(target).issubset(enabled):
-            log.info(f'mxf {mode} audio route change skipped: enabled={sorted(enabled)} source_count={source_count}')
+            log.info(f'{label} {mode} audio route change skipped: enabled={sorted(enabled)} source_count={source_count}')
             return False
         result['route_checked'] = True
         result['route_start_ms'] = _safe_int(win.vp.player.position(), 0)
-        log.info(f'mxf {mode} audio route change start: target={target} pos={result["route_start_ms"]}ms')
+        log.info(f'{label} {mode} audio route change start: target={target} pos={result["route_start_ms"]}ms')
         _set_checked_audio_channels(target)
         win.vp._on_ch_select()
         QTimer.singleShot(1400, _check_audio_route_change)
@@ -1769,23 +1775,23 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
         result['finished'] = True
         result['code'] = _safe_int(code, 1)
         if code == 0:
-            log.info(f'mxf {mode} test PASS: {message}')
+            log.info(f'{label} {mode} test PASS: {message}')
         else:
-            log.error(f'mxf {mode} test FAIL: {message}')
+            log.error(f'{label} {mode} test FAIL: {message}')
         try:
             if win.vp.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
                 win.vp.player.pause()
             if hasattr(win.vp, '_cancel_audio_mix'):
                 win.vp._cancel_audio_mix()
         except Exception as e:
-            log.debug(f'mxf {mode} test pre-close stop: {e}')
+            log.debug(f'{label} {mode} test pre-close stop: {e}')
 
         def _close_window():
             try:
                 win.hide()
                 cleanup_child_processes()
             except Exception as e:
-                log.debug(f'mxf {mode} test shutdown: {e}')
+                log.debug(f'{label} {mode} test shutdown: {e}')
             app.quit()
 
         QTimer.singleShot(300, _close_window)
@@ -1799,7 +1805,7 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
         audio_ok = True if not audio_expected else bool(win.vp.audio_mix.is_running())
         children = runtime_child_process_status()
         log.info(
-            f'mxf smoke playback check: moved={moved_ms}ms '
+            f'{label} smoke playback check: moved={moved_ms}ms '
             f'audio_expected={audio_expected} audio_ok={audio_ok} '
             f'audio={audio_status} children={children}'
         )
@@ -1857,7 +1863,7 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
         state = win.vp.player.playbackState()
         audio_running = bool(win.vp.audio_mix.is_running())
         log.info(
-            f'mxf {mode} cue idle check: state={state} '
+            f'{label} {mode} cue idle check: state={state} '
             f'pos={now_ms}ms drift={drift_ms}ms audio_running={audio_running}'
         )
         if state == QMediaPlayer.PlaybackState.PlayingState:
@@ -1889,7 +1895,7 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
             duration_ms = _safe_int(win.vp.player.media_length(), 0)
             if mode == 'stability' and duration_ms > 0 and duration_ms < _safe_int(play_seconds * 1000, 0) + 1500:
                 return _finish(12, f'sample shorter than requested: duration={duration_ms}ms play={play_seconds:.1f}s')
-            log.info(f'mxf {mode} cue ready: file={path.name} pos={result["started_ms"]}ms duration={duration_ms}ms')
+            log.info(f'{label} {mode} cue ready: file={path.name} pos={result["started_ms"]}ms duration={duration_ms}ms')
             QTimer.singleShot(450, _start_checked_playback)
             return
         if time.monotonic() > deadline:
@@ -1908,18 +1914,18 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
     QTimer.singleShot(250, _start)
     app.exec()
     try:
-        cleanup_result = _as_dict_result(cleanup_child_processes(), f'mxf {mode} test cleanup')
+        cleanup_result = _as_dict_result(cleanup_child_processes(), f'{label} {mode} test cleanup')
         if cleanup_result.get('running_after'):
-            log.error(f'mxf {mode} test cleanup failed: {cleanup_result}')
+            log.error(f'{label} {mode} test cleanup failed: {cleanup_result}')
             if result.get('code') == 0:
                 result['code'] = 13
         stray_children = _current_process_media_children()
         if stray_children:
-            log.error(f'mxf {mode} test stray media children after cleanup: {stray_children}')
+            log.error(f'{label} {mode} test stray media children after cleanup: {stray_children}')
             if result.get('code') == 0:
                 result['code'] = 26
         else:
-            log.info(f'mxf {mode} test media child cleanup verified')
+            log.info(f'{label} {mode} test media child cleanup verified')
     except Exception:
         pass
     return result['code']
@@ -1931,6 +1937,15 @@ def _run_mxf_stability_test(filepath, play_seconds=1800.0, check_interval=30.0):
         max_seconds=7200.0,
         check_interval=check_interval,
         mode='stability',
+    )
+
+def _run_media_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0):
+    return _run_mxf_smoke_test(
+        filepath,
+        play_seconds=play_seconds,
+        max_seconds=max_seconds,
+        mode='smoke',
+        allow_supported_media=True,
     )
 
 def _qc_media_params(path):
@@ -2637,6 +2652,10 @@ if __name__ == "__main__":
         sample = _arg_value('--mxf-smoke-test')
         seconds = _arg_value('--play-seconds', '5')
         sys.exit(_run_mxf_smoke_test(sample, seconds))
+    if '--media-smoke-test' in sys.argv:
+        sample = _arg_value('--media-smoke-test')
+        seconds = _arg_value('--play-seconds', '5')
+        sys.exit(_run_media_smoke_test(sample, seconds))
     if '--mxf-stability-test' in sys.argv:
         sample = _arg_value('--mxf-stability-test')
         seconds = _arg_value('--play-seconds', '1800')

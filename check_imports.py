@@ -139,6 +139,8 @@ def check_core_logic():
             errors.append("  FAIL analysis finish restore_runtime guard missing")
         if 'win.vp.toggle_play()' not in main_source:
             errors.append("  FAIL MXF smoke test should use the real transport play path")
+        if '--media-smoke-test' not in main_source or 'allow_supported_media=True' not in main_source or 'VIDEO_EXTS' not in main_source:
+            errors.append("  FAIL media smoke test should cover supported video extensions")
         if 'def _ensure_unpaused(self, seq=None)' not in video_source or 'self._player.set_pause(0)' not in video_source:
             errors.append("  FAIL VLC play should explicitly resume after CUE preroll pause")
         if 'def pause(self):\n        self._next_op()' not in video_source:
