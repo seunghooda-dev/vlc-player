@@ -455,13 +455,10 @@ def _record_migration_event(name, source, target, status, message=''):
 
 def _copy_legacy_file_to_user_data(name, source, target):
     if source.resolve() == target.resolve():
-        _record_migration_event(name, source, target, 'skip', '원본과 대상이 같아 건너뜀')
         return
     if not source.exists() or not source.is_file():
-        _record_migration_event(name, source, target, 'skip', '기존 파일 없음')
         return
     if target.exists():
-        _record_migration_event(name, source, target, 'skip', '새 위치에 파일이 있어 건드리지 않음')
         return
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
