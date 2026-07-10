@@ -1332,6 +1332,10 @@ class MainWindow(QMainWindow):
                 vp._retire_probe()
             except Exception as ex:
                 log.debug(f'retire probe on close: {ex}')
+            try:
+                vp._retire_loudness_analysis()
+            except Exception as ex:
+                log.debug(f'retire loudness on close: {ex}')
             vp._retire_tc()
 
             # 작업 스레드 — abort 플래그 → quit → wait → 필요 시 terminate
@@ -1344,6 +1348,8 @@ class MainWindow(QMainWindow):
                 worker_threads.append((rp._audio_thread, 'audio_thread'))
             if getattr(rp, '_black_thread', None):
                 worker_threads.append((rp._black_thread, 'black_thread'))
+            if getattr(rp, '_freeze_thread', None):
+                worker_threads.append((rp._freeze_thread, 'freeze_thread'))
             for thread, label in worker_threads:
                 self._shutdown_worker_thread(thread, label)
             try:
@@ -1352,6 +1358,7 @@ class MainWindow(QMainWindow):
                 vp._preconvert_jobs.clear()
                 rp._audio_thread = None
                 rp._black_thread = None
+                rp._freeze_thread = None
             except Exception as ex:
                 log.debug(f'clear worker refs: {ex}')
 

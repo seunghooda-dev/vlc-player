@@ -126,6 +126,10 @@ def check_core_logic():
             errors.append("  FAIL Esc analysis cancel shortcut missing from help")
         if 'QShortcut(QKeySequence(Qt.Key.Key_Escape)' not in main_source:
             errors.append("  FAIL Esc analysis cancel shortcut missing")
+        if 'vp._retire_loudness_analysis()' not in main_source:
+            errors.append("  FAIL closeEvent should retire loudness analysis")
+        if "rp._freeze_thread" not in main_source or "'freeze_thread'" not in main_source:
+            errors.append("  FAIL closeEvent should include freeze analysis thread cleanup")
     except Exception as e:
         errors.append(f"  FAIL shortcut source check: {e}")
 
