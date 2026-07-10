@@ -10,6 +10,39 @@ import json
 import os
 import csv
 from pathlib import Path
+
+SMOKE_USER_DATA_ARGS = (
+    '--mxf-smoke-test',
+    '--media-smoke-test',
+    '--mxf-stability-test',
+    '--qc-smoke-test',
+    '--db-smoke-test',
+    '--settings-smoke-test',
+    '--diagnostic-smoke-test',
+    '--qc-report-smoke-test',
+    '--cleanup-smoke-test',
+    '--ui-layout-check',
+)
+
+
+def _is_smoke_mode(argv):
+    return any(arg in argv for arg in SMOKE_USER_DATA_ARGS)
+
+
+def _configure_smoke_user_data(argv):
+    """Keep developer smoke checks away from the operator's real settings/DB."""
+    if os.environ.get('MXF_QC_USER_DATA_DIR') or not _is_smoke_mode(argv):
+        return
+    try:
+        active = next((arg for arg in SMOKE_USER_DATA_ARGS if arg in argv), '--smoke-test')
+        name = active.strip('-').replace('-', '_')
+        root = Path(__file__).resolve().parent / 'tmp' / 'smoke_user_data' / name
+        os.environ['MXF_QC_USER_DATA_DIR'] = str(root)
+    except Exception:
+        pass
+
+
+_configure_smoke_user_data(sys.argv)
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
     QSplitter, QDialog, QPushButton, QMessageBox, QPlainTextEdit,
