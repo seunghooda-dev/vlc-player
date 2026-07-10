@@ -1412,7 +1412,7 @@ def _setup_global_exception_handler():
             return
         msg = ''.join(traceback.format_exception(exc_type, exc_val, exc_tb))
         log.critical(f'[UNHANDLED EXCEPTION]\n{msg}')  # logs/player.log 기록
-        print(f'[EXCEPTION — 프로그램 유지]\n{msg}')
+        _safe_console_print(f'[EXCEPTION - 프로그램 유지]\n{msg}')
 
     sys.excepthook = _handle
 
@@ -1567,6 +1567,27 @@ def _arg_value(name, default=None):
         return sys.argv[idx + 1]
     except Exception:
         return default
+
+def _safe_console_print(text):
+    text = str(text)
+    try:
+        print(text)
+        return
+    except UnicodeEncodeError:
+        pass
+    stream = getattr(sys.stdout, 'buffer', None)
+    if stream is None:
+        return
+    encoding = getattr(sys.stdout, 'encoding', None) or 'utf-8'
+    try:
+        stream.write(text.encode(encoding, 'backslashreplace') + b'\n')
+        stream.flush()
+    except Exception:
+        try:
+            stream.write(text.encode('utf-8', 'replace') + b'\n')
+            stream.flush()
+        except Exception:
+            pass
 
 def _current_process_media_children():
     if os.name != 'nt':
@@ -2006,8 +2027,116 @@ def _run_qc_smoke_test(
         else:
             log.info(f'qc smoke {label} PASS: count={count} expected_min={expect_min} elapsed={result.get("elapsed")}s')
 
-    print(json.dumps(output, ensure_ascii=False, indent=2))
+    _safe_console_print(json.dumps(output, ensure_ascii=False, indent=2))
     return exit_code
+
+def _run_db_smoke_test():
+    _setup_global_exception_handler()
+    try:
+        from db_models import Clip, Session, engine, load_qc_status, qc_summary_from_status, save_clip, update_clip_qc
+    except Exception as e:
+        log.error(f'db smoke test failed: import error {e}')
+        return 2
+
+    TMP_DIR.mkdir(parents=True, exist_ok=True)
+    sample_path = TMP_DIR / f'db_smoke_{os.getpid()}_{time.time_ns()}.mxf'
+    clip_id = ''
+    try:
+        sample_path.write_bytes(b'MXF QC Player database smoke placeholder\n')
+        stat = sample_path.stat()
+        clip_id = save_clip({
+            'filename': sample_path.name,
+            'filepath': str(sample_path),
+            'duration': 12.0,
+            'size': stat.st_size,
+            'mtime_ns': stat.st_mtime_ns,
+            'bit_rate': 0,
+            'fps': 29.97,
+            'width': 1920,
+            'height': 1080,
+            'codec': 'SMOKE',
+            'channels': 2,
+            'audio_stream_count': 1,
+            'timecode': '00:00:00;00',
+            'format_short': 'MXF',
+        })
+        if not clip_id:
+            log.error('db smoke test failed: save_clip returned empty id')
+            return 3
+
+        black_ranges = [{
+            'start': 1.0,
+            'end': 2.0,
+            'duration': 1.0,
+            'tc_start': '00:00:01;00',
+            'tc_end': '00:00:02;00',
+        }]
+        mute_ranges = [{
+            'start': 4.0,
+            'end': 5.5,
+            'duration': 1.5,
+            'tc_start': '00:00:04;00',
+            'tc_end': '00:00:05;15',
+        }]
+        expected_summary = qc_summary_from_status('found', 'found', 'ok')
+        saved = update_clip_qc(
+            str(sample_path),
+            black='found',
+            mute='found',
+            freeze='ok',
+            black_count=1,
+            mute_count=1,
+            freeze_count=0,
+            black_ranges=black_ranges,
+            mute_ranges=mute_ranges,
+            freeze_ranges=[],
+        )
+        loaded = load_qc_status(str(sample_path))
+        checks = [
+            ('black status', loaded.get('black') == 'found'),
+            ('mute status', loaded.get('mute') == 'found'),
+            ('freeze status', loaded.get('freeze') == 'ok'),
+            ('black count', loaded.get('black_count') == 1),
+            ('mute count', loaded.get('mute_count') == 1),
+            ('freeze count', loaded.get('freeze_count') == 0),
+            ('black ranges', len(loaded.get('black_ranges') or []) == 1),
+            ('mute ranges', len(loaded.get('mute_ranges') or []) == 1),
+            ('freeze ranges', loaded.get('freeze_ranges') == []),
+            ('summary', loaded.get('summary') == expected_summary),
+            ('saved summary', saved.get('summary') == expected_summary),
+        ]
+        failed = [name for name, ok in checks if not ok]
+        output = {
+            'db': str(DB_PATH),
+            'file': str(sample_path),
+            'clip_id': clip_id,
+            'saved': saved,
+            'loaded': loaded,
+            'failed': failed,
+        }
+        _safe_console_print(json.dumps(output, ensure_ascii=False, indent=2, default=str))
+        if failed:
+            log.error(f'db smoke test FAIL: {failed}')
+            return 7
+        log.info('db smoke test PASS: QC status persisted and restored')
+        return 0
+    except Exception as e:
+        log.error(f'db smoke test failed: {e}')
+        return 8
+    finally:
+        if clip_id:
+            try:
+                with Session(engine) as session:
+                    clip = session.get(Clip, clip_id)
+                    if clip:
+                        session.delete(clip)
+                        session.commit()
+            except Exception:
+                pass
+        try:
+            sample_path.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 def _run_ui_layout_check():
     _setup_global_exception_handler()
@@ -2163,6 +2292,8 @@ if __name__ == "__main__":
             expect_mute_min=_arg_value('--expect-mute-min', '0'),
             expect_freeze_min=_arg_value('--expect-freeze-min', '0'),
         ))
+    if '--db-smoke-test' in sys.argv:
+        sys.exit(_run_db_smoke_test())
     if '--ui-layout-check' in sys.argv:
         sys.exit(_run_ui_layout_check())
     if '--export-diagnostics' in sys.argv:

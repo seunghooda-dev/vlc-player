@@ -157,6 +157,8 @@ def check_core_logic():
             errors.append("  FAIL MXF smoke test should verify stray ffmpeg/ffplay cleanup")
         if "'channels': list(self.channels or [])" not in video_source:
             errors.append("  FAIL audio mix process status should expose selected channels")
+        if '--db-smoke-test' not in main_source or 'load_qc_status' not in main_source or 'update_clip_qc' not in main_source:
+            errors.append("  FAIL DB smoke test should verify QC persistence")
     except Exception as e:
         errors.append(f"  FAIL shortcut source check: {e}")
 
