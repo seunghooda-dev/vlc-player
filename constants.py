@@ -287,6 +287,7 @@ RESOURCE_DIR = _runtime_resource_dir()
 BASE_DIR     = APP_DIR
 
 APP_DATA_NAME = "MXF QC Player V.1.0"
+USER_DATA_DIR_ENV = "MXF_QC_USER_DATA_DIR"
 
 def _default_user_data_dir():
     if os.name == 'nt':
@@ -299,7 +300,13 @@ def _default_user_data_dir():
         return Path(root) / APP_DATA_NAME
     return Path.home() / '.local' / 'share' / APP_DATA_NAME
 
-USER_DATA_DIR = _default_user_data_dir()
+def _user_data_dir():
+    override = os.environ.get(USER_DATA_DIR_ENV, '').strip()
+    if override:
+        return Path(override).expanduser()
+    return _default_user_data_dir()
+
+USER_DATA_DIR = _user_data_dir()
 USER_DB_PATH = USER_DATA_DIR / "archive.db"
 USER_SETTINGS_PATH = USER_DATA_DIR / "settings.json"
 USER_LOG_DIR = USER_DATA_DIR / "logs"
