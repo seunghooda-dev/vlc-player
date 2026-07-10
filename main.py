@@ -1606,6 +1606,17 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
             if cb.isChecked()
         ]
 
+    def _set_checked_audio_channels(channels):
+        wanted = {_safe_int(ch, 0) for ch in (channels or [])}
+        for cb, ch in (getattr(win.vp, '_ch_checks', []) or []):
+            if cb.isEnabled():
+                cb.setChecked(_safe_int(ch, 0) in wanted)
+
+    def _status_audio_channels():
+        return [
+            _safe_int(ch, 0) for ch in (win.vp.audio_mix.process_status().get('channels') or [])
+        ]
+
     def _expected_default_audio_channels():
         if not bool(win.vp._audio_mix_expected()):
             return []
@@ -1634,6 +1645,73 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
                 return f'{stage}: audio mix channels {status_channels} != default {expected}'
         log.info(f'mxf {mode} default audio check ok: stage={stage} channels={expected}')
         return ''
+
+    def _check_audio_route_restore():
+        if result.get('finished'):
+            return
+        expected = _expected_default_audio_channels()
+        if not expected:
+            return _finish(0, 'cue/play/audio ok; route restore skipped no audio')
+        selected = [_safe_int(ch, 0) for ch in (win.vp._get_selected_audio_channels() or [])]
+        checked = _checked_audio_channels()
+        status_channels = _status_audio_channels()
+        audio_expected = bool(win.vp._audio_mix_expected())
+        audio_ok = True if not audio_expected else bool(win.vp.audio_mix.is_running())
+        if selected != expected or checked != expected:
+            return _finish(23, f'audio route restore selection failed: selected={selected} checked={checked} expected={expected}')
+        if audio_expected and status_channels != expected:
+            return _finish(24, f'audio route restore mix failed: channels={status_channels} expected={expected}')
+        if not audio_ok:
+            return _finish(25, f'audio route restore process not running: {win.vp.audio_mix.process_status()}')
+        moved_ms = max(0, _safe_int(win.vp.player.position(), 0) - _safe_int(result.get('started_ms'), 0))
+        log.info(f'mxf {mode} audio route restore ok: channels={expected} moved={moved_ms}ms')
+        return _finish(0, f'cue/play/audio/route ok moved={moved_ms}ms')
+
+    def _check_audio_route_change():
+        if result.get('finished'):
+            return
+        target = [3, 4]
+        route_start_ms = _safe_int(result.get('route_start_ms'), 0)
+        now_ms = _safe_int(win.vp.player.position(), 0)
+        route_moved_ms = max(0, now_ms - route_start_ms)
+        state = win.vp.player.playbackState()
+        selected = [_safe_int(ch, 0) for ch in (win.vp._get_selected_audio_channels() or [])]
+        checked = _checked_audio_channels()
+        status_channels = _status_audio_channels()
+        audio_status = win.vp.audio_mix.process_status()
+        if state != QMediaPlayer.PlaybackState.PlayingState:
+            return _finish(19, f'audio route change stopped playback: state={state}')
+        if route_moved_ms < 350:
+            return _finish(20, f'audio route change stalled playback: moved={route_moved_ms}ms')
+        if selected != target or checked != target:
+            return _finish(21, f'audio route selection failed: selected={selected} checked={checked} target={target}')
+        if not win.vp.audio_mix.is_running() or status_channels != target:
+            return _finish(22, f'audio route mix failed: status={audio_status} target={target}')
+        log.info(f'mxf {mode} audio route change ok: channels={target} moved={route_moved_ms}ms')
+        default_channels = _expected_default_audio_channels() or [1, 2]
+        _set_checked_audio_channels(default_channels)
+        win.vp._on_ch_select()
+        QTimer.singleShot(900, _check_audio_route_restore)
+
+    def _maybe_check_audio_route_change():
+        source_count = _safe_int(win.vp._audio_source_count_from_info(getattr(win.vp, 'cur_info', {}) or {}), 0)
+        if mode != 'smoke' or source_count < 4 or result.get('route_checked'):
+            return False
+        target = [3, 4]
+        enabled = {
+            _safe_int(ch, 0) for cb, ch in (getattr(win.vp, '_ch_checks', []) or [])
+            if cb.isEnabled()
+        }
+        if not set(target).issubset(enabled):
+            log.info(f'mxf {mode} audio route change skipped: enabled={sorted(enabled)} source_count={source_count}')
+            return False
+        result['route_checked'] = True
+        result['route_start_ms'] = _safe_int(win.vp.player.position(), 0)
+        log.info(f'mxf {mode} audio route change start: target={target} pos={result["route_start_ms"]}ms')
+        _set_checked_audio_channels(target)
+        win.vp._on_ch_select()
+        QTimer.singleShot(1400, _check_audio_route_change)
+        return True
 
     def _finish(code, message):
         if result.get('finished'):
@@ -1682,6 +1760,8 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
         audio_issue = _validate_default_audio_selection('playback', require_running_channels=audio_expected)
         if audio_issue:
             return _finish(18, audio_issue)
+        if _maybe_check_audio_route_change():
+            return
         return _finish(0, f'cue/play/audio ok moved={moved_ms}ms')
 
     def _check_stability_progress():

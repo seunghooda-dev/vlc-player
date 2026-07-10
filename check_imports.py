@@ -151,6 +151,8 @@ def check_core_logic():
             errors.append("  FAIL UI layout check should verify audio meter rails")
         if 'default audio check ok' not in main_source or '_validate_default_audio_selection' not in main_source:
             errors.append("  FAIL MXF smoke test should verify default 1/2 audio selection")
+        if 'audio route change ok' not in main_source or '_maybe_check_audio_route_change' not in main_source:
+            errors.append("  FAIL MXF smoke test should verify channel changes during playback")
         if "'channels': list(self.channels or [])" not in video_source:
             errors.append("  FAIL audio mix process status should expose selected channels")
     except Exception as e:
