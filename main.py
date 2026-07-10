@@ -1891,10 +1891,31 @@ def _run_ui_layout_check():
         for name, actual, minimum in checks:
             if _safe_int(actual, 0) < _safe_int(minimum, 0):
                 return f'{label}: {name} too small actual={actual} min={minimum}'
+        expected_left = [1, 3, 5, 7]
+        expected_right = [2, 4, 6, 8]
+        if list(getattr(vp.vlc_side_left, 'channel_numbers', [])) != expected_left:
+            return f'{label}: left audio meter channels changed {getattr(vp.vlc_side_left, "channel_numbers", [])}'
+        if list(getattr(vp.vlc_side_right, 'channel_numbers', [])) != expected_right:
+            return f'{label}: right audio meter channels changed {getattr(vp.vlc_side_right, "channel_numbers", [])}'
+        stage_rect = vp.video_stage.rect()
+        video_rect = vp.video_view.geometry()
+        for name, meter in (
+            ('left audio meter', vp.vlc_side_left),
+            ('right audio meter', vp.vlc_side_right),
+            ('loudness meter', vp.vlc_loud_meter),
+        ):
+            if meter.parent() is not vp.video_stage:
+                return f'{label}: {name} parent changed'
+            meter_rect = meter.geometry()
+            if not stage_rect.contains(meter_rect):
+                return f'{label}: {name} outside video stage {meter_rect}'
+            if meter_rect.intersects(video_rect):
+                return f'{label}: {name} overlaps video surface {meter_rect} vs {video_rect}'
         log.info(
             f'ui layout check ok: {label} window={win.width()}x{win.height()} '
             f'video={vp.video_view.width()}x{vp.video_view.height()} '
-            f'tc={vp.tc_main.width()} right={rp.width()}'
+            f'tc={vp.tc_main.width()} right={rp.width()} '
+            f'meters=L{expected_left}/R{expected_right}'
         )
         return ''
 

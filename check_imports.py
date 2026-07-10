@@ -147,6 +147,8 @@ def check_core_logic():
             errors.append("  FAIL audio analysis normal result should include no_audio=False")
         if '--qc-smoke-test' not in main_source or 'BlackDetectThread' not in main_source:
             errors.append("  FAIL QC smoke test CLI should cover real detection threads")
+        if 'left audio meter' not in main_source or 'right audio meter' not in main_source or 'overlaps video surface' not in main_source:
+            errors.append("  FAIL UI layout check should verify audio meter rails")
     except Exception as e:
         errors.append(f"  FAIL shortcut source check: {e}")
 
