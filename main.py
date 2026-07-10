@@ -2092,6 +2092,9 @@ def _run_db_smoke_test():
             freeze_ranges=[],
         )
         loaded = load_qc_status(str(sample_path))
+        with sample_path.open('ab') as fh:
+            fh.write(b'replaced media bytes\n')
+        stale_loaded = load_qc_status(str(sample_path))
         checks = [
             ('black status', loaded.get('black') == 'found'),
             ('mute status', loaded.get('mute') == 'found'),
@@ -2104,6 +2107,7 @@ def _run_db_smoke_test():
             ('freeze ranges', loaded.get('freeze_ranges') == []),
             ('summary', loaded.get('summary') == expected_summary),
             ('saved summary', saved.get('summary') == expected_summary),
+            ('stale QC hidden after file replacement', stale_loaded == {}),
         ]
         failed = [name for name, ok in checks if not ok]
         output = {
@@ -2112,6 +2116,7 @@ def _run_db_smoke_test():
             'clip_id': clip_id,
             'saved': saved,
             'loaded': loaded,
+            'stale_loaded_after_replace': stale_loaded,
             'failed': failed,
         }
         _safe_console_print(json.dumps(output, ensure_ascii=False, indent=2, default=str))

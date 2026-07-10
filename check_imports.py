@@ -159,6 +159,8 @@ def check_core_logic():
             errors.append("  FAIL audio mix process status should expose selected channels")
         if '--db-smoke-test' not in main_source or 'load_qc_status' not in main_source or 'update_clip_qc' not in main_source:
             errors.append("  FAIL DB smoke test should verify QC persistence")
+        if 'stale QC hidden after file replacement' not in main_source or 'stale_loaded_after_replace' not in main_source:
+            errors.append("  FAIL DB smoke test should reject stale QC after file replacement")
     except Exception as e:
         errors.append(f"  FAIL shortcut source check: {e}")
 
