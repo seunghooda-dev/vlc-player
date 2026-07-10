@@ -516,7 +516,8 @@ class MainWindow(QMainWindow):
 
     def _log_package_check(self, runtime):
         for item in runtime.get('package_check') or []:
-            level = log.info if item.get('ok') else log.warning
+            severity = str(item.get('severity') or '').lower()
+            level = log.info if item.get('ok') or severity == 'advisory' else log.warning
             level(
                 "package check: "
                 f"{item.get('name')} ok={item.get('ok')} "

@@ -623,11 +623,13 @@ def runtime_package_check():
         'hint': '',
     })
     tools_dir = APP_DIR / 'tools'
+    tools_ok = tools_dir.exists() and tools_dir.is_dir()
     checks.append({
         'name': 'tools 폴더',
-        'ok': tools_dir.exists() and tools_dir.is_dir(),
-        'message': '있음' if tools_dir.exists() else '없음',
+        'ok': tools_ok,
+        'message': '있음' if tools_ok else ('없음 (개발 실행은 PATH 사용 가능)' if not frozen else '없음'),
         'path': str(tools_dir),
+        'severity': 'warning' if frozen else 'advisory',
         'hint': r'다른 PC 배포 시 ffmpeg.exe / ffprobe.exe / ffplay.exe를 tools 폴더에 포함하는 것을 권장합니다.',
     })
     for exe_name, resolved in (

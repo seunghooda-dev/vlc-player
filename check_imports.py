@@ -123,6 +123,7 @@ def check_core_logic():
         right_source = read_source('right_panel.py')
         video_source = read_source('video_panel.py')
         threads_source = read_source('threads.py')
+        constants_source = read_source('constants.py')
         if "('정지',           'S')" in main_source:
             errors.append("  FAIL stale S stop shortcut remains in help")
         if "('검수 취소',       'Esc')" not in main_source:
@@ -173,6 +174,8 @@ def check_core_logic():
             errors.append("  FAIL QC report smoke test should verify CSV/TXT report files")
         if '--cleanup-smoke-test' not in main_source or 'generated cleanup stayed inside user data' not in main_source:
             errors.append("  FAIL cleanup smoke test should verify generated cleanup safety")
+        if "'severity': 'warning' if frozen else 'advisory'" not in constants_source or "severity == 'advisory'" not in main_source:
+            errors.append("  FAIL package check logging should separate advisory dev tools warnings")
     except Exception as e:
         errors.append(f"  FAIL shortcut source check: {e}")
 
