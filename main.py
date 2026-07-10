@@ -1680,6 +1680,34 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
             return _check_playback(final=True)
         QTimer.singleShot(_safe_int(check_interval * 1000, 15000), _check_stability_progress)
 
+    def _start_checked_playback():
+        if result.get('finished'):
+            return
+        cue_ms = _safe_int(result.get('started_ms'), 0)
+        now_ms = _safe_int(win.vp.player.position(), 0)
+        drift_ms = max(0, now_ms - cue_ms)
+        state = win.vp.player.playbackState()
+        audio_running = bool(win.vp.audio_mix.is_running())
+        log.info(
+            f'mxf {mode} cue idle check: state={state} '
+            f'pos={now_ms}ms drift={drift_ms}ms audio_running={audio_running}'
+        )
+        if state == QMediaPlayer.PlaybackState.PlayingState:
+            return _finish(14, f'cue started playback before play request: pos={now_ms}ms')
+        if audio_running:
+            return _finish(15, 'cue started audio before play request')
+        if drift_ms > 300:
+            return _finish(16, f'cue position advanced before play request: drift={drift_ms}ms')
+
+        result['started_ms'] = now_ms
+        win.vp.toggle_play()
+        if mode == 'stability':
+            result['last_ms'] = result['started_ms']
+            result['end_at'] = time.monotonic() + play_seconds
+            QTimer.singleShot(_safe_int(check_interval * 1000, 15000), _check_stability_progress)
+        else:
+            QTimer.singleShot(_safe_int(play_seconds * 1000, 5000), _check_playback)
+
     def _poll_cue():
         if not win.vp.cur_file:
             return _finish(5, 'file was not loaded')
@@ -1691,13 +1719,7 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
             if mode == 'stability' and duration_ms > 0 and duration_ms < _safe_int(play_seconds * 1000, 0) + 1500:
                 return _finish(12, f'sample shorter than requested: duration={duration_ms}ms play={play_seconds:.1f}s')
             log.info(f'mxf {mode} cue ready: file={path.name} pos={result["started_ms"]}ms duration={duration_ms}ms')
-            win.vp.toggle_play()
-            if mode == 'stability':
-                result['last_ms'] = result['started_ms']
-                result['end_at'] = time.monotonic() + play_seconds
-                QTimer.singleShot(_safe_int(check_interval * 1000, 15000), _check_stability_progress)
-            else:
-                QTimer.singleShot(_safe_int(play_seconds * 1000, 5000), _check_playback)
+            QTimer.singleShot(450, _start_checked_playback)
             return
         if time.monotonic() > deadline:
             return _finish(6, 'CUE/metadata timeout')
