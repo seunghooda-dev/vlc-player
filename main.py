@@ -1690,7 +1690,7 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
             if mode == 'stability' and duration_ms > 0 and duration_ms < _safe_int(play_seconds * 1000, 0) + 1500:
                 return _finish(12, f'sample shorter than requested: duration={duration_ms}ms play={play_seconds:.1f}s')
             log.info(f'mxf {mode} cue ready: file={path.name} pos={result["started_ms"]}ms duration={duration_ms}ms')
-            win.vp.player.play()
+            win.vp.toggle_play()
             if mode == 'stability':
                 result['last_ms'] = result['started_ms']
                 result['end_at'] = time.monotonic() + play_seconds

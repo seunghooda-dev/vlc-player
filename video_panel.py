@@ -527,16 +527,28 @@ class VlcPlayerAdapter(QObject):
         if rc == -1:
             self.errorOccurred.emit(QMediaPlayer.Error.FormatError, 'VLC could not play this file')
             return
+        self._ensure_unpaused(seq)
         self._state = QMediaPlayer.PlaybackState.PlayingState
         self.playbackStateChanged.emit(self._state)
         self._timer.start()
+        QTimer.singleShot(80, lambda s=seq: self._ensure_unpaused(s))
+        QTimer.singleShot(220, lambda s=seq: self._ensure_unpaused(s))
         QTimer.singleShot(500, lambda s=seq: self._emit_duration(s))
         self._audio_apply_attempts = 0
         QTimer.singleShot(200, lambda s=seq: self._apply_audio_channel(s))
         QTimer.singleShot(700, lambda s=seq: self._apply_audio_channel(s))
         QTimer.singleShot(1200, lambda s=seq: self._apply_audio_channel(s))
 
+    def _ensure_unpaused(self, seq=None):
+        if not self._is_current_op(seq):
+            return
+        try:
+            self._player.set_pause(0)
+        except Exception as e:
+            log.debug(f'vlc resume after play: {e}')
+
     def pause(self):
+        self._next_op()
         try:
             self._player.set_pause(1)
         except Exception:

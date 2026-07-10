@@ -121,6 +121,7 @@ def check_core_logic():
     try:
         main_source = read_source('main.py')
         right_source = read_source('right_panel.py')
+        video_source = read_source('video_panel.py')
         if "('정지',           'S')" in main_source:
             errors.append("  FAIL stale S stop shortcut remains in help")
         if "('검수 취소',       'Esc')" not in main_source:
@@ -135,6 +136,12 @@ def check_core_logic():
             errors.append("  FAIL closeEvent should cancel analysis without restoring runtime")
         if "def _finish_analysis_mode(self, restore_runtime=True)" not in right_source:
             errors.append("  FAIL analysis finish restore_runtime guard missing")
+        if 'win.vp.toggle_play()' not in main_source:
+            errors.append("  FAIL MXF smoke test should use the real transport play path")
+        if 'def _ensure_unpaused(self, seq=None)' not in video_source or 'self._player.set_pause(0)' not in video_source:
+            errors.append("  FAIL VLC play should explicitly resume after CUE preroll pause")
+        if 'def pause(self):\n        self._next_op()' not in video_source:
+            errors.append("  FAIL VLC pause should invalidate delayed resume callbacks")
     except Exception as e:
         errors.append(f"  FAIL shortcut source check: {e}")
 
