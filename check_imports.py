@@ -165,6 +165,8 @@ def check_core_logic():
             errors.append("  FAIL DB smoke test should reject stale metadata hints after file replacement")
         if '--settings-smoke-test' not in main_source or 'settings persisted, normalized, and reloaded' not in main_source:
             errors.append("  FAIL settings smoke test should verify save/reload/normalization")
+        if '--diagnostic-smoke-test' not in main_source or 'diagnostic zip generated and verified' not in main_source:
+            errors.append("  FAIL diagnostic smoke test should verify generated ZIP contents")
     except Exception as e:
         errors.append(f"  FAIL shortcut source check: {e}")
 

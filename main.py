@@ -2279,6 +2279,78 @@ def _run_settings_smoke_test():
             log.warning(f'settings smoke restore failed: {e}')
         _reset_cache()
 
+def _run_diagnostic_smoke_test():
+    _setup_global_exception_handler()
+    try:
+        import zipfile
+    except Exception as e:
+        log.error(f'diagnostic smoke test failed: zip import error {e}')
+        return 2
+
+    REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    report_path = REPORT_DIR / f'diagnostic-smoke-{os.getpid()}-{time.time_ns()}.zip'
+    try:
+        runtime = check_runtime_environment()
+        report = Path(create_diagnostic_report(report_path, runtime=runtime, max_log_lines=200))
+        if report != report_path:
+            log.error(f'diagnostic smoke test failed: unexpected path {report}')
+            return 3
+        if not report.exists() or report.suffix.lower() != '.zip':
+            log.error(f'diagnostic smoke test failed: report missing {report}')
+            return 4
+        required = {
+            'manifest.json',
+            'environment.txt',
+            'runtime.json',
+            'db_status.txt',
+            'child_processes.json',
+            'state_timeline.json',
+            'state_timeline.txt',
+            'recent_files.txt',
+            'logs/player_tail.log',
+            'logs/migration_tail.log',
+        }
+        with zipfile.ZipFile(report, 'r') as zf:
+            names = set(zf.namelist())
+            missing = sorted(required - names)
+            manifest = json.loads(zf.read('manifest.json').decode('utf-8'))
+            runtime_payload = json.loads(zf.read('runtime.json').decode('utf-8'))
+            environment_text = zf.read('environment.txt').decode('utf-8', 'replace')
+            db_status_text = zf.read('db_status.txt').decode('utf-8', 'replace')
+
+        checks = [
+            ('required entries present', not missing),
+            ('manifest path matches', manifest.get('report_path') == str(report)),
+            ('manifest user data present', bool(manifest.get('user_data_dir'))),
+            ('runtime payload has ok flag', 'ok' in runtime_payload),
+            ('environment text present', '실행 환경' in environment_text or 'Runtime' in environment_text or len(environment_text) > 20),
+            ('db status present', 'DB_PATH:' in db_status_text),
+            ('report non-empty', report.stat().st_size > 500),
+        ]
+        failed = [name for name, ok in checks if not ok]
+        output = {
+            'report': str(report),
+            'size': report.stat().st_size,
+            'missing_entries': missing,
+            'manifest': manifest,
+            'runtime_ok': runtime_payload.get('ok'),
+            'failed': failed,
+        }
+        _safe_console_print(json.dumps(output, ensure_ascii=False, indent=2, default=str))
+        if failed:
+            log.error(f'diagnostic smoke test FAIL: {failed}')
+            return 7
+        log.info('diagnostic smoke test PASS: diagnostic zip generated and verified')
+        return 0
+    except Exception as e:
+        log.error(f'diagnostic smoke test failed: {e}')
+        return 8
+    finally:
+        try:
+            report_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
 def _run_ui_layout_check():
     _setup_global_exception_handler()
     app = QApplication(sys.argv)
@@ -2437,13 +2509,15 @@ if __name__ == "__main__":
         sys.exit(_run_db_smoke_test())
     if '--settings-smoke-test' in sys.argv:
         sys.exit(_run_settings_smoke_test())
+    if '--diagnostic-smoke-test' in sys.argv:
+        sys.exit(_run_diagnostic_smoke_test())
     if '--ui-layout-check' in sys.argv:
         sys.exit(_run_ui_layout_check())
     if '--export-diagnostics' in sys.argv:
         destination = _arg_value('--export-diagnostics') or None
         report = create_diagnostic_report(destination)
         log.info(f'diagnostic report exported: {report}')
-        print(report)
+        _safe_console_print(report)
         sys.exit(0)
     if '--runtime-check' in sys.argv or '--smoke-test' in sys.argv:
         strict = '--runtime-check' in sys.argv
