@@ -2413,6 +2413,9 @@ def _run_qc_report_smoke_test():
     stem = f'qc-report-smoke-{os.getpid()}-{time.time_ns()}'
     csv_path = REPORT_DIR / f'{stem}.csv'
     txt_path = REPORT_DIR / f'{stem}.txt'
+    collision_base = REPORT_DIR / f'{stem}-collision.csv'
+    collision_next = None
+    collision_third = None
     rows = [
         {
             '파일명': 'normal.mxf',
@@ -2502,6 +2505,10 @@ def _run_qc_report_smoke_test():
     try:
         RightPanel._write_qc_report_csv(RightPanel, csv_path, rows)
         RightPanel._write_qc_report_txt(RightPanel, txt_path, rows)
+        collision_base.write_text('old', encoding='utf-8')
+        collision_next = RightPanel._unique_report_path(collision_base)
+        RightPanel._write_qc_report_csv(RightPanel, collision_next, rows)
+        collision_third = RightPanel._unique_report_path(collision_base)
 
         with csv_path.open('r', encoding='utf-8-sig', newline='') as fh:
             saved_rows = list(csv.DictReader(fh))
@@ -2520,6 +2527,8 @@ def _run_qc_report_smoke_test():
             ('txt summary', '검수요약:' in txt and '확인 필요 파일: 2개' in txt),
             ('txt issue detail', 'issue.mxf: 블랙 2, 무음 1, 메타 확인' in txt),
             ('txt missing detail', 'missing.mxf: 파일 없음, 메타 확인' in txt),
+            ('collision first suffix', collision_next and collision_next.name == f'{stem}-collision-01.csv' and collision_next.exists()),
+            ('collision second suffix', collision_third and collision_third.name == f'{stem}-collision-02.csv' and not collision_third.exists()),
         ]
         failed = [name for name, ok in checks if not ok]
         output = {
@@ -2528,6 +2537,8 @@ def _run_qc_report_smoke_test():
             'csv_rows': len(saved_rows),
             'csv_size': csv_path.stat().st_size if csv_path.exists() else 0,
             'txt_size': txt_path.stat().st_size if txt_path.exists() else 0,
+            'collision_path': str(collision_next) if collision_next else '',
+            'next_collision_path': str(collision_third) if collision_third else '',
             'failed': failed,
         }
         _safe_console_print(json.dumps(output, ensure_ascii=False, indent=2, default=str))
@@ -2540,9 +2551,10 @@ def _run_qc_report_smoke_test():
         log.error(f'qc report smoke test failed: {e}')
         return 8
     finally:
-        for path in (csv_path, txt_path):
+        for path in (csv_path, txt_path, collision_base, collision_next, collision_third):
             try:
-                path.unlink(missing_ok=True)
+                if path:
+                    Path(path).unlink(missing_ok=True)
             except Exception:
                 pass
 

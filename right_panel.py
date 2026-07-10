@@ -2008,12 +2008,26 @@ class RightPanel(QWidget):
                 pass
             raise
 
+    @staticmethod
+    def _unique_report_path(path):
+        target = Path(path)
+        if not target.exists():
+            return target
+        stem = target.stem
+        suffix = target.suffix
+        parent = target.parent
+        for idx in range(1, 1000):
+            candidate = parent / f"{stem}-{idx:02d}{suffix}"
+            if not candidate.exists():
+                return candidate
+        return parent / f"{stem}-{time.time_ns()}{suffix}"
+
     def _auto_save_qc_report(self, prefix='batch-qc'):
         rows = self._qc_report_rows()
         if not rows:
             return None
         REPORT_DIR.mkdir(parents=True, exist_ok=True)
-        out = REPORT_DIR / f"{prefix}-{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        out = self._unique_report_path(REPORT_DIR / f"{prefix}-{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")
         self._write_qc_report_csv(out, rows)
         log.info(f'qc report auto-exported: {out}')
         record_state_event('qc-report', 'auto exported', path=str(out), files=len(rows))
@@ -2028,7 +2042,7 @@ class RightPanel(QWidget):
             REPORT_DIR.mkdir(parents=True, exist_ok=True)
         except Exception:
             pass
-        default = REPORT_DIR / f"{default_prefix}-{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        default = self._unique_report_path(REPORT_DIR / f"{default_prefix}-{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")
         path, selected = QFileDialog.getSaveFileName(
             self,
             'QC 결과 리포트 저장',

@@ -1011,6 +1011,15 @@ def check_core_logic():
                 errors.append(f"  FAIL CSV report attention columns: {saved_rows[:1]}")
             elif saved_rows[2].get('확인필요') != 'Y' or saved_rows[2].get('확인사유') != '블랙 2, 프리즈 1, 메타 확인':
                 errors.append(f"  FAIL CSV report attention values: {saved_rows[2] if len(saved_rows) > 2 else saved_rows}")
+            collision_base = report_dir / 'collision.csv'
+            collision_base.write_text('old', encoding='utf-8')
+            collision_next = RightPanel._unique_report_path(collision_base)
+            if collision_next.name != 'collision-01.csv':
+                errors.append(f"  FAIL report collision path first: {collision_next}")
+            collision_next.write_text('new', encoding='utf-8')
+            collision_third = RightPanel._unique_report_path(collision_base)
+            if collision_third.name != 'collision-02.csv':
+                errors.append(f"  FAIL report collision path second: {collision_third}")
 
         class SummaryCopyProbe:
             _iter_report_files = RightPanel._iter_report_files
