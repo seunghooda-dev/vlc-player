@@ -2619,14 +2619,26 @@ def _run_cleanup_smoke_test():
         active_migration_log = _touch_old(LOG_DIR / 'migration.log')
         new_report = _touch_new(REPORT_DIR / 'cleanup_smoke_new_report.txt')
         outside_keep = _touch_old(outside_keep, 'outside')
+        release_root = BACKUP_DIR / 'release'
+        release_stamps = [
+            '20260101_000000',
+            '20260102_000000',
+            '20260103_000000',
+            '20260104_000000',
+            '20260105_000000',
+        ]
+        for stamp in release_stamps:
+            _touch_new(release_root / stamp / 'tools' / 'ffplay.exe', f'release-{stamp}')
 
         old_result = cleanup_old_generated_files(7)
         old_deleted_paths = {str(Path(item.get('path', '')).resolve()) for item in (old_result.get('deleted') or [])}
+        release_kept = sorted([p.name for p in release_root.iterdir() if p.is_dir()], reverse=True) if release_root.exists() else []
         old_checks = [
             ('old tmp dir deleted', not old_tmp_dir.exists()),
             ('old report deleted', not old_report.exists()),
             ('old backup deleted', not old_backup.exists()),
             ('old log deleted', not old_log.exists()),
+            ('release backups pruned to latest 3', release_kept == release_stamps[-3:][::-1]),
             ('new report kept', new_report.exists()),
             ('active player log kept', active_player_log.exists()),
             ('active migration log kept', active_migration_log.exists()),

@@ -363,6 +363,7 @@ MIGRATION_LOG_PATH = LOG_DIR / "migration.log"
 MIGRATION_LOG_MAX_BYTES = 2 * 1024 * 1024
 MIGRATION_LOG_BACKUP_COUNT = 10
 AUTO_CLEANUP_DAYS = 7
+RELEASE_BACKUP_KEEP_COUNT = 3
 _RUNTIME_DIR_ERRORS = []
 _RUNTIME_MIGRATION_EVENTS = []
 _RUNTIME_MIGRATION_LOG_ERRORS = []
@@ -1148,6 +1149,80 @@ def _entry_size(path):
         pass
     return total
 
+def cleanup_release_backups(keep_count=RELEASE_BACKUP_KEEP_COUNT):
+    """배포본 전체 백업은 tools가 커서 최신 N개만 유지한다."""
+    keep_count = max(1, _safe_int_value(keep_count, RELEASE_BACKUP_KEEP_COUNT))
+    deleted = []
+    failed = []
+    skipped = []
+    try:
+        root = _safe_generated_root(BACKUP_DIR / 'release')
+        root.relative_to(_safe_generated_root(BACKUP_DIR))
+        if not root.exists():
+            return {'deleted': deleted, 'failed': failed, 'skipped': skipped, 'deleted_count': 0, 'freed_bytes': 0}
+    except Exception as e:
+        return {'deleted': deleted, 'failed': [f'release-backups: {e}'], 'skipped': skipped, 'deleted_count': 0, 'freed_bytes': 0}
+
+    entries = []
+    try:
+        for candidate in root.iterdir():
+            try:
+                if candidate.is_symlink():
+                    skipped.append(str(candidate))
+                    continue
+                if not candidate.is_dir():
+                    if candidate.name.lower() != 'latest.txt':
+                        skipped.append(str(candidate))
+                    continue
+                entries.append({
+                    'path': candidate,
+                    'sort_key': candidate.name,
+                    'bytes': _entry_size(candidate),
+                    'newest': _entry_newest_timestamp(candidate),
+                })
+            except Exception as e:
+                failed.append(f'{candidate}: {e}')
+    except Exception as e:
+        failed.append(f'{root}: {e}')
+        entries = []
+
+    entries.sort(key=lambda item: str(item.get('sort_key') or ''), reverse=True)
+    keep_paths = {item['path'] for item in entries[:keep_count]}
+    for item in entries[keep_count:]:
+        path = item.get('path')
+        try:
+            bytes_before = _safe_int_value(item.get('bytes'), 0)
+            shutil.rmtree(path)
+            newest = _safe_float_value(item.get('newest'), 0.0)
+            age_days = round((time.time() - newest) / 86400.0, 1) if newest > 0 else 0
+            deleted.append({
+                'section': 'release-backups',
+                'path': str(path),
+                'bytes': bytes_before,
+                'age_days': age_days,
+            })
+        except Exception as e:
+            failed.append(f'{path}: {e}')
+
+    try:
+        remaining = [item for item in entries if item.get('path') in keep_paths and item.get('path').exists()]
+        remaining.sort(key=lambda item: str(item.get('sort_key') or ''), reverse=True)
+        latest = root / 'latest.txt'
+        if remaining:
+            latest.write_text(str(remaining[0]['path']), encoding='utf-8')
+        elif latest.exists():
+            latest.unlink()
+    except Exception as e:
+        failed.append(f'{root / "latest.txt"}: {e}')
+
+    return {
+        'deleted': deleted,
+        'failed': failed,
+        'skipped': skipped,
+        'deleted_count': len(deleted),
+        'freed_bytes': sum(_safe_int_value(item.get('bytes', 0), 0) for item in deleted),
+    }
+
 def cleanup_old_generated_files(days=AUTO_CLEANUP_DAYS):
     """사용자 데이터 폴더 안의 생성 파일만 보존기간 기준으로 자동 정리한다."""
     keep_days = max(1.0, min(3650.0, _safe_float_value(days, AUTO_CLEANUP_DAYS)))
@@ -1195,6 +1270,9 @@ def cleanup_old_generated_files(days=AUTO_CLEANUP_DAYS):
                 if label == 'logs' and target.name in active_log_names:
                     skipped.append(str(target))
                     continue
+                if label == 'backups' and target.name == 'release' and target.is_dir():
+                    skipped.append(str(target))
+                    continue
                 if not include_root_files and not (target.is_file() or target.is_dir()):
                     continue
                 newest = _entry_newest_timestamp(target)
@@ -1213,6 +1291,11 @@ def cleanup_old_generated_files(days=AUTO_CLEANUP_DAYS):
                 })
             except Exception as e:
                 failed.append(f'{candidate}: {e}')
+
+    release_cleanup = cleanup_release_backups(RELEASE_BACKUP_KEEP_COUNT)
+    deleted.extend(release_cleanup.get('deleted') or [])
+    failed.extend(release_cleanup.get('failed') or [])
+    skipped.extend(release_cleanup.get('skipped') or [])
 
     return {
         'days': int(keep_days),

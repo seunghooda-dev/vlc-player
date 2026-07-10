@@ -13,6 +13,7 @@ if exist "%SCRIPT_DIR%%APP_NAME%.exe" (
     set "PACKAGE_DIR=%CD%\release\%PACKAGE_NAME%"
 )
 set "BACKUP_ROOT=%LOCALAPPDATA%\%PACKAGE_NAME%\backups\release"
+set "BACKUP_KEEP=3"
 
 echo ================================================
 echo   %PACKAGE_NAME% - release backup
@@ -40,6 +41,13 @@ xcopy /E /I /Y "%PACKAGE_DIR%\*" "%DEST%\" > nul
 if errorlevel 1 goto fail
 
 >"%BACKUP_ROOT%\latest.txt" echo %DEST%
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$root=$env:BACKUP_ROOT; $keep=[int]$env:BACKUP_KEEP; if(Test-Path -LiteralPath $root){" ^
+  "$dirs=Get-ChildItem -LiteralPath $root -Directory | Sort-Object Name -Descending;" ^
+  "$dirs | Select-Object -Skip $keep | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue };" ^
+  "$latest=($dirs | Where-Object { Test-Path -LiteralPath $_.FullName } | Select-Object -First 1);" ^
+  "if($latest){ Set-Content -LiteralPath (Join-Path $root 'latest.txt') -Value $latest.FullName -Encoding UTF8 }" ^
+  "}"
 echo [PASS] Release backup completed.
 exit /b 0
 
