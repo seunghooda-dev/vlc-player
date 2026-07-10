@@ -1325,7 +1325,7 @@ class MainWindow(QMainWindow):
             # 트랜스코드 스레드
             try:
                 if hasattr(rp, 'cancel_active_analysis'):
-                    rp.cancel_active_analysis('프로그램 종료', wait_ms=1200)
+                    rp.cancel_active_analysis('프로그램 종료', wait_ms=1200, restore_runtime=False)
             except Exception as ex:
                 log.debug(f'cancel active analysis on close: {ex}')
             try:

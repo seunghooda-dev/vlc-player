@@ -3233,7 +3233,7 @@ class RightPanel(QWidget):
                 log.debug(f'freeze timeout abort: {e}')
             self._on_freeze_error(msg, seq=seq)
 
-    def cancel_active_analysis(self, reason='작업 취소', wait_ms=700):
+    def cancel_active_analysis(self, reason='작업 취소', wait_ms=700, restore_runtime=True):
         """Abort running analysis threads and invalidate their queued UI callbacks."""
         had_work = False
         active_kind = getattr(self, '_analysis_active', None)
@@ -3317,7 +3317,7 @@ class RightPanel(QWidget):
             if hasattr(self, 'btn_batch_cancel'):
                 self.btn_batch_cancel.setEnabled(False)
             log.info(f'batch qc cancelled: {reason}')
-        self._finish_analysis_mode()
+        self._finish_analysis_mode(restore_runtime=restore_runtime)
         return had_work
 
     def _clear_cancelled_analysis_state(self, filepath=None):
@@ -3484,37 +3484,39 @@ class RightPanel(QWidget):
             log.debug(f'analysis mode begin: {e}')
         return True
 
-    def _finish_analysis_mode(self):
-        self._restore_transport_after_analysis()
-        self._set_analysis_buttons_busy(None, False)
-        if self._current_video_file():
-            try:
-                self.btn_run_black.setEnabled(True)
-                self.btn_run_audio.setEnabled(True)
-                self.btn_run_freeze.setEnabled(True)
-                self.vp.btn_black.setEnabled(True)
-                self.vp.btn_audio.setEnabled(True)
-                if hasattr(self.vp, 'btn_freeze'):
-                    self.vp.btn_freeze.setEnabled(True)
-            except Exception as e:
-                log.debug(f'analysis buttons restore: {e}')
+    def _finish_analysis_mode(self, restore_runtime=True):
         try:
-            current_file = self._current_video_file()
-            if self._analysis_paused_meters and current_file:
-                if hasattr(self.vp, '_meter_channel_count'):
-                    ch_count = self.vp._meter_channel_count()
-                else:
-                    ch_count = max(
-                        _safe_int(self.vp.cur_info.get('audio_stream_count', 0), 0),
-                        _safe_int(self.vp.cur_info.get('channels', 2), 2),
-                    )
-                self.vp.meter_ctrl.start_file(
-                    current_file, ch_count, self.vp.player, (1, 2),
-                    self.vp.cur_info.get('audio_stream_count', 0))
-            if self._analysis_paused_playback and hasattr(self.vp, 'status_changed'):
-                self.vp.status_changed.emit("  ⏸ 분석 완료 — 재생 버튼을 눌러 이어서 확인하세요")
-        except Exception as e:
-            log.debug(f'analysis mode finish: {e}')
+            if restore_runtime:
+                self._restore_transport_after_analysis()
+                self._set_analysis_buttons_busy(None, False)
+                if self._current_video_file():
+                    try:
+                        self.btn_run_black.setEnabled(True)
+                        self.btn_run_audio.setEnabled(True)
+                        self.btn_run_freeze.setEnabled(True)
+                        self.vp.btn_black.setEnabled(True)
+                        self.vp.btn_audio.setEnabled(True)
+                        if hasattr(self.vp, 'btn_freeze'):
+                            self.vp.btn_freeze.setEnabled(True)
+                    except Exception as e:
+                        log.debug(f'analysis buttons restore: {e}')
+                try:
+                    current_file = self._current_video_file()
+                    if self._analysis_paused_meters and current_file:
+                        if hasattr(self.vp, '_meter_channel_count'):
+                            ch_count = self.vp._meter_channel_count()
+                        else:
+                            ch_count = max(
+                                _safe_int(self.vp.cur_info.get('audio_stream_count', 0), 0),
+                                _safe_int(self.vp.cur_info.get('channels', 2), 2),
+                            )
+                        self.vp.meter_ctrl.start_file(
+                            current_file, ch_count, self.vp.player, (1, 2),
+                            self.vp.cur_info.get('audio_stream_count', 0))
+                    if self._analysis_paused_playback and hasattr(self.vp, 'status_changed'):
+                        self.vp.status_changed.emit("  ⏸ 분석 완료 — 재생 버튼을 눌러 이어서 확인하세요")
+                except Exception as e:
+                    log.debug(f'analysis mode finish: {e}')
         finally:
             self._analysis_active = None
             self._analysis_paused_playback = False

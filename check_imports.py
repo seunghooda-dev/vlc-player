@@ -120,6 +120,7 @@ def check_core_logic():
 
     try:
         main_source = read_source('main.py')
+        right_source = read_source('right_panel.py')
         if "('정지',           'S')" in main_source:
             errors.append("  FAIL stale S stop shortcut remains in help")
         if "('검수 취소',       'Esc')" not in main_source:
@@ -130,6 +131,10 @@ def check_core_logic():
             errors.append("  FAIL closeEvent should retire loudness analysis")
         if "rp._freeze_thread" not in main_source or "'freeze_thread'" not in main_source:
             errors.append("  FAIL closeEvent should include freeze analysis thread cleanup")
+        if "restore_runtime=False" not in main_source:
+            errors.append("  FAIL closeEvent should cancel analysis without restoring runtime")
+        if "def _finish_analysis_mode(self, restore_runtime=True)" not in right_source:
+            errors.append("  FAIL analysis finish restore_runtime guard missing")
     except Exception as e:
         errors.append(f"  FAIL shortcut source check: {e}")
 
@@ -1555,6 +1560,42 @@ def check_core_logic():
             errors.append(
                 f"  FAIL analysis restore loading buttons: play={loading_restore.vp.btn_play.enabled} cue={loading_restore.vp.btn_cue.enabled}"
             )
+
+        class AnalysisFinishProbe:
+            _finish_analysis_mode = RightPanel._finish_analysis_mode
+
+            def __init__(self):
+                self._analysis_active = 'black'
+                self._analysis_paused_playback = True
+                self._analysis_paused_meters = True
+                self.restored = 0
+                self.buttons_busy = []
+                self.current_calls = 0
+                self._analysis_cancel_buttons = [AnalysisRestoreButton()]
+
+            def _restore_transport_after_analysis(self):
+                self.restored += 1
+
+            def _set_analysis_buttons_busy(self, kind=None, busy=False):
+                self.buttons_busy.append((kind, busy))
+
+            def _current_video_file(self):
+                self.current_calls += 1
+                return 'C:/qc/current.mxf'
+
+        shutdown_finish_probe = AnalysisFinishProbe()
+        RightPanel._finish_analysis_mode(shutdown_finish_probe, restore_runtime=False)
+        if shutdown_finish_probe.restored or shutdown_finish_probe.buttons_busy or shutdown_finish_probe.current_calls:
+            errors.append(
+                "  FAIL shutdown analysis finish should not restore transport/meters"
+            )
+        if (
+            shutdown_finish_probe._analysis_active is not None
+            or shutdown_finish_probe._analysis_paused_playback
+            or shutdown_finish_probe._analysis_paused_meters
+            or shutdown_finish_probe._analysis_cancel_buttons[0].enabled is not False
+        ):
+            errors.append("  FAIL shutdown analysis finish should clear analysis flags")
 
         class ElapsedCancelProbe:
             _finish_cancel_elapsed_timer = RightPanel._finish_cancel_elapsed_timer
