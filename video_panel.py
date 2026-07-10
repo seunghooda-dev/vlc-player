@@ -4133,6 +4133,13 @@ class VideoPanel(QWidget):
             return True
         return self._audio_source_count_from_info(self.cur_info) > 0
 
+    def _play_start_audio_expected(self):
+        try:
+            return bool(self._audio_mix_expected())
+        except Exception as e:
+            log.debug(f'play watchdog audio expected check failed: {e}')
+            return False
+
     def _reset_audio_recovery(self):
         self._audio_recovery_attempts = 0
         self._audio_recovery_cooldown_until = 0.0
@@ -4294,14 +4301,7 @@ class VideoPanel(QWidget):
         near_end = 0 < remaining_ms < 1500
         video_ok = moved_ms >= 150 or near_end
 
-        selected = self._get_selected_audio_channels()
-        audio_expected = bool(
-            selected
-            and (
-                self._safe_int_value(self.cur_info.get('audio_stream_count', 0), 0) > 0
-                or self._safe_int_value(self.cur_info.get('channels', 0), 0) > 0
-            )
-        )
+        audio_expected = self._play_start_audio_expected()
         audio_status = self.audio_mix.process_status()
         audio_ok = True if not audio_expected else self.audio_mix.is_running()
 

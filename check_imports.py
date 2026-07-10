@@ -2229,6 +2229,20 @@ def check_core_logic():
             AudioExpectedProbe(False, {'metadata_hint': True, 'audio_stream_count': 0, 'channels': 0})
         ):
             errors.append("  FAIL no-audio metadata hint should not expect fallback audio")
+        class PlayWatchAudioProbe(AudioExpectedProbe):
+            _play_start_audio_expected = VideoPanel._play_start_audio_expected
+
+        if not VideoPanel._play_start_audio_expected(
+            PlayWatchAudioProbe(False, {'audio_stream_count': 0, 'channels': 0})
+        ):
+            errors.append("  FAIL play watchdog should expect fallback audio before metadata")
+        if VideoPanel._play_start_audio_expected(
+            PlayWatchAudioProbe(False, {'metadata_hint': True, 'audio_stream_count': 0, 'channels': 0})
+        ):
+            errors.append("  FAIL play watchdog should not expect no-audio hint")
+        no_selected_watch_probe = PlayWatchAudioProbe(False, {'audio_stream_count': 0, 'channels': 0}, selected=[])
+        if VideoPanel._play_start_audio_expected(no_selected_watch_probe):
+            errors.append("  FAIL play watchdog should ignore empty audio selection")
         class FakeAudioCheck:
             def __init__(self, checked, enabled):
                 self._checked = bool(checked)
