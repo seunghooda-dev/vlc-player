@@ -153,6 +153,8 @@ def check_core_logic():
             errors.append("  FAIL MXF smoke test should verify default 1/2 audio selection")
         if 'audio route change ok' not in main_source or '_maybe_check_audio_route_change' not in main_source:
             errors.append("  FAIL MXF smoke test should verify channel changes during playback")
+        if '_current_process_media_children' not in main_source or 'stray media children after cleanup' not in main_source:
+            errors.append("  FAIL MXF smoke test should verify stray ffmpeg/ffplay cleanup")
         if "'channels': list(self.channels or [])" not in video_source:
             errors.append("  FAIL audio mix process status should expose selected channels")
     except Exception as e:

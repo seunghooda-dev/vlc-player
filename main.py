@@ -7,6 +7,7 @@ import math
 import time
 import subprocess
 import json
+import os
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
@@ -1567,6 +1568,33 @@ def _arg_value(name, default=None):
     except Exception:
         return default
 
+def _current_process_media_children():
+    if os.name != 'nt':
+        return []
+    script = f"""
+$parentPid = {os.getpid()}
+Get-CimInstance Win32_Process |
+  Where-Object {{ $_.ParentProcessId -eq $parentPid -and ($_.Name -ieq 'ffmpeg.exe' -or $_.Name -ieq 'ffplay.exe') }} |
+  ForEach-Object {{ "$($_.ProcessId)|$($_.Name)|$($_.CommandLine)" }}
+"""
+    try:
+        proc = subprocess.run(
+            ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script],
+            capture_output=True,
+            text=True,
+            timeout=4,
+            creationflags=_hidden_subprocess_flags(),
+        )
+        rows = []
+        for line in (proc.stdout or '').splitlines():
+            text = ' '.join(str(line or '').split())
+            if text:
+                rows.append(text[:500])
+        return rows
+    except Exception as e:
+        log.debug(f'current process media child scan skipped: {e}')
+        return []
+
 def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_interval=0.0, mode='smoke'):
     _setup_global_exception_handler()
     path = Path(filepath or '')
@@ -1863,6 +1891,13 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
             log.error(f'mxf {mode} test cleanup failed: {cleanup_result}')
             if result.get('code') == 0:
                 result['code'] = 13
+        stray_children = _current_process_media_children()
+        if stray_children:
+            log.error(f'mxf {mode} test stray media children after cleanup: {stray_children}')
+            if result.get('code') == 0:
+                result['code'] = 26
+        else:
+            log.info(f'mxf {mode} test media child cleanup verified')
     except Exception:
         pass
     return result['code']
