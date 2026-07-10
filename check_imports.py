@@ -109,7 +109,7 @@ def check_core_logic():
     try:
         import right_panel as rpm
         import video_panel as vpm
-        from right_panel import FILE_FILTER_TIPS, RightPanel
+        from right_panel import FILE_FILTER_TIPS, FILE_FILTER_VISIBLE_KEYS, RightPanel
         from constants import C, DEFAULT_SETTINGS, VIDEO_EXTS, _normalize_settings
         import db_models as dbm
         from db_models import frames_to_tc, is_df_fps, qc_summary_from_status, sanitize_qc_ranges, tc_to_frames, update_clip_qc
@@ -714,6 +714,8 @@ def check_core_logic():
             errors.append("  FAIL filter button text zero-detail")
         if RightPanel._filter_button_text('all', 0) != '전체 0':
             errors.append("  FAIL filter button text all-zero")
+        if tuple(FILE_FILTER_VISIBLE_KEYS) != ('all', 'attention', 'issues', 'normal'):
+            errors.append(f"  FAIL visible file filters should stay concise: {FILE_FILTER_VISIBLE_KEYS}")
         if '메타 확인' not in FILE_FILTER_TIPS.get('attention', ''):
             errors.append(f"  FAIL attention filter tooltip metadata scope: {FILE_FILTER_TIPS.get('attention')}")
         if '파일 접근' not in FILE_FILTER_TIPS.get('attention', '') or '파일 접근' not in FILE_FILTER_TIPS.get('issues', ''):

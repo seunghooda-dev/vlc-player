@@ -37,6 +37,7 @@ FILE_ITEM_HTML_ROLE = Qt.ItemDataRole.UserRole.value + 10
 FILE_ITEM_PLAIN_ROLE = Qt.ItemDataRole.UserRole.value + 11
 QC_SEEK_EPSILON_SEC = 0.005
 FILE_FILTER_KEYS = ('all', 'done', 'attention', 'pending', 'issues', 'black', 'mute', 'freeze', 'error', 'normal')
+FILE_FILTER_VISIBLE_KEYS = ('all', 'attention', 'issues', 'normal')
 FILE_FILTER_LABELS = {
     'all': '전체',
     'done': '완료',
@@ -148,7 +149,7 @@ class RightPanel(QWidget):
         self._analysis_timeout_timer.timeout.connect(self._on_analysis_timeout)
         self._settings = load_settings()
         self._filter_key = str(self._settings.get('file_filter', 'all') or 'all')
-        if self._filter_key not in FILE_FILTER_KEYS:
+        if self._filter_key not in FILE_FILTER_VISIBLE_KEYS:
             self._filter_key = 'all'
         self._analysis_presets = {
             'broadcast': {
@@ -330,7 +331,7 @@ class RightPanel(QWidget):
         fbl.setContentsMargins(8,3,8,3)
         fbl.setSpacing(5)
         self._filter_btns = {}
-        for key in FILE_FILTER_KEYS:
+        for key in FILE_FILTER_VISIBLE_KEYS:
             label = FILE_FILTER_LABELS.get(key, key)
             tip = FILE_FILTER_TIPS.get(key, label)
             b = QPushButton(label)
