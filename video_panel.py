@@ -1818,6 +1818,23 @@ class VideoPanel(QWidget):
         self._clock_anchor_time = time.perf_counter()
         self._set_display_frame(frame)
 
+    def _refresh_frame_clock_after_metadata(self, was_playing=False, current_ms=0):
+        self._last_display_dur_frames = None
+        self._last_slider_value = None
+        self._sync_frame_timer_interval()
+        if was_playing:
+            self._frame_clock_active = True
+            self._sync_frame_clock(current_ms)
+            if not self._frame_display_timer.isActive():
+                self._frame_display_timer.start()
+            return
+        self._display_frame = 0
+        self._clock_anchor_frame = 0
+        self._clock_anchor_time = 0.0
+        self._frame_clock_active = False
+        self._frame_display_timer.stop()
+        self._set_display_frame(0)
+
     def _tick_frame_display(self):
         if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
             self._frame_clock_active = False
@@ -2733,23 +2750,23 @@ class VideoPanel(QWidget):
             previous_selected = self._get_selected_audio_channels()
         except Exception:
             previous_selected = list(getattr(self, '_selected_chs', []) or [])
+        was_playing = False
+        current_ms = 0
+        try:
+            was_playing = self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
+            current_ms = max(0, int(self.player.position() or 0))
+        except Exception as e:
+            log.debug(f'metadata playback state snapshot failed: {e}')
         self.cur_info = info
         self._metadata_ready = True
         self.fps       = self._safe_float_value(info.get("fps", 29.97), 29.97)
         self.df        = bool(info.get("df", False)) and self._nominal_fps() in (30, 60)
         self.tc_offset = self._safe_float_value(info.get("tc_offset", 0.0), 0.0)
         self._tc_offset_frames = self._parse_tc_offset_frames(info.get("timecode", ""))
-        self._display_frame = 0
-        self._last_display_dur_frames = None
-        self._last_slider_value = None
-        self._clock_anchor_frame = 0
-        self._clock_anchor_time = 0.0
-        self._frame_clock_active = False
-        self._frame_display_timer.stop()
-        self._sync_frame_timer_interval()
         self.duration  = max(0.0, self._safe_float_value(info.get("duration", 0), 0.0))
         self._source_duration = self.duration
         self._using_preview = False
+        self._refresh_frame_clock_after_metadata(was_playing, current_ms)
 
         self.lbl_fmt.setText(info.get("format_short","—"))
         self.lbl_cod.setText(info.get("codec","—") or "—")

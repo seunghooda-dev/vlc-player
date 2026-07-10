@@ -2359,6 +2359,72 @@ def check_core_logic():
         if VideoPanel._analysis_buttons_ready(analysis_buttons_probe):
             errors.append("  FAIL analysis buttons need current file")
 
+        class FrameRefreshTimer:
+            def __init__(self):
+                self.active = False
+                self.started = 0
+                self.stopped = 0
+
+            def isActive(self):
+                return self.active
+
+            def start(self):
+                self.active = True
+                self.started += 1
+
+            def stop(self):
+                self.active = False
+                self.stopped += 1
+
+        class FrameRefreshProbe:
+            _refresh_frame_clock_after_metadata = VideoPanel._refresh_frame_clock_after_metadata
+
+            def __init__(self):
+                self._frame_display_timer = FrameRefreshTimer()
+                self._display_frame = 999
+                self._last_display_dur_frames = 999
+                self._last_slider_value = 999
+                self._clock_anchor_frame = 999
+                self._clock_anchor_time = 999.0
+                self._frame_clock_active = False
+                self.synced_ms = None
+                self.set_frame = None
+                self.interval_syncs = 0
+
+            def _sync_frame_timer_interval(self):
+                self.interval_syncs += 1
+
+            def _sync_frame_clock(self, ms=None):
+                self.synced_ms = ms
+                self._display_frame = 123
+
+            def _set_display_frame(self, frame):
+                self.set_frame = frame
+                self._display_frame = frame
+
+        playing_frame_probe = FrameRefreshProbe()
+        VideoPanel._refresh_frame_clock_after_metadata(playing_frame_probe, True, 2500)
+        if (
+            not playing_frame_probe._frame_clock_active
+            or playing_frame_probe.synced_ms != 2500
+            or playing_frame_probe._frame_display_timer.started != 1
+            or playing_frame_probe._frame_display_timer.stopped != 0
+        ):
+            errors.append(
+                "  FAIL metadata refresh should preserve active frame clock during playback"
+            )
+        idle_frame_probe = FrameRefreshProbe()
+        VideoPanel._refresh_frame_clock_after_metadata(idle_frame_probe, False, 2500)
+        if (
+            idle_frame_probe._frame_clock_active
+            or idle_frame_probe.set_frame != 0
+            or idle_frame_probe._frame_display_timer.started != 0
+            or idle_frame_probe._frame_display_timer.stopped != 1
+        ):
+            errors.append(
+                "  FAIL metadata refresh should reset frame clock while idle"
+            )
+
         class DropUrl:
             def __init__(self, path):
                 self.path = path
