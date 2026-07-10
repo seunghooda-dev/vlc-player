@@ -23,7 +23,7 @@ from PyQt6.QtGui     import (
 from PyQt6.QtMultimedia import QMediaPlayer
 
 from constants    import (
-    C, STYLE, LOG_DIR, TMP_DIR, BASE_DIR, RESOURCE_DIR, REPORT_DIR, APP_DIR, USER_DATA_DIR,
+    C, STYLE, LOG_DIR, TMP_DIR, BASE_DIR, RESOURCE_DIR, REPORT_DIR, BACKUP_DIR, APP_DIR, USER_DATA_DIR,
     SETTINGS_PATH, DB_PATH, log, APP_FONT_QT, VIDEO_EXTS,
     check_runtime_environment, format_runtime_environment, format_runtime_startup_alert,
     cleanup_child_processes, cleanup_orphan_audio_processes, runtime_child_process_status,
@@ -2512,6 +2512,142 @@ def _run_qc_report_smoke_test():
             except Exception:
                 pass
 
+def _run_cleanup_smoke_test():
+    _setup_global_exception_handler()
+    try:
+        import shutil
+    except Exception as e:
+        log.error(f'cleanup smoke test failed: import error {e}')
+        return 2
+
+    user_data = Path(USER_DATA_DIR).resolve()
+    env_path = str(os.environ.get('MXF_QC_USER_DATA_DIR') or '')
+    if 'cleanup_smoke' not in str(user_data).lower() or 'cleanup_smoke' not in env_path.lower():
+        log.error(f'cleanup smoke test refused outside isolated user data dir: {user_data}')
+        return 3
+
+    outside_keep = user_data.parent / f'cleanup_smoke_outside_keep_{os.getpid()}_{time.time_ns()}.mxf'
+    def _mark_old(path):
+        path = Path(path)
+        old_ts = time.time() - 10 * 86400
+        os.utime(path, (old_ts, old_ts))
+        if os.name == 'nt':
+            ps_path = str(path).replace("'", "''")
+            script = (
+                f"$p='{ps_path}'; "
+                "$d=(Get-Date).AddDays(-10); "
+                "$i=Get-Item -LiteralPath $p -Force; "
+                "$i.CreationTime=$d; $i.LastWriteTime=$d; $i.LastAccessTime=$d"
+            )
+            proc = subprocess.run(
+                ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                creationflags=_hidden_subprocess_flags(),
+            )
+            if proc.returncode != 0:
+                raise RuntimeError((proc.stderr or proc.stdout or 'timestamp update failed').strip())
+
+    def _touch_old(path, content='old'):
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding='utf-8')
+        _mark_old(path)
+        return path
+
+    def _touch_new(path, content='new'):
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding='utf-8')
+        return path
+
+    try:
+        old_tmp_dir = TMP_DIR / 'cleanup_smoke_old_tmp_dir'
+        _touch_old(old_tmp_dir / 'old.tmp')
+        _mark_old(old_tmp_dir)
+        old_report = _touch_old(REPORT_DIR / 'cleanup_smoke_old_report.txt')
+        old_backup = _touch_old(BACKUP_DIR / 'cleanup_smoke_old_backup.bak')
+        old_log = _touch_old(LOG_DIR / 'cleanup_smoke_old.log')
+        active_player_log = _touch_old(LOG_DIR / 'player.log')
+        active_migration_log = _touch_old(LOG_DIR / 'migration.log')
+        new_report = _touch_new(REPORT_DIR / 'cleanup_smoke_new_report.txt')
+        outside_keep = _touch_old(outside_keep, 'outside')
+
+        old_result = cleanup_old_generated_files(7)
+        old_deleted_paths = {str(Path(item.get('path', '')).resolve()) for item in (old_result.get('deleted') or [])}
+        old_checks = [
+            ('old tmp dir deleted', not old_tmp_dir.exists()),
+            ('old report deleted', not old_report.exists()),
+            ('old backup deleted', not old_backup.exists()),
+            ('old log deleted', not old_log.exists()),
+            ('new report kept', new_report.exists()),
+            ('active player log kept', active_player_log.exists()),
+            ('active migration log kept', active_migration_log.exists()),
+            ('outside file kept', outside_keep.exists()),
+            ('deleted paths stay under user data', all(str(path).startswith(str(user_data)) for path in old_deleted_paths)),
+            ('old cleanup no failures', not old_result.get('failed')),
+        ]
+
+        runtime_file = _touch_new(TMP_DIR / 'cleanup_smoke_runtime_cache.tmp')
+        runtime_dir = TMP_DIR / 'cleanup_smoke_runtime_cache_dir'
+        _touch_new(runtime_dir / 'cache.bin')
+        runtime_result = cleanup_runtime_cache()
+        runtime_checks = [
+            ('runtime tmp file deleted', not runtime_file.exists()),
+            ('runtime tmp dir deleted', not runtime_dir.exists()),
+            ('runtime cleanup no failures', not runtime_result.get('failed')),
+            ('runtime cleanup reported entries', _safe_int(runtime_result.get('deleted_entries'), 0) >= 2),
+            ('runtime cleanup stayed in tmp', str(TMP_DIR.resolve()).startswith(str(user_data))),
+        ]
+
+        checks = old_checks + runtime_checks
+        failed = [name for name, ok in checks if not ok]
+        output = {
+            'user_data_dir': str(user_data),
+            'old_cleanup_deleted': old_result.get('deleted_count'),
+            'old_cleanup_failed': old_result.get('failed'),
+            'old_cleanup_skipped': old_result.get('skipped'),
+            'runtime_cleanup_deleted_entries': runtime_result.get('deleted_entries'),
+            'runtime_cleanup_failed': runtime_result.get('failed'),
+            'failed': failed,
+        }
+        _safe_console_print(json.dumps(output, ensure_ascii=False, indent=2, default=str))
+        if failed:
+            log.error(f'cleanup smoke test FAIL: {failed}')
+            return 7
+        log.info('cleanup smoke test PASS: generated cleanup stayed inside user data and preserved protected files')
+        return 0
+    except Exception as e:
+        log.error(f'cleanup smoke test failed: {e}')
+        return 8
+    finally:
+        try:
+            if outside_keep.exists():
+                outside_keep.unlink()
+        except Exception:
+            pass
+        try:
+            from db_models import engine as db_engine
+            db_engine.dispose()
+        except Exception:
+            pass
+        try:
+            for handler in list(log.handlers):
+                try:
+                    handler.flush()
+                    handler.close()
+                    log.removeHandler(handler)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
+            if 'cleanup_smoke' in str(user_data).lower() and user_data.exists():
+                shutil.rmtree(user_data, ignore_errors=True)
+        except Exception:
+            pass
+
 def _run_ui_layout_check():
     _setup_global_exception_handler()
     app = QApplication(sys.argv)
@@ -2678,6 +2814,8 @@ if __name__ == "__main__":
         sys.exit(_run_diagnostic_smoke_test())
     if '--qc-report-smoke-test' in sys.argv:
         sys.exit(_run_qc_report_smoke_test())
+    if '--cleanup-smoke-test' in sys.argv:
+        sys.exit(_run_cleanup_smoke_test())
     if '--ui-layout-check' in sys.argv:
         sys.exit(_run_ui_layout_check())
     if '--export-diagnostics' in sys.argv:

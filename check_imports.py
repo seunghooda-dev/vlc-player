@@ -171,6 +171,8 @@ def check_core_logic():
             errors.append("  FAIL diagnostic smoke test should verify generated ZIP contents")
         if '--qc-report-smoke-test' not in main_source or 'CSV/TXT reports generated and verified' not in main_source:
             errors.append("  FAIL QC report smoke test should verify CSV/TXT report files")
+        if '--cleanup-smoke-test' not in main_source or 'generated cleanup stayed inside user data' not in main_source:
+            errors.append("  FAIL cleanup smoke test should verify generated cleanup safety")
     except Exception as e:
         errors.append(f"  FAIL shortcut source check: {e}")
 
