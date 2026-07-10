@@ -167,6 +167,8 @@ def check_core_logic():
             errors.append("  FAIL settings smoke test should verify save/reload/normalization")
         if '--diagnostic-smoke-test' not in main_source or 'diagnostic zip generated and verified' not in main_source:
             errors.append("  FAIL diagnostic smoke test should verify generated ZIP contents")
+        if '--qc-report-smoke-test' not in main_source or 'CSV/TXT reports generated and verified' not in main_source:
+            errors.append("  FAIL QC report smoke test should verify CSV/TXT report files")
     except Exception as e:
         errors.append(f"  FAIL shortcut source check: {e}")
 

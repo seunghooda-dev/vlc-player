@@ -8,6 +8,7 @@ import time
 import subprocess
 import json
 import os
+import csv
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
@@ -2351,6 +2352,151 @@ def _run_diagnostic_smoke_test():
         except Exception:
             pass
 
+def _run_qc_report_smoke_test():
+    _setup_global_exception_handler()
+    try:
+        from right_panel import RightPanel
+    except Exception as e:
+        log.error(f'qc report smoke test failed: import error {e}')
+        return 2
+
+    REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    stem = f'qc-report-smoke-{os.getpid()}-{time.time_ns()}'
+    csv_path = REPORT_DIR / f'{stem}.csv'
+    txt_path = REPORT_DIR / f'{stem}.txt'
+    rows = [
+        {
+            '파일명': 'normal.mxf',
+            '경로': 'C:/qc/normal.mxf',
+            '파일존재': 'Y',
+            'QC상태': '정상',
+            'QC요약': '정상',
+            '블랙상태': '정상',
+            '블랙구간': 0,
+            '블랙구간목록': '',
+            '무음상태': '정상',
+            '무음구간': 0,
+            '무음구간목록': '',
+            '프리즈상태': '정상',
+            '프리즈구간': 0,
+            '프리즈구간목록': '',
+            '메타정합성': '정상',
+            '메타확인사항': '',
+            '메타출처': 'smoke',
+            '해상도': '1920x1080',
+            'FPS': '29.97',
+            '프레임모드': 'DF',
+            '오디오채널': 2,
+            '길이_TC': '00:00:10;00',
+            '소스타임코드': '00:00:00;00',
+            '블랙기준_화면비율': '98',
+            '블랙기준_밝기': '32',
+            '무음기준_dB': '-50',
+            '무음기준_초': '1.0',
+            '프리즈기준_dB': '-60',
+            '프리즈기준_초': '1.0',
+            '크기': '10MB',
+            '갱신시각': '2026-07-10 11:00:00',
+        },
+        {
+            '파일명': 'issue.mxf',
+            '경로': 'C:/qc/issue.mxf',
+            '파일존재': 'Y',
+            'QC상태': '블랙/무음 있음',
+            'QC요약': '블랙/무음 있음',
+            '블랙상태': '있음',
+            '블랙구간': 2,
+            '블랙구간목록': '00:00:01;00-00:00:02;00',
+            '무음상태': '있음',
+            '무음구간': 1,
+            '무음구간목록': '00:00:03;00-00:00:04;00',
+            '프리즈상태': '미분석',
+            '프리즈구간': 0,
+            '프리즈구간목록': '',
+            '메타정합성': '확인 필요',
+            '메타확인사항': '해상도 확인',
+            '메타출처': 'smoke',
+            '해상도': '1280x720',
+            'FPS': '29.97',
+            '프레임모드': 'DF',
+            '오디오채널': 2,
+            '길이_TC': '00:00:05;00',
+            '소스타임코드': '01:00:00;00',
+            '블랙기준_화면비율': '98',
+            '블랙기준_밝기': '32',
+            '무음기준_dB': '-50',
+            '무음기준_초': '1.0',
+            '프리즈기준_dB': '-60',
+            '프리즈기준_초': '1.0',
+            '크기': '5MB',
+            '갱신시각': '2026-07-10 11:01:00',
+        },
+        {
+            '파일명': 'missing.mxf',
+            '경로': 'C:/qc/missing.mxf',
+            '파일존재': 'N',
+            'QC상태': '파일 없음',
+            'QC요약': '파일 없음',
+            '블랙상태': '미분석',
+            '블랙구간': 0,
+            '무음상태': '미분석',
+            '무음구간': 0,
+            '프리즈상태': '미분석',
+            '프리즈구간': 0,
+            '메타정합성': '확인 필요',
+            '메타확인사항': '파일 없음',
+            '확인필요': 'Y',
+            '확인사유': '파일 없음',
+        },
+    ]
+    rows = [dict(row, **RightPanel._qc_report_attention_fields(row)) for row in rows]
+    try:
+        RightPanel._write_qc_report_csv(RightPanel, csv_path, rows)
+        RightPanel._write_qc_report_txt(RightPanel, txt_path, rows)
+
+        with csv_path.open('r', encoding='utf-8-sig', newline='') as fh:
+            saved_rows = list(csv.DictReader(fh))
+        txt = txt_path.read_text(encoding='utf-8')
+
+        issue_row = saved_rows[1] if len(saved_rows) > 1 else {}
+        missing_row = saved_rows[2] if len(saved_rows) > 2 else {}
+        checks = [
+            ('csv created', csv_path.exists() and csv_path.stat().st_size > 200),
+            ('txt created', txt_path.exists() and txt_path.stat().st_size > 500),
+            ('csv row count', len(saved_rows) == 3),
+            ('csv attention column', saved_rows and '확인필요' in saved_rows[0] and '확인사유' in saved_rows[0]),
+            ('csv issue values', issue_row.get('확인필요') == 'Y' and '블랙 2' in issue_row.get('확인사유', '') and '무음 1' in issue_row.get('확인사유', '')),
+            ('csv missing values', missing_row.get('확인필요') == 'Y' and '파일 없음' in missing_row.get('확인사유', '')),
+            ('txt title', 'MXF QC Player V.1.0 - QC 결과 리포트' in txt),
+            ('txt summary', '검수요약:' in txt and '확인 필요 파일: 2개' in txt),
+            ('txt issue detail', 'issue.mxf: 블랙 2, 무음 1, 메타 확인' in txt),
+            ('txt missing detail', 'missing.mxf: 파일 없음, 메타 확인' in txt),
+        ]
+        failed = [name for name, ok in checks if not ok]
+        output = {
+            'csv': str(csv_path),
+            'txt': str(txt_path),
+            'csv_rows': len(saved_rows),
+            'csv_size': csv_path.stat().st_size if csv_path.exists() else 0,
+            'txt_size': txt_path.stat().st_size if txt_path.exists() else 0,
+            'failed': failed,
+        }
+        _safe_console_print(json.dumps(output, ensure_ascii=False, indent=2, default=str))
+        if failed:
+            log.error(f'qc report smoke test FAIL: {failed}')
+            return 7
+        log.info('qc report smoke test PASS: CSV/TXT reports generated and verified')
+        return 0
+    except Exception as e:
+        log.error(f'qc report smoke test failed: {e}')
+        return 8
+    finally:
+        for path in (csv_path, txt_path):
+            try:
+                path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
 def _run_ui_layout_check():
     _setup_global_exception_handler()
     app = QApplication(sys.argv)
@@ -2511,6 +2657,8 @@ if __name__ == "__main__":
         sys.exit(_run_settings_smoke_test())
     if '--diagnostic-smoke-test' in sys.argv:
         sys.exit(_run_diagnostic_smoke_test())
+    if '--qc-report-smoke-test' in sys.argv:
+        sys.exit(_run_qc_report_smoke_test())
     if '--ui-layout-check' in sys.argv:
         sys.exit(_run_ui_layout_check())
     if '--export-diagnostics' in sys.argv:
