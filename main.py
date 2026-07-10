@@ -21,6 +21,7 @@ SMOKE_USER_DATA_ARGS = (
     '--diagnostic-smoke-test',
     '--qc-report-smoke-test',
     '--cleanup-smoke-test',
+    '--single-instance-smoke-test',
     '--ui-layout-check',
 )
 
@@ -2681,6 +2682,101 @@ def _run_cleanup_smoke_test():
         except Exception:
             pass
 
+def _run_single_instance_smoke_test():
+    _setup_global_exception_handler()
+    if not sys.platform.startswith('win'):
+        log.info('single instance smoke test skipped: non-Windows platform')
+        _safe_console_print(json.dumps({'skipped': True, 'reason': 'non-windows'}, ensure_ascii=False, indent=2))
+        return 0
+
+    main_path = Path(__file__).resolve()
+    env = os.environ.copy()
+    env['MXF_QC_USER_DATA_DIR'] = str(Path(USER_DATA_DIR).resolve())
+    command = [sys.executable, str(main_path)]
+    primary = None
+    duplicate = None
+    result = {
+        'primary_pid': None,
+        'duplicate_pid': None,
+        'duplicate_returncode': None,
+        'primary_alive_after_duplicate': False,
+        'failed': [],
+    }
+
+    def _terminate(proc, label):
+        if not proc:
+            return
+        try:
+            if proc.poll() is not None:
+                return
+            proc.terminate()
+            try:
+                proc.wait(timeout=6)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=3)
+        except Exception as e:
+            log.debug(f'single instance smoke {label} terminate skipped: {e}')
+
+    try:
+        primary = subprocess.Popen(
+            command,
+            cwd=str(APP_DIR),
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=_hidden_subprocess_flags(),
+        )
+        result['primary_pid'] = primary.pid
+        time.sleep(5.0)
+        if primary.poll() is not None:
+            result['failed'].append(f'primary exited early rc={primary.returncode}')
+            _safe_console_print(json.dumps(result, ensure_ascii=False, indent=2))
+            log.error(f'single instance smoke test FAIL: {result["failed"]}')
+            return 4
+
+        duplicate = subprocess.Popen(
+            command,
+            cwd=str(APP_DIR),
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=_hidden_subprocess_flags(),
+        )
+        result['duplicate_pid'] = duplicate.pid
+        try:
+            duplicate.wait(timeout=12)
+        except subprocess.TimeoutExpired:
+            result['failed'].append('duplicate instance stayed alive')
+            _terminate(duplicate, 'duplicate')
+        result['duplicate_returncode'] = duplicate.returncode
+
+        time.sleep(0.8)
+        result['primary_alive_after_duplicate'] = primary.poll() is None
+        if duplicate.returncode not in (0, None):
+            result['failed'].append(f'duplicate exited with rc={duplicate.returncode}')
+        if not result['primary_alive_after_duplicate']:
+            result['failed'].append(f'primary exited after duplicate rc={primary.returncode}')
+
+        _safe_console_print(json.dumps(result, ensure_ascii=False, indent=2))
+        if result['failed']:
+            log.error(f'single instance smoke test FAIL: {result["failed"]}')
+            return 7
+        log.info('single instance smoke test PASS: duplicate launch exits and primary stays alive')
+        return 0
+    except Exception as e:
+        result['failed'].append(str(e))
+        _safe_console_print(json.dumps(result, ensure_ascii=False, indent=2))
+        log.error(f'single instance smoke test failed: {e}')
+        return 8
+    finally:
+        _terminate(duplicate, 'duplicate')
+        _terminate(primary, 'primary')
+        try:
+            cleanup_child_processes()
+        except Exception:
+            pass
+
 def _run_ui_layout_check():
     _setup_global_exception_handler()
     app = QApplication(sys.argv)
@@ -2849,6 +2945,8 @@ if __name__ == "__main__":
         sys.exit(_run_qc_report_smoke_test())
     if '--cleanup-smoke-test' in sys.argv:
         sys.exit(_run_cleanup_smoke_test())
+    if '--single-instance-smoke-test' in sys.argv:
+        sys.exit(_run_single_instance_smoke_test())
     if '--ui-layout-check' in sys.argv:
         sys.exit(_run_ui_layout_check())
     if '--export-diagnostics' in sys.argv:
