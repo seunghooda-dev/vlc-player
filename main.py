@@ -6,13 +6,14 @@ import sys
 import math
 import time
 import subprocess
+import json
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
     QSplitter, QDialog, QPushButton, QMessageBox, QPlainTextEdit,
     QComboBox, QLineEdit, QFileDialog, QSizePolicy,
 )
-from PyQt6.QtCore    import Qt, QTimer, QUrl
+from PyQt6.QtCore    import Qt, QTimer, QUrl, QCoreApplication
 from PyQt6.QtGui     import (
     QColor, QPalette, QFont, QFontDatabase, QIcon, QDesktopServices,
     QShortcut, QKeySequence,
@@ -31,7 +32,7 @@ from constants    import (
 )
 from video_panel  import VideoPanel
 from right_panel  import RightPanel
-from threads      import RuntimeWarmupThread
+from threads      import RuntimeWarmupThread, BlackDetectThread, AudioAnalyzeThread, FreezeDetectThread
 
 
 APP_WINDOW_TITLE = "MXF QC Player V.1.0"
@@ -1732,6 +1733,104 @@ def _run_mxf_stability_test(filepath, play_seconds=1800.0, check_interval=30.0):
         mode='stability',
     )
 
+def _qc_media_params(path):
+    try:
+        from db_models import is_df_fps, probe
+        info = probe(str(path))
+        fps = max(1.0, _safe_float(info.get('fps'), 29.97))
+        df = bool(info.get('df', is_df_fps(fps)))
+        return fps, df
+    except Exception as e:
+        log.warning(f'qc smoke media probe fallback: {Path(path).name} {e}')
+        return 29.97, True
+
+def _run_direct_qc_thread(label, thread):
+    result = {'payload': None, 'error': None, 'progress': []}
+    try:
+        thread.progress.connect(lambda msg: result['progress'].append(str(msg)))
+        thread.finished.connect(lambda payload: result.update(payload=payload))
+        thread.error.connect(lambda err: result.update(error=str(err)))
+        started = time.monotonic()
+        thread.run()
+        result['elapsed'] = round(time.monotonic() - started, 3)
+    except Exception as e:
+        result['elapsed'] = result.get('elapsed', 0.0)
+        result['error'] = str(e)
+        log.error(f'qc smoke {label} exception: {e}')
+    return result
+
+def _run_qc_smoke_test(
+    black_sample=None,
+    mute_sample=None,
+    freeze_sample=None,
+    expect_black_min=0,
+    expect_mute_min=0,
+    expect_freeze_min=0,
+):
+    _setup_global_exception_handler()
+    app = QCoreApplication.instance() or QCoreApplication(sys.argv)
+    cases = []
+    for label, sample, expect_min in (
+        ('black', black_sample, expect_black_min),
+        ('mute', mute_sample, expect_mute_min),
+        ('freeze', freeze_sample, expect_freeze_min),
+    ):
+        if not sample:
+            continue
+        path = Path(sample)
+        if not path.exists() or not path.is_file():
+            log.error(f'qc smoke test failed: {label} sample not found {sample}')
+            return 2
+        cases.append((label, path, max(0, _safe_int(expect_min, 0))))
+    if not cases:
+        log.error('qc smoke test failed: no sample paths were provided')
+        return 2
+
+    output = []
+    exit_code = 0
+    for label, path, expect_min in cases:
+        fps, df = _qc_media_params(path)
+        if label == 'black':
+            thread = BlackDetectThread(str(path), fps, 98, 32, df, 0)
+        elif label == 'mute':
+            thread = AudioAnalyzeThread(str(path), fps, -50, 1.0, df, 0)
+        else:
+            thread = FreezeDetectThread(str(path), fps, -60, 1.0, df, 0)
+
+        result = _run_direct_qc_thread(label, thread)
+        payload = result.get('payload')
+        if label == 'mute':
+            ranges = payload.get('mutes', []) if isinstance(payload, dict) else []
+            extra = {
+                'basis': payload.get('channel_basis') if isinstance(payload, dict) else '',
+                'cache_hit': payload.get('cache_hit') if isinstance(payload, dict) else None,
+                'no_audio': payload.get('no_audio') if isinstance(payload, dict) else None,
+            }
+        else:
+            ranges = payload if isinstance(payload, list) else []
+            extra = {}
+        count = len(ranges or [])
+        item = {
+            'test': label,
+            'file': str(path),
+            'elapsed': result.get('elapsed', 0.0),
+            'count': count,
+            'expected_min': expect_min,
+            'error': result.get('error'),
+            'ranges': (ranges or [])[:3],
+            'last_progress': result.get('progress', [])[-3:],
+        }
+        item.update(extra)
+        output.append(item)
+        if result.get('error') or count < expect_min:
+            exit_code = 7
+            log.error(f'qc smoke {label} FAIL: count={count} expected_min={expect_min} error={result.get("error")}')
+        else:
+            log.info(f'qc smoke {label} PASS: count={count} expected_min={expect_min} elapsed={result.get("elapsed")}s')
+
+    print(json.dumps(output, ensure_ascii=False, indent=2))
+    return exit_code
+
 def _run_ui_layout_check():
     _setup_global_exception_handler()
     app = QApplication(sys.argv)
@@ -1856,6 +1955,15 @@ if __name__ == "__main__":
         seconds = _arg_value('--play-seconds', '1800')
         interval = _arg_value('--check-interval', '30')
         sys.exit(_run_mxf_stability_test(sample, seconds, interval))
+    if '--qc-smoke-test' in sys.argv:
+        sys.exit(_run_qc_smoke_test(
+            black_sample=_arg_value('--black-sample'),
+            mute_sample=_arg_value('--mute-sample'),
+            freeze_sample=_arg_value('--freeze-sample'),
+            expect_black_min=_arg_value('--expect-black-min', '0'),
+            expect_mute_min=_arg_value('--expect-mute-min', '0'),
+            expect_freeze_min=_arg_value('--expect-freeze-min', '0'),
+        ))
     if '--ui-layout-check' in sys.argv:
         sys.exit(_run_ui_layout_check())
     if '--export-diagnostics' in sys.argv:

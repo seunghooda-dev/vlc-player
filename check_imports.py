@@ -145,6 +145,8 @@ def check_core_logic():
             errors.append("  FAIL VLC pause should invalidate delayed resume callbacks")
         if "'no_audio': False" not in threads_source:
             errors.append("  FAIL audio analysis normal result should include no_audio=False")
+        if '--qc-smoke-test' not in main_source or 'BlackDetectThread' not in main_source:
+            errors.append("  FAIL QC smoke test CLI should cover real detection threads")
     except Exception as e:
         errors.append(f"  FAIL shortcut source check: {e}")
 
