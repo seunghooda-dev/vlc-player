@@ -269,6 +269,7 @@ class AudioMixPlayer(QObject):
             'playing': bool(self._playing),
             'ffmpeg': self._proc_state(self._ffmpeg),
             'ffplay': self._proc_state(self._ffplay),
+            'channels': list(self.channels or []),
         }
 
     def diagnostic_status(self):

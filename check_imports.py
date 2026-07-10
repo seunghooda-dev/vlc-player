@@ -149,6 +149,10 @@ def check_core_logic():
             errors.append("  FAIL QC smoke test CLI should cover real detection threads")
         if 'left audio meter' not in main_source or 'right audio meter' not in main_source or 'overlaps video surface' not in main_source:
             errors.append("  FAIL UI layout check should verify audio meter rails")
+        if 'default audio check ok' not in main_source or '_validate_default_audio_selection' not in main_source:
+            errors.append("  FAIL MXF smoke test should verify default 1/2 audio selection")
+        if "'channels': list(self.channels or [])" not in video_source:
+            errors.append("  FAIL audio mix process status should expose selected channels")
     except Exception as e:
         errors.append(f"  FAIL shortcut source check: {e}")
 

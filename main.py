@@ -1600,6 +1600,41 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
     sample = str(path)
     log.info(f'mxf {mode} test start: file={path.name} play_seconds={play_seconds:.1f}')
 
+    def _checked_audio_channels():
+        return [
+            _safe_int(ch, 0) for cb, ch in (getattr(win.vp, '_ch_checks', []) or [])
+            if cb.isChecked()
+        ]
+
+    def _expected_default_audio_channels():
+        if not bool(win.vp._audio_mix_expected()):
+            return []
+        source_count = _safe_int(win.vp._audio_source_count_from_info(getattr(win.vp, 'cur_info', {}) or {}), 0)
+        if source_count <= 0:
+            return []
+        return [1] if source_count == 1 else [1, 2]
+
+    def _validate_default_audio_selection(stage, require_running_channels=False):
+        expected = _expected_default_audio_channels()
+        if not expected:
+            return ''
+        selected = [
+            _safe_int(ch, 0) for ch in (win.vp._get_selected_audio_channels() or [])
+        ]
+        checked = _checked_audio_channels()
+        if selected != expected:
+            return f'{stage}: selected audio channels {selected} != default {expected}'
+        if checked != expected:
+            return f'{stage}: checked audio channels {checked} != default {expected}'
+        if require_running_channels:
+            status_channels = [
+                _safe_int(ch, 0) for ch in (win.vp.audio_mix.process_status().get('channels') or [])
+            ]
+            if status_channels != expected:
+                return f'{stage}: audio mix channels {status_channels} != default {expected}'
+        log.info(f'mxf {mode} default audio check ok: stage={stage} channels={expected}')
+        return ''
+
     def _finish(code, message):
         if result.get('finished'):
             return
@@ -1644,6 +1679,9 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
             return _finish(7, f'playback did not advance enough ({moved_ms}ms)')
         if not audio_ok:
             return _finish(8, f'audio process not running: {audio_status}')
+        audio_issue = _validate_default_audio_selection('playback', require_running_channels=audio_expected)
+        if audio_issue:
+            return _finish(18, audio_issue)
         return _finish(0, f'cue/play/audio ok moved={moved_ms}ms')
 
     def _check_stability_progress():
@@ -1698,6 +1736,9 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
             return _finish(15, 'cue started audio before play request')
         if drift_ms > 300:
             return _finish(16, f'cue position advanced before play request: drift={drift_ms}ms')
+        audio_issue = _validate_default_audio_selection('cue')
+        if audio_issue:
+            return _finish(17, audio_issue)
 
         result['started_ms'] = now_ms
         win.vp.toggle_play()
