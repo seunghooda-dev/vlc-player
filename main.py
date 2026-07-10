@@ -2033,7 +2033,10 @@ def _run_qc_smoke_test(
 def _run_db_smoke_test():
     _setup_global_exception_handler()
     try:
-        from db_models import Clip, Session, engine, load_qc_status, qc_summary_from_status, save_clip, update_clip_qc
+        from db_models import (
+            Clip, Session, engine, load_clip_metadata_hint, load_qc_status,
+            qc_summary_from_status, save_clip, update_clip_qc,
+        )
     except Exception as e:
         log.error(f'db smoke test failed: import error {e}')
         return 2
@@ -2091,11 +2094,16 @@ def _run_db_smoke_test():
             mute_ranges=mute_ranges,
             freeze_ranges=[],
         )
+        metadata_hint = load_clip_metadata_hint(str(sample_path))
         loaded = load_qc_status(str(sample_path))
         with sample_path.open('ab') as fh:
             fh.write(b'replaced media bytes\n')
+        stale_metadata_hint = load_clip_metadata_hint(str(sample_path))
         stale_loaded = load_qc_status(str(sample_path))
         checks = [
+            ('metadata hint present', bool(metadata_hint.get('metadata_hint'))),
+            ('metadata hint dimensions', metadata_hint.get('width') == 1920 and metadata_hint.get('height') == 1080),
+            ('metadata hint audio', metadata_hint.get('channels') == 2 and metadata_hint.get('audio_stream_count') == 1),
             ('black status', loaded.get('black') == 'found'),
             ('mute status', loaded.get('mute') == 'found'),
             ('freeze status', loaded.get('freeze') == 'ok'),
@@ -2107,6 +2115,7 @@ def _run_db_smoke_test():
             ('freeze ranges', loaded.get('freeze_ranges') == []),
             ('summary', loaded.get('summary') == expected_summary),
             ('saved summary', saved.get('summary') == expected_summary),
+            ('stale metadata hidden after file replacement', stale_metadata_hint == {}),
             ('stale QC hidden after file replacement', stale_loaded == {}),
         ]
         failed = [name for name, ok in checks if not ok]
@@ -2115,7 +2124,9 @@ def _run_db_smoke_test():
             'file': str(sample_path),
             'clip_id': clip_id,
             'saved': saved,
+            'metadata_hint': metadata_hint,
             'loaded': loaded,
+            'stale_metadata_hint_after_replace': stale_metadata_hint,
             'stale_loaded_after_replace': stale_loaded,
             'failed': failed,
         }

@@ -161,6 +161,8 @@ def check_core_logic():
             errors.append("  FAIL DB smoke test should verify QC persistence")
         if 'stale QC hidden after file replacement' not in main_source or 'stale_loaded_after_replace' not in main_source:
             errors.append("  FAIL DB smoke test should reject stale QC after file replacement")
+        if 'stale metadata hidden after file replacement' not in main_source or 'load_clip_metadata_hint' not in main_source:
+            errors.append("  FAIL DB smoke test should reject stale metadata hints after file replacement")
     except Exception as e:
         errors.append(f"  FAIL shortcut source check: {e}")
 
