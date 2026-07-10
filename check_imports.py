@@ -2048,6 +2048,44 @@ def check_core_logic():
         feedback_invalid_only = VideoPanel._file_add_feedback_text(2, 0, 2, action_hint='')
         if feedback_invalid_only != '⚠ 지원 안 함 2개':
             errors.append(f"  FAIL file add feedback invalid only: {feedback_invalid_only}")
+        original_video_save_settings = vpm.save_settings
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                current_file = Path(td) / 'current.mxf'
+                current_file.write_bytes(b'recent smoke')
+                probe = VideoPanel.__new__(VideoPanel)
+                offline_file = r'Z:\offline_archive\old_program.mxf'
+                offline_dir = r'Z:\offline_archive'
+                probe._settings = {
+                    'recent_files': [offline_file, str(current_file), 'C:/not-video.txt', offline_file.lower()],
+                    'recent_dirs': [offline_dir, str(Path(td)), offline_dir.lower()],
+                }
+
+                def fake_video_save_settings(**updates):
+                    probe._settings.update(updates)
+                    return dict(probe._settings)
+
+                vpm.save_settings = fake_video_save_settings
+                VideoPanel._remember_recent_file(probe, str(current_file), limit=6)
+                recent_files = probe._settings.get('recent_files') or []
+                recent_dirs = probe._settings.get('recent_dirs') or []
+                normalized_files = [str(item).replace('/', '\\').lower() for item in recent_files]
+                normalized_dirs = [str(item).replace('/', '\\').lower() for item in recent_dirs]
+                if str(current_file) != recent_files[0]:
+                    errors.append(f"  FAIL recent current file first: {recent_files}")
+                if offline_file.lower() not in normalized_files:
+                    errors.append(f"  FAIL offline recent file preserved: {recent_files}")
+                if normalized_files.count(offline_file.lower()) != 1:
+                    errors.append(f"  FAIL offline recent file dedupe: {recent_files}")
+                if any(str(item).lower().endswith('not-video.txt') for item in recent_files):
+                    errors.append(f"  FAIL non-video recent file kept: {recent_files}")
+                if offline_dir.lower() not in normalized_dirs:
+                    errors.append(f"  FAIL offline recent dir preserved: {recent_dirs}")
+                if normalized_dirs.count(offline_dir.lower()) != 1:
+                    errors.append(f"  FAIL offline recent dir dedupe: {recent_dirs}")
+        finally:
+            vpm.save_settings = original_video_save_settings
+
         class CueStatusProbe:
             _quick_file_preflight = VideoPanel._quick_file_preflight
             _cue_block_status_text = VideoPanel._cue_block_status_text
@@ -2177,6 +2215,7 @@ def check_core_logic():
 
         class RecentPruneProbe:
             _settings_entries = staticmethod(VideoPanel._settings_entries)
+            _same_path = VideoPanel._same_path
             _prune_recent_entries = VideoPanel._prune_recent_entries
 
             def __init__(self, settings):

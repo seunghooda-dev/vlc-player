@@ -1950,8 +1950,9 @@ class VideoPanel(QWidget):
                     if not text:
                         continue
                     p = Path(text)
-                    if p.suffix.lower() in VIDEO_EXTS and str(p) not in recent_files:
-                        recent_files.append(str(p))
+                    normalized = str(p)
+                    if p.suffix.lower() in VIDEO_EXTS and not any(self._same_path(normalized, existing) for existing in recent_files):
+                        recent_files.append(normalized)
                 except Exception:
                     pass
             recent_dirs = []
@@ -1962,7 +1963,7 @@ class VideoPanel(QWidget):
                         continue
                     p = Path(text)
                     normalized = str(p)
-                    if normalized not in recent_dirs:
+                    if not any(self._same_path(normalized, existing) for existing in recent_dirs):
                         recent_dirs.append(normalized)
                 except Exception:
                     pass
@@ -1990,14 +1991,11 @@ class VideoPanel(QWidget):
             for item in self._settings_entries(self._settings.get('recent_dirs')):
                 try:
                     text = str(item or '').strip()
-                    if not text or text == folder:
+                    if not text or self._same_path(text, folder):
                         continue
-                    p_item = Path(text)
-                    if not p_item.exists() or not p_item.is_dir():
-                        continue
-                    text = str(p_item)
-                    if text not in recent_dirs:
-                        recent_dirs.append(text)
+                    normalized = str(Path(text))
+                    if not any(self._same_path(normalized, existing) for existing in recent_dirs):
+                        recent_dirs.append(normalized)
                 except Exception:
                     continue
             recent_dirs.insert(0, folder)
@@ -2016,23 +2014,17 @@ class VideoPanel(QWidget):
             for item in self._settings_entries(self._settings.get('recent_files')):
                 try:
                     text = str(item or '').strip()
-                    if text and text != fp and text not in recent_files:
-                        recent_files.append(text)
+                    if not text or self._same_path(text, fp):
+                        continue
+                    normalized = str(Path(text))
+                    if Path(normalized).suffix.lower() not in VIDEO_EXTS:
+                        continue
+                    if not any(self._same_path(normalized, existing) for existing in recent_files):
+                        recent_files.append(normalized)
                 except Exception:
                     continue
             recent_files.insert(0, fp)
-            existing_files = []
-            for item in recent_files:
-                try:
-                    p_item = Path(str(item or '').strip())
-                    if p_item.exists() and p_item.is_file() and p_item.suffix.lower() in VIDEO_EXTS:
-                        existing_files.append(item)
-                except Exception:
-                    continue
-                if len(existing_files) >= limit:
-                    break
-            recent_files = existing_files
-            self._settings = save_settings(recent_files=recent_files)
+            self._settings = save_settings(recent_files=recent_files[:limit])
             self._remember_recent_dir(str(p.parent))
         except Exception as e:
             log.debug(f'recent file save: {e}')
