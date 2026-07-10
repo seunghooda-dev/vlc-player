@@ -809,6 +809,7 @@ class AudioAnalyzeThread(QThread):
                 'source_ch_count': source_ch_count,
                 'channel_basis': basis,
                 'cache_hit': cache_hit,
+                'no_audio': False,
                 'index_window_sec': window_sec,
                 'threshold': self.noise_threshold,
                 'min_dur'  : self.min_duration,

@@ -122,6 +122,7 @@ def check_core_logic():
         main_source = read_source('main.py')
         right_source = read_source('right_panel.py')
         video_source = read_source('video_panel.py')
+        threads_source = read_source('threads.py')
         if "('정지',           'S')" in main_source:
             errors.append("  FAIL stale S stop shortcut remains in help")
         if "('검수 취소',       'Esc')" not in main_source:
@@ -142,6 +143,8 @@ def check_core_logic():
             errors.append("  FAIL VLC play should explicitly resume after CUE preroll pause")
         if 'def pause(self):\n        self._next_op()' not in video_source:
             errors.append("  FAIL VLC pause should invalidate delayed resume callbacks")
+        if "'no_audio': False" not in threads_source:
+            errors.append("  FAIL audio analysis normal result should include no_audio=False")
     except Exception as e:
         errors.append(f"  FAIL shortcut source check: {e}")
 
