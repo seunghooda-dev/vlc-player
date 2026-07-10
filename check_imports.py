@@ -112,7 +112,7 @@ def check_core_logic():
         from right_panel import FILE_FILTER_TIPS, RightPanel
         from constants import C, DEFAULT_SETTINGS, VIDEO_EXTS, _normalize_settings
         import db_models as dbm
-        from db_models import frames_to_tc, is_df_fps, qc_summary_from_status, sanitize_qc_ranges, tc_to_frames
+        from db_models import frames_to_tc, is_df_fps, qc_summary_from_status, sanitize_qc_ranges, tc_to_frames, update_clip_qc
         from threads import AudioAnalyzeThread, TranscodeThread
         from video_panel import AudioMixPlayer, DIRECT_VLC_EXTS, QCMarkerSlider, VideoPanel
     except Exception as e:
@@ -274,6 +274,19 @@ def check_core_logic():
                 errors.append("  FAIL snapshot missing stored values false positive")
         finally:
             dbm._safe_file_snapshot = original_snapshot
+            dbm.log = original_log
+
+        missing_qc_path = str(Path(tempfile.gettempdir()) / f'missing_qc_save_{time.time_ns()}.mxf')
+        if Path(missing_qc_path).exists():
+            Path(missing_qc_path).unlink(missing_ok=True)
+        original_log = dbm.log
+        try:
+            fake_log = FakeSnapshotLog()
+            dbm.log = fake_log
+            missing_qc_save = update_clip_qc(missing_qc_path, black='ok', black_count=0, black_ranges=[])
+            if missing_qc_save != {}:
+                errors.append(f"  FAIL missing media QC save should be skipped: {missing_qc_save}")
+        finally:
             dbm.log = original_log
 
         parse_audio_streams = AudioAnalyzeThread._audio_streams_from_probe_output

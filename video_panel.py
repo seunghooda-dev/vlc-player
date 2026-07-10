@@ -2168,18 +2168,22 @@ class VideoPanel(QWidget):
         }
         if qc_keys.intersection(changes):
             try:
-                saved = update_clip_qc(
-                    filepath,
-                    black=changes.get("black") if "black" in changes else None,
-                    mute=changes.get("mute") if "mute" in changes else None,
-                    freeze=changes.get("freeze") if "freeze" in changes else None,
-                    black_count=changes.get("black_count") if "black_count" in changes else None,
-                    mute_count=changes.get("mute_count") if "mute_count" in changes else None,
-                    freeze_count=changes.get("freeze_count") if "freeze_count" in changes else None,
-                    black_ranges=changes.get("black_ranges") if "black_ranges" in changes else None,
-                    mute_ranges=changes.get("mute_ranges") if "mute_ranges" in changes else None,
-                    freeze_ranges=changes.get("freeze_ranges") if "freeze_ranges" in changes else None,
-                )
+                if not self._video_file_path(filepath):
+                    saved = {}
+                    log.warning(f"qc status persist skipped unavailable file={file_name}")
+                else:
+                    saved = update_clip_qc(
+                        filepath,
+                        black=changes.get("black") if "black" in changes else None,
+                        mute=changes.get("mute") if "mute" in changes else None,
+                        freeze=changes.get("freeze") if "freeze" in changes else None,
+                        black_count=changes.get("black_count") if "black_count" in changes else None,
+                        mute_count=changes.get("mute_count") if "mute_count" in changes else None,
+                        freeze_count=changes.get("freeze_count") if "freeze_count" in changes else None,
+                        black_ranges=changes.get("black_ranges") if "black_ranges" in changes else None,
+                        mute_ranges=changes.get("mute_ranges") if "mute_ranges" in changes else None,
+                        freeze_ranges=changes.get("freeze_ranges") if "freeze_ranges" in changes else None,
+                    )
                 if saved:
                     entry["black"] = saved.get("black") or None
                     entry["mute"] = saved.get("mute") or None

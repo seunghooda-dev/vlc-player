@@ -661,6 +661,11 @@ def update_clip_qc(
 ):
     if not filepath:
         return {}
+    p = _safe_media_file_path(filepath)
+    if p is None:
+        log.warning(f"QC status save skipped missing media file: {Path(str(filepath or '?')).name}")
+        return {}
+    filepath = str(p)
     cid = _clip_id_for_path(filepath)
     now = datetime.now()
     snapshot = _safe_file_snapshot(filepath)
