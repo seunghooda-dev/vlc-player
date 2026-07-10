@@ -163,6 +163,8 @@ def check_core_logic():
             errors.append("  FAIL DB smoke test should reject stale QC after file replacement")
         if 'stale metadata hidden after file replacement' not in main_source or 'load_clip_metadata_hint' not in main_source:
             errors.append("  FAIL DB smoke test should reject stale metadata hints after file replacement")
+        if '--settings-smoke-test' not in main_source or 'settings persisted, normalized, and reloaded' not in main_source:
+            errors.append("  FAIL settings smoke test should verify save/reload/normalization")
     except Exception as e:
         errors.append(f"  FAIL shortcut source check: {e}")
 

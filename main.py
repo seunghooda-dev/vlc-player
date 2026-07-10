@@ -2154,6 +2154,131 @@ def _run_db_smoke_test():
         except Exception:
             pass
 
+def _run_settings_smoke_test():
+    _setup_global_exception_handler()
+    try:
+        import constants as cfg
+    except Exception as e:
+        log.error(f'settings smoke test failed: import error {e}')
+        return 2
+
+    settings_path = Path(SETTINGS_PATH)
+    original_bytes = None
+    original_exists = False
+    try:
+        original_exists = settings_path.exists()
+        if original_exists:
+            original_bytes = settings_path.read_bytes()
+    except Exception as e:
+        log.error(f'settings smoke test failed: original snapshot error {e}')
+        return 3
+
+    def _reset_cache():
+        try:
+            with cfg._settings_lock:
+                cfg._settings_cache = None
+        except Exception:
+            pass
+
+    try:
+        _reset_cache()
+        saved = save_settings(
+            volume=37,
+            playback_rate=1.5,
+            audio_channels=[7, 8],
+            black_amount='99',
+            black_threshold='33',
+            mute_threshold='-45.5',
+            mute_duration='1.25',
+            freeze_noise='-61',
+            freeze_duration='2.5',
+            last_dir='C:/QC Smoke',
+            recent_files=['C:/qc/a.mxf', 'C:/qc/b.mp4'],
+            recent_dirs=['C:/qc', 'D:/archive'],
+            window_size=[1600, 900],
+            splitter_sizes=[1100, 420],
+        )
+        _reset_cache()
+        loaded = load_settings()
+        raw = json.loads(settings_path.read_text(encoding='utf-8')) if settings_path.exists() else {}
+
+        normalized = save_settings(
+            volume=999,
+            playback_rate=99,
+            audio_channels=[1, 2, 9, 1, 'bad'],
+            black_amount='150',
+            black_threshold='999',
+            mute_threshold='12',
+            mute_duration='-5',
+            freeze_noise='12',
+            freeze_duration='0',
+            window_size=[10, 20000],
+            splitter_sizes=[50, 20000],
+        )
+        _reset_cache()
+        reloaded_normalized = load_settings()
+
+        checks = [
+            ('settings file written', settings_path.exists()),
+            ('volume persisted', loaded.get('volume') == 37 and raw.get('volume') == 37),
+            ('playback rate persisted', loaded.get('playback_rate') == 1.5),
+            ('audio channels persisted', loaded.get('audio_channels') == [7, 8]),
+            ('detection settings persisted', (
+                loaded.get('black_amount') == '99'
+                and loaded.get('black_threshold') == '33'
+                and loaded.get('mute_threshold') == '-45.5'
+                and loaded.get('mute_duration') == '1.25'
+                and loaded.get('freeze_noise') == '-61'
+                and loaded.get('freeze_duration') == '2.5'
+            )),
+            ('recent settings persisted', (
+                loaded.get('last_dir') == 'C:/QC Smoke'
+                and loaded.get('recent_files') == ['C:/qc/a.mxf', 'C:/qc/b.mp4']
+                and loaded.get('recent_dirs') == ['C:/qc', 'D:/archive']
+            )),
+            ('layout settings persisted', loaded.get('window_size') == [1600, 900] and loaded.get('splitter_sizes') == [1100, 420]),
+            ('volume normalized', normalized.get('volume') == 100 and reloaded_normalized.get('volume') == 100),
+            ('playback rate normalized', normalized.get('playback_rate') == 2.0 and reloaded_normalized.get('playback_rate') == 2.0),
+            ('audio channels normalized', normalized.get('audio_channels') == [1, 2] and reloaded_normalized.get('audio_channels') == [1, 2]),
+            ('detection settings normalized', (
+                normalized.get('black_amount') == '100'
+                and normalized.get('black_threshold') == '255'
+                and normalized.get('mute_threshold') == '-50'
+                and normalized.get('mute_duration') == '0.1'
+                and normalized.get('freeze_noise') == '-60'
+                and normalized.get('freeze_duration') == '0.1'
+            )),
+            ('layout settings normalized', normalized.get('window_size') == [640, 10000] and normalized.get('splitter_sizes') == [100, 10000]),
+        ]
+        failed = [name for name, ok in checks if not ok]
+        output = {
+            'settings_path': str(settings_path),
+            'saved': saved,
+            'loaded': loaded,
+            'normalized': normalized,
+            'reloaded_normalized': reloaded_normalized,
+            'failed': failed,
+        }
+        _safe_console_print(json.dumps(output, ensure_ascii=False, indent=2, default=str))
+        if failed:
+            log.error(f'settings smoke test FAIL: {failed}')
+            return 7
+        log.info('settings smoke test PASS: settings persisted, normalized, and reloaded')
+        return 0
+    except Exception as e:
+        log.error(f'settings smoke test failed: {e}')
+        return 8
+    finally:
+        try:
+            settings_path.parent.mkdir(parents=True, exist_ok=True)
+            if original_exists:
+                settings_path.write_bytes(original_bytes or b'')
+            elif settings_path.exists():
+                settings_path.unlink()
+        except Exception as e:
+            log.warning(f'settings smoke restore failed: {e}')
+        _reset_cache()
+
 def _run_ui_layout_check():
     _setup_global_exception_handler()
     app = QApplication(sys.argv)
@@ -2310,6 +2435,8 @@ if __name__ == "__main__":
         ))
     if '--db-smoke-test' in sys.argv:
         sys.exit(_run_db_smoke_test())
+    if '--settings-smoke-test' in sys.argv:
+        sys.exit(_run_settings_smoke_test())
     if '--ui-layout-check' in sys.argv:
         sys.exit(_run_ui_layout_check())
     if '--export-diagnostics' in sys.argv:
