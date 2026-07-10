@@ -1992,8 +1992,28 @@ def check_core_logic():
                 self._cue_ready = False
 
         unavailable_current_probe = CurrentUnavailableProbe()
-        if not VideoPanel._handle_unavailable_current_file(unavailable_current_probe):
+        class FakeVideoPanelLog:
+            def __init__(self):
+                self.warnings = []
+                self.debugs = []
+
+            def warning(self, msg):
+                self.warnings.append(str(msg))
+
+            def debug(self, msg):
+                self.debugs.append(str(msg))
+
+        original_vpm_log = vpm.log
+        fake_vpm_log = FakeVideoPanelLog()
+        try:
+            vpm.log = fake_vpm_log
+            handled_unavailable_current = VideoPanel._handle_unavailable_current_file(unavailable_current_probe)
+        finally:
+            vpm.log = original_vpm_log
+        if not handled_unavailable_current:
             errors.append("  FAIL unavailable current file should be handled")
+        if not any('current cue file became unavailable' in msg for msg in fake_vpm_log.warnings):
+            errors.append(f"  FAIL unavailable current file warning capture: {fake_vpm_log.warnings}")
         if unavailable_current_probe.ejected != 1 or unavailable_current_probe.cur_file is not None:
             errors.append(
                 f"  FAIL unavailable current file should eject: "
