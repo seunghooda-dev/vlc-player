@@ -1,0 +1,299 @@
+"""
+transcode_coordinator.py — 비직접재생 파일 변환/캐시 조정자
+VideoPanel에서 분리된 TranscodeCoordinator: CUE용 트랜스코드 시작/스왑, 임시파일 캐시 정리(LRU),
+사전변환(preconvert) 작업 수명 관리. DIRECT_VLC_EXTS(변환 불필요 확장자)의 원 소유 모듈.
+"""
+from pathlib import Path
+
+from PyQt6.QtCore import QTimer, QUrl
+from PyQt6.QtMultimedia import QMediaPlayer
+
+from constants import (
+    log, TMP_DIR, _path_size,
+    friendly_error_text, friendly_error_title,
+)
+from threads import TranscodeThread
+
+DIRECT_VLC_EXTS = {'.mxf', '.mp4'}
+
+
+class TranscodeCoordinator:
+    """panel(VideoPanel) 역참조를 갖고 트랜스코드/사전변환/캐시를 조정한다."""
+    def __init__(self, panel):
+        self._panel = panel
+        self._tc_thread = None
+        self._tc_cache = {}
+        self._tc_cache_order = []
+        self._preconvert_threads = []
+        self._preconvert_jobs = {}
+
+    def _evict_tc_cache(self, max_files=10, max_gb=2.0):
+        """tmp 캐시 정리 — 파일 수/용량 초과 시 오래된 것 삭제"""
+        def _is_within_tmp(path):
+            try:
+                target = Path(path).resolve()
+                root = TMP_DIR.resolve()
+                return target == root or root in target.parents
+            except Exception:
+                return False
+
+        def _cache_record(path_text):
+            try:
+                if not path_text:
+                    return None
+                target = Path(path_text).resolve()
+                if not _is_within_tmp(target):
+                    log.warning(f'cache record skipped outside TMP_DIR: {target}')
+                    return None
+                if target.is_symlink() or not target.is_file():
+                    return None
+                return (str(target), _path_size(target))
+            except Exception as e:
+                log.debug(f'cache record skipped: {e}')
+                return None
+
+        def _safe_unlink_cache(path_text):
+            try:
+                target = Path(path_text).resolve()
+                if not _is_within_tmp(target):
+                    log.warning(f'cache evict skipped outside TMP_DIR: {target}')
+                    return 0
+                if target.is_symlink() or not target.is_file():
+                    return 0
+                size = _path_size(target)
+                target.unlink(missing_ok=True)
+                return size
+            except Exception as e:
+                log.debug(f'evict unlink {path_text}: {e}')
+                return 0
+
+        # 유효한 파일만 남김
+        valid = []
+        for fp, tp in self._tc_cache.items():
+            rec = _cache_record(tp)
+            if rec:
+                valid.append((fp, rec[0], rec[1]))
+        # 용량 계산
+        total_bytes = sum(size for _, _, size in valid)
+        # 파일 수 또는 용량 초과 시 오래된 것부터 제거
+        valid_by_fp = {fp: tp for fp, tp, _ in valid}
+        order = [fp for fp in self._tc_cache_order if fp in valid_by_fp]
+        while (len(order) > max_files or
+               total_bytes > max_gb * 1024**3) and order:
+            oldest_fp = order.pop(0)
+            oldest_tp = self._tc_cache.pop(oldest_fp, None)
+            if oldest_tp:
+                for p in [oldest_tp, oldest_tp.replace('.mp4','_preview.mp4')]:
+                    total_bytes -= _safe_unlink_cache(p)
+        self._tc_cache_order = order
+
+    def _cancel_preconvert_job(self, filepath=None):
+        jobs = list(self._preconvert_jobs.items())
+        for fp, thread in jobs:
+            if filepath and fp != filepath:
+                continue
+            self._preconvert_jobs.pop(fp, None)
+            if thread in self._preconvert_threads:
+                self._preconvert_threads.remove(thread)
+            if fp in self._tc_cache and not self._tc_cache.get(fp):
+                self._tc_cache.pop(fp, None)
+            try:
+                if thread and thread.isRunning():
+                    thread.abort()
+            except Exception as e:
+                log.debug(f'preconvert cancel: {e}')
+
+    def _preconvert(self, filepath):
+        p = self._panel._video_file_path(filepath)
+        if not p:
+            log.debug(f'preconvert skipped invalid file: {self._panel._display_file_name(filepath, "?")}')
+            return
+        filepath = str(p)
+        # VLC 원본 재생 경로에서는 사전 변환이 첫 재생 반응성을 해친다.
+        if p.suffix.lower() in DIRECT_VLC_EXTS:
+            log.info(f'skip preconvert for VLC direct playback: {p.name}')
+            return
+        # 비-MXF 호환 경로에서만 백그라운드 변환 캐시를 사용한다.
+
+        if filepath in self._tc_cache:
+            return  # 이미 변환됨 또는 진행 중
+
+        self._tc_cache[filepath] = None  # 변환 중 마킹
+        pairs = self._panel._get_selected_ch_pairs()
+        t = TranscodeThread(filepath, pairs)
+
+        def _on_done(tmp_path, fp=filepath, thread=t):
+            if hasattr(self, '_tc_cache'):
+                self._tc_cache[fp] = tmp_path
+                if hasattr(self, '_tc_cache_order') and fp not in self._tc_cache_order:
+                    self._tc_cache_order.append(fp)
+                self._evict_tc_cache()  # 용량 초과 시 정리
+            # 완료된 스레드를 보관 목록에서 제거
+            if hasattr(self, '_preconvert_threads') and thread in self._preconvert_threads:
+                self._preconvert_threads.remove(thread)
+            if hasattr(self, '_preconvert_jobs'):
+                self._preconvert_jobs.pop(fp, None)
+            self._panel.ai_lbl.setText(f"✓ 사전변환 완료: {self._panel._display_file_name(fp)}")
+
+        def _on_err(err, fp=filepath, thread=t):
+            if hasattr(self, '_tc_cache') and fp in self._tc_cache:
+                del self._tc_cache[fp]   # 실패 시 캐시 제거
+            if hasattr(self, '_preconvert_threads') and thread in self._preconvert_threads:
+                self._preconvert_threads.remove(thread)
+            if hasattr(self, '_preconvert_jobs'):
+                self._preconvert_jobs.pop(fp, None)
+
+        def _on_finished(fp=filepath, thread=t):
+            if hasattr(self, '_preconvert_threads') and thread in self._preconvert_threads:
+                self._preconvert_threads.remove(thread)
+                log.debug(f'preconvert thread cleanup on finished: {self._panel._display_file_name(fp)}')
+            if hasattr(self, '_preconvert_jobs') and self._preconvert_jobs.get(fp) is thread:
+                self._preconvert_jobs.pop(fp, None)
+            if hasattr(self, '_tc_cache') and self._tc_cache.get(fp) is None:
+                self._tc_cache.pop(fp, None)
+
+        t.ready_full.connect(_on_done)
+        t.error.connect(_on_err)
+        t.finished.connect(_on_finished)
+
+        # ★ self에 보관 → GC 소멸 방지 (이게 없으면 함수 종료 즉시 크래시)
+        self._preconvert_threads.append(t)
+        self._preconvert_jobs[filepath] = t
+        t.start()
+        self._panel.ai_lbl.setText(f"⏳ 백그라운드 변환 중: {self._panel._display_file_name(filepath)}")
+
+    def _retire_tc(self):
+        """_tc_thread를 abort 후 dead_threads로 이동.
+        finished 시그널로 완전 종료 시점에 자동 제거 → isRunning() 타이밍 충돌 방지"""
+        if self._tc_thread:
+            t = self._tc_thread
+            self._tc_thread = None
+            # finished 시그널: 스레드가 완전히 종료된 시점에 dead_threads에서 제거
+            def _on_finished(thread=t):
+                try:
+                    self._panel._dead_threads.remove(thread)
+                    log.debug(f'dead_thread 제거: {thread} (finished)')
+                except ValueError:
+                    pass  # 이미 제거됐으면 무시
+            t.finished.connect(_on_finished)
+            self._panel._track_dead_thread(t)
+            t.abort()   # abort는 finished 시그널 연결 후 호출 (순서 중요)
+
+    def start_transcode_for_cue(self, filepath, load_seq):
+        """CUE — 캐시 확인 후 즉시 또는 변환 후 player에 올림 (load_file 비직접재생 경로)"""
+        panel = self._panel
+        cache = getattr(self, '_tc_cache', {})
+        cached_tmp = cache.get(filepath)
+        pre_job = getattr(self, '_preconvert_jobs', {}).pop(filepath, None)
+        if pre_job and pre_job.isRunning():
+            try:
+                pre_job.abort()
+            except Exception as e:
+                log.debug(f'preconvert abort for cue: {e}')
+            if hasattr(self, '_preconvert_threads') and pre_job in self._preconvert_threads:
+                self._preconvert_threads.remove(pre_job)
+            if filepath in cache:
+                del cache[filepath]
+            cached_tmp = None
+        if cached_tmp and '_preview' in Path(cached_tmp).stem:
+            del cache[filepath]
+            cached_tmp = None
+        if cached_tmp and Path(cached_tmp).exists():
+            # 사전 변환 캐시 있음 → 즉시 올림
+            panel.empty_label.setText('⏳  로딩 중...')
+            panel._empty_proxy.show(); panel._video_item.hide()
+            QTimer.singleShot(50, lambda t=cached_tmp, fp=filepath, s=load_seq: self._on_transcode_ready(t, fp, s))
+        else:
+            # 캐시 없음 → 변환 시작
+            ext = Path(filepath).suffix.lower()
+            msg = '⏳  파일 변환 중...' if ext in ('.mp4','.mov','.m4v','.mkv','.avi','.mts','.m2ts') \
+                  else "⏳  영상 변환 중...\n잠시만 기다려주세요"
+            panel.empty_label.setText(msg)
+            panel._empty_proxy.show(); panel._video_item.hide()
+            self._tc_thread = TranscodeThread(filepath, panel._get_selected_ch_pairs())
+            self._tc_thread.ready.connect(lambda tmp, fp=filepath, s=load_seq: self._on_transcode_ready(tmp, fp, s))
+            self._tc_thread.ready_full.connect(lambda tmp, fp=filepath, s=load_seq: self._on_transcode_full(tmp, fp, s))
+            # 진행률 표시
+            panel.prog_ai.setRange(0, 100)
+            panel.prog_ai.setValue(0)
+            panel.prog_ai.show()
+            def _tc_progress(pct, fp=filepath, s=load_seq):
+                if not panel._load_is_current(s, fp):
+                    return
+                panel.prog_ai.setValue(pct)
+                if pct < 100:
+                    panel.ai_lbl.setText(f'⏳ 변환 중... {pct}%')
+                else:
+                    panel.ai_lbl.setText('✓ 변환 완료')
+                    panel.prog_ai.hide()
+                    panel.prog_ai.setRange(0, 0)  # indeterminate로 복원
+            self._tc_thread.progress.connect(_tc_progress)
+            def _tc_err(msg, el=panel.empty_label, ai=panel.ai_lbl, fp=filepath, s=load_seq):
+                if not panel._load_is_current(s, fp):
+                    log.debug(f'stale transcode error ignored: {Path(fp).name}')
+                    return
+                friendly = friendly_error_text('ffmpeg_transcode', msg, fp)
+                el.setText(f'⚠ {friendly}')
+                ai.setText(f'⚠ {friendly_error_title("ffmpeg_transcode", msg, fp)}')
+                panel.prog_ai.hide(); panel.prog_ai.setRange(0, 0)
+            self._tc_thread.error.connect(_tc_err)
+            self._tc_thread.start()
+
+    def _on_transcode_ready(self, tmp, expected_file=None, load_seq=None):
+        panel = self._panel
+        if expected_file and not panel._load_is_current(load_seq, expected_file):
+            log.debug(f'stale transcode ready ignored: {Path(expected_file).name}')
+            return
+        if not panel.cur_file or getattr(panel, '_loading', False): return
+        import os
+        if not os.path.exists(tmp): return
+        try:
+            is_preview = 'preview' in tmp
+            panel._using_preview = is_preview
+            panel.player.setSource(QUrl.fromLocalFile(tmp))
+            panel._empty_proxy.hide(); panel._video_item.show()
+            panel.player.pause()
+            QTimer.singleShot(120, lambda: panel._show_cue_first_frame(0))
+            panel.ai_lbl.setText(
+                "⏳ 전체 변환 중... (재생 가능)" if is_preview
+                else "✓ CUE 완료 — ▶ 재생버튼을 누르세요")
+            panel.meter_ctrl.prepare_file(panel.cur_file)
+        except Exception as e:
+            # setSource 실패해도 프로그램 유지
+            panel.ai_lbl.setText(f'⚠ {friendly_error_title("player_load", e, panel.cur_file)}')
+            log.error(f'transcode ready load error: {e}')
+
+    def _on_transcode_full(self, tmp, expected_file=None, load_seq=None):
+        panel = self._panel
+        if expected_file and not panel._load_is_current(load_seq, expected_file):
+            log.debug(f'stale transcode full ignored: {Path(expected_file).name}')
+            return
+        if not panel.cur_file or getattr(panel, '_loading', False): return
+        import os
+        if not os.path.exists(tmp): return
+        try:
+            panel._using_preview = False
+            pos = panel.player.position()
+            was_playing = panel.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
+            panel.player.pause()
+            panel.player.setSource(QUrl.fromLocalFile(tmp))
+            panel._empty_proxy.hide(); panel._video_item.show()
+            panel.player.pause()
+            QTimer.singleShot(200, lambda: panel.player.setPosition(pos))
+            if was_playing:
+                QTimer.singleShot(350, lambda: panel.player.play())
+            else:
+                QTimer.singleShot(350, lambda p=pos: panel._show_cue_first_frame(p))
+            if panel.cur_file:
+                if not hasattr(self, '_tc_cache'):
+                    self._tc_cache = {}
+                if not hasattr(self, '_tc_cache_order'):
+                    self._tc_cache_order = []
+                self._tc_cache[panel.cur_file] = tmp
+                if panel.cur_file not in self._tc_cache_order:
+                    self._tc_cache_order.append(panel.cur_file)
+                self._evict_tc_cache()
+            panel.ai_lbl.setText("✓ CUE 완료 — ▶ 재생버튼을 누르세요")
+        except Exception as e:
+            panel.ai_lbl.setText(f'⚠ {friendly_error_title("player_load", e, panel.cur_file)}')
+            log.error(f'transcode full swap error: {e}')

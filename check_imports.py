@@ -9,7 +9,7 @@ from pathlib import Path
 FILES = [
     'safe.py', 'process_registry.py', 'theme.py', 'migration.py', 'storage_check.py', 'settings.py', 'runtime_tools.py', 'diagnostics.py',
     'logging_setup.py', 'constants.py', 'db_models.py', 'threads.py',
-    'meters.py', 'loudness_coordinator.py', 'transport_controls.py', 'vlc_player.py', 'video_panel.py',
+    'meters.py', 'loudness_coordinator.py', 'transcode_coordinator.py', 'transport_controls.py', 'vlc_player.py', 'video_panel.py',
     'file_list_view.py', 'right_panel.py', 'main.py'
 ]
 MODULE_NAMES = set(f.replace('.py', '') for f in FILES)
