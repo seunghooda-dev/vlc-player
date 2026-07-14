@@ -1909,11 +1909,15 @@ class VideoPanel(QWidget):
         self.btn_freeze.setEnabled(False)
         self.ai_lbl.setText(f"⏳ 3/4 메타데이터 분석 중 — {Path(filepath).name}")
 
-    def _apply_probe_metadata(self, filepath, info, warnings, emit_loaded=False):
-        try:
-            previous_selected = self._get_selected_audio_channels()
-        except Exception:
-            previous_selected = list(getattr(self, '_selected_chs', []) or [])
+    def _apply_probe_metadata(self, filepath, info, warnings, emit_loaded=False, preserve_selection=True):
+        if preserve_selection:
+            try:
+                previous_selected = self._get_selected_audio_channels()
+            except Exception:
+                previous_selected = list(getattr(self, '_selected_chs', []) or [])
+        else:
+            # 새 파일 열기(load_file 동기 경로): 방송 QC 기본 모니터링은 항상 1/2CH에서 시작한다.
+            previous_selected = []
         was_playing = False
         current_ms = 0
         try:
@@ -2672,113 +2676,14 @@ class VideoPanel(QWidget):
             f'steps={" ".join(timings)}'
         )
         self._set_loading_state(True, f"⏳ 2/4 CUE 준비 중 — {Path(filepath).name}")
-        self._metadata_ready = True
-        self.cur_info = info
-        self.fps       = self._safe_float_value(info.get("fps", 29.97), 29.97)
-        self.df        = bool(info.get("df", False)) and self._nominal_fps() in (30, 60)
-        self.tc_offset = self._safe_float_value(info.get("tc_offset", 0.0), 0.0)
-        self._tc_offset_frames = self._parse_tc_offset_frames(info.get("timecode", ""))
-        self._display_frame = 0
-        self._last_display_dur_frames = None
-        self._last_slider_value = None
-        self._clock_anchor_frame = 0
-        self._clock_anchor_time = 0.0
-        self._frame_clock_active = False
-        self._frame_display_timer.stop()
-        self._sync_frame_timer_interval()
-        self.duration  = max(0.0, self._safe_float_value(info.get("duration", 0), 0.0))
-        self._source_duration = self.duration
-        self._using_preview = False
-
-        self.lbl_fmt.setText(info.get("format_short","—"))
-        self.lbl_cod.setText(info.get("codec","—") or "—")
-        h = max(0, self._safe_int_value(info.get("height", 0), 0))
-        w = max(0, self._safe_int_value(info.get("width", 0), 0))
-        res_str = ("4K" if w >= 3840 else "HD" if w >= 1920 else f"{h}p") if h else "—"
-        self.lbl_res.setText(res_str)
-        fps_str = f"{self._media_fps():.2f}"
-        self.lbl_fps.setText(fps_str)
-        df_label = "DF" if self._drop_frame_enabled() else "NDF"
-        df_color = C['teal'] if self._drop_frame_enabled() else C['text2']
-        self.lbl_df.setText(df_label)
-        self.lbl_df.setStyleSheet(f"color:{df_color};font-family:'Cascadia Mono','Consolas','D2Coding';font-size:11px;")
-        ch_count = max(0, self._safe_int_value(info.get('channels', 0), 0))
-        audio_streams = max(0, self._safe_int_value(info.get('audio_stream_count', 0), 0))
-        stream_count = max(audio_streams, ch_count)
-        self._set_audio_channel_display(info)
-        # 파일 채널 수에 따라 체크박스 활성화/비활성화
-        first_enabled = None
-        for cb, ch_no in self._ch_checks:
-            enabled = ch_no <= stream_count
-            cb.setEnabled(enabled and not getattr(self, '_loading', False))
-            if enabled and first_enabled is None:
-                first_enabled = cb
-        # 방송 QC 기본 모니터링은 파일을 새로 열 때마다 1/2CH 동시 출력으로 시작한다.
-        default_channels = [1, 2]
-        for cb, _ in self._ch_checks:
-            cb.setChecked(False)
-        default_selected = []
-        for cb, ch_no in self._ch_checks:
-            if ch_no <= stream_count and ch_no in default_channels:
-                cb.setChecked(True)
-                default_selected.append(ch_no)
-        if not default_selected and first_enabled:
-            first_enabled.setChecked(True)
-            default_selected = [1]
-        self._selected_chs = default_selected if stream_count <= 0 else (default_selected or [1, 2])
-        self.tc_dur.setText(self._frames_to_tc(self._duration_frames(), include_offset=False))
-        self._res_text.setPlainText(f"{w}\u00d7{h}" if w and h else "")
-        mark_step('metadata_ui')
-
-        # DB 저장
-        db_t0 = time.monotonic()
-        self.cur_id = save_clip(info)
-        timings.append(f'db_save={time.monotonic() - db_t0:.3f}s')
-        step_t = time.monotonic()
-        self.lbl_dbsaved.setText("✓ DB 저장됨")
-        QTimer.singleShot(2500, lambda: self.lbl_dbsaved.setText(""))
-
+        # 메타데이터 적용은 비동기 probe 경로와 동일한 _apply_probe_metadata로 통합.
+        # preserve_selection=False: 새 파일 열기는 항상 1/2CH 기본 선택으로 시작(기존 인라인 동작 유지).
+        self._apply_probe_metadata(filepath, info, warnings, preserve_selection=False)
+        # 분석 버튼은 CUE 완료(_complete_file_load)까지 잠금 — 동기 로드 경로 고유 동작 유지.
         self.btn_black.setEnabled(False)
         self.btn_audio.setEnabled(False)
         self.btn_freeze.setEnabled(False)
-        self.ai_lbl.setText(f"⚠ {warnings[0]}" if warnings else "AI 분석 준비됨")
-
-        # Prepare the rails now; sampling starts only after PLAY settles.
-        if self._audio_source_count_from_info(info) > 0:
-            self.meter_ctrl.prepare_file(filepath)
-        else:
-            self.meter_ctrl.set_playing(False)
-        self.audio_mix.set_file(
-            filepath,
-            audio_streams,
-            ch_count
-        )
-        self.audio_mix.set_channels(self._selected_chs)
-        self._schedule_loudness_analysis(filepath)
-        mark_step('meter_loudness_start')
-
-        if Path(filepath).suffix.lower() in DIRECT_VLC_EXTS:
-            self.empty_label.setText('⏳  2/4 VLC로 원본 로딩 중...')
-            self._empty_proxy.show(); self._video_item.hide()
-            try:
-                vlc_set_t0 = time.monotonic()
-                self.player.setSource(QUrl.fromLocalFile(filepath))
-                self.player.audio_set_volume(0)
-                timings.append(f'vlc_set_source={time.monotonic() - vlc_set_t0:.3f}s')
-                log.info(
-                    f'load_file timing: {Path(filepath).name} '
-                    f'seq={load_seq} '
-                    f'total_before_cue={time.monotonic() - load_t0:.3f}s '
-                    f'steps={" ".join(timings)}'
-                )
-                self._prepare_vlc_cue(filepath, 0, load_seq=load_seq)
-            except Exception as e:
-                msg = friendly_error_text('vlc_load', e, filepath)
-                self.empty_label.setText(f'⚠ {msg}')
-                self.ai_lbl.setText(f'⚠ {friendly_error_title("vlc_load", e, filepath)}')
-                self._set_loading_state(False)
-                log.error(f'VLC load failed: {Path(filepath).name} | {e}')
-            return
+        mark_step('metadata_apply')
 
         # CUE — 캐시 확인 후 즉시 또는 변환 후 player에 올림 (TranscodeCoordinator로 위임)
         self._transcode_coordinator.start_transcode_for_cue(filepath, load_seq)
