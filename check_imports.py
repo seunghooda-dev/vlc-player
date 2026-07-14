@@ -7,8 +7,8 @@ import re, ast, sys, tempfile, csv, time
 from pathlib import Path
 
 FILES = [
-    'safe.py', 'process_registry.py', 'theme.py', 'settings.py', 'runtime_tools.py', 'diagnostics.py',
-    'constants.py', 'db_models.py', 'threads.py',
+    'safe.py', 'process_registry.py', 'theme.py', 'migration.py', 'storage_check.py', 'settings.py', 'runtime_tools.py', 'diagnostics.py',
+    'logging_setup.py', 'constants.py', 'db_models.py', 'threads.py',
     'meters.py', 'loudness_coordinator.py', 'transport_controls.py', 'video_panel.py', 'right_panel.py', 'main.py'
 ]
 MODULE_NAMES = set(f.replace('.py', '') for f in FILES)
@@ -111,6 +111,7 @@ def check_core_logic():
         import right_panel as rpm
         import video_panel as vpm
         import constants as consts
+        import migration
         from right_panel import FILE_FILTER_TIPS, FILE_FILTER_VISIBLE_KEYS, RightPanel
         from constants import C, DEFAULT_SETTINGS, VIDEO_EXTS, _normalize_settings
         import db_models as dbm
@@ -216,32 +217,32 @@ def check_core_logic():
             self._filter_key = key
 
     try:
-        original_record_migration = consts._record_migration_event
+        original_record_migration = migration._record_migration_event
         migration_events = []
         try:
-            consts._record_migration_event = lambda *args, **kwargs: migration_events.append((args, kwargs))
+            migration._record_migration_event = lambda *args, **kwargs: migration_events.append((args, kwargs))
             with tempfile.TemporaryDirectory() as migration_tmp:
                 migration_root = Path(migration_tmp)
                 missing_source = migration_root / 'missing-settings.json'
                 existing_target = migration_root / 'user-settings.json'
                 existing_target.write_text('{}', encoding='utf-8')
-                consts._copy_legacy_file_to_user_data('settings.json', missing_source, existing_target)
+                migration._copy_legacy_file_to_user_data('settings.json', missing_source, existing_target)
                 if migration_events:
                     errors.append(f"  FAIL migration no-source should stay silent: {migration_events}")
 
                 legacy_source = migration_root / 'legacy-settings.json'
                 legacy_source.write_text('{"legacy": true}', encoding='utf-8')
-                consts._copy_legacy_file_to_user_data('settings.json', legacy_source, existing_target)
+                migration._copy_legacy_file_to_user_data('settings.json', legacy_source, existing_target)
                 if migration_events:
                     errors.append(f"  FAIL migration existing-target should stay silent: {migration_events}")
 
                 copied_target = migration_root / 'copied-settings.json'
-                consts._copy_legacy_file_to_user_data('settings.json', legacy_source, copied_target)
+                migration._copy_legacy_file_to_user_data('settings.json', legacy_source, copied_target)
                 copied_statuses = [args[3] for args, _kwargs in migration_events if len(args) >= 4]
                 if copied_target.read_text(encoding='utf-8') != '{"legacy": true}' or copied_statuses != ['copied']:
                     errors.append(f"  FAIL migration copy event: statuses={copied_statuses}")
         finally:
-            consts._record_migration_event = original_record_migration
+            migration._record_migration_event = original_record_migration
 
         class FakeProbeLog:
             def __init__(self):

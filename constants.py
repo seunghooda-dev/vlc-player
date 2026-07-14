@@ -7,7 +7,7 @@ MXF QC Player - PyQt6 완전판
 파일 탐색 + 비디오 플레이어 + DB + STT + 씬감지 + 검색
 """
 
-import sys, os, json, subprocess, hashlib, csv, shutil, threading, time, zipfile, math
+import sys, os, subprocess, hashlib, csv, shutil, threading, time, zipfile, math
 from collections import deque
 from pathlib import Path
 from datetime import datetime
@@ -86,44 +86,15 @@ LEGACY_TMP_DIR = LEGACY_DATA_DIR / "tmp"
 LEGACY_BACKUP_DIR = LEGACY_DATA_DIR / "backups"
 LEGACY_ROOT_DATA_NAMES = ("settings.json", "archive.db", "logs", "tmp", "backups")
 
-def runtime_storage_policy():
-    items = [
-        {
-            'name': '앱 실행 파일 폴더',
-            'path': str(APP_DIR),
-            'role': '프로그램 파일, tools, README, 라이선스 파일',
-            'status': '실행 파일 전용, 기존 데이터 파일은 보존',
-        },
-        {
-            'name': '사용자 데이터 폴더',
-            'path': str(USER_DATA_DIR),
-            'role': 'settings.json, archive.db, logs, tmp, backups, reports',
-            'status': '현재 설정/DB/log/tmp/backups/reports 저장 위치',
-        },
-    ]
-    if LEGACY_DATA_DIR != APP_DIR:
-        items.append({
-            'name': '기존 데이터 원본',
-            'path': str(LEGACY_DATA_DIR),
-            'role': '개발 실행 시 release 폴더의 기존 settings.json, archive.db',
-            'status': '새 사용자 데이터 폴더로 최초 복사할 원본',
-        })
-    return items
-
 DB_PATH    = USER_DB_PATH
 SETTINGS_PATH = USER_SETTINGS_PATH
 LOG_DIR    = USER_LOG_DIR
 TMP_DIR    = USER_TMP_DIR
 BACKUP_DIR = USER_BACKUP_DIR
 REPORT_DIR = USER_REPORT_DIR
-MIGRATION_LOG_PATH = LOG_DIR / "migration.log"
-MIGRATION_LOG_MAX_BYTES = 2 * 1024 * 1024
-MIGRATION_LOG_BACKUP_COUNT = 10
 AUTO_CLEANUP_DAYS = 7
 RELEASE_BACKUP_KEEP_COUNT = 3
 _RUNTIME_DIR_ERRORS = []
-_RUNTIME_MIGRATION_EVENTS = []
-_RUNTIME_MIGRATION_LOG_ERRORS = []
 
 def _ensure_runtime_dir(path):
     try:
@@ -139,178 +110,15 @@ _ensure_runtime_dir(TMP_DIR)
 _ensure_runtime_dir(BACKUP_DIR)
 _ensure_runtime_dir(REPORT_DIR)
 
-def _file_stamp():
-    return datetime.now().strftime('%Y%m%d_%H%M%S_%f')
-
-def _rotate_migration_log():
-    def _local_size(path):
-        try:
-            return int(Path(path).stat().st_size)
-        except Exception:
-            return 0
-
-    def _local_mtime(path):
-        try:
-            return float(Path(path).stat().st_mtime)
-        except Exception:
-            return 0.0
-
-    try:
-        if (
-            MIGRATION_LOG_PATH.exists()
-            and not MIGRATION_LOG_PATH.is_symlink()
-            and MIGRATION_LOG_PATH.is_file()
-            and _local_size(MIGRATION_LOG_PATH) > MIGRATION_LOG_MAX_BYTES
-        ):
-            stamp = _file_stamp()
-            rotated = LOG_DIR / f'migration.log.{stamp}'
-            MIGRATION_LOG_PATH.replace(rotated)
-        backups = []
-        for candidate in LOG_DIR.glob('migration.log.*'):
-            try:
-                if candidate.is_symlink() or not candidate.is_file():
-                    continue
-                backups.append(candidate)
-            except Exception:
-                continue
-        backups.sort(key=_local_mtime, reverse=True)
-        try:
-            keep_count = max(1, int(MIGRATION_LOG_BACKUP_COUNT))
-        except Exception:
-            keep_count = 5
-        for old in backups[keep_count:]:
-            try:
-                old.unlink()
-            except Exception:
-                pass
-    except Exception as e:
-        _RUNTIME_MIGRATION_LOG_ERRORS.append(f'rotate failed: {e}')
-
-def _append_migration_log(event):
-    try:
-        LOG_DIR.mkdir(parents=True, exist_ok=True)
-        _rotate_migration_log()
-        with MIGRATION_LOG_PATH.open('a', encoding='utf-8') as fh:
-            fh.write(json.dumps(event, ensure_ascii=False))
-            fh.write('\n')
-    except Exception as e:
-        _RUNTIME_MIGRATION_LOG_ERRORS.append(str(e))
-
-def _record_migration_event(name, source, target, status, message=''):
-    event = {
-        'timestamp': datetime.now().isoformat(timespec='seconds'),
-        'name': name,
-        'source': str(source),
-        'target': str(target),
-        'status': status,
-        'message': message,
-        'app_dir': str(APP_DIR),
-        'user_data_dir': str(USER_DATA_DIR),
-    }
-    _RUNTIME_MIGRATION_EVENTS.append(event)
-    _append_migration_log(event)
-
-def _copy_legacy_file_to_user_data(name, source, target):
-    if source.resolve() == target.resolve():
-        return
-    if not source.exists() or not source.is_file():
-        return
-    if target.exists():
-        return
-    try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, target)
-        _record_migration_event(name, source, target, 'copied', '기존 파일을 새 사용자 데이터 폴더로 복사함; 원본 보존')
-    except Exception as e:
-        _record_migration_event(name, source, target, 'failed', str(e))
-
-def migrate_legacy_user_data():
-    _copy_legacy_file_to_user_data('settings.json', LEGACY_SETTINGS_PATH, SETTINGS_PATH)
-    _copy_legacy_file_to_user_data('archive.db', LEGACY_DB_PATH, DB_PATH)
-    return list(_RUNTIME_MIGRATION_EVENTS)
-
-def runtime_migration_events():
-    return [dict(item) for item in _RUNTIME_MIGRATION_EVENTS]
-
-def runtime_migration_log_info():
-    return {
-        'path': str(MIGRATION_LOG_PATH),
-        'errors': list(_RUNTIME_MIGRATION_LOG_ERRORS),
-    }
-
-def _path_key(path):
-    try:
-        text = str(Path(path).resolve())
-    except Exception:
-        text = str(path)
-    return text.lower() if os.name == 'nt' else text
-
-def _legacy_root_candidates():
-    candidates = []
-    seen = set()
-
-    def add(path, label):
-        try:
-            resolved = Path(path).resolve()
-        except Exception:
-            return
-        if _path_key(resolved) == _path_key(USER_DATA_DIR):
-            return
-        key = _path_key(resolved)
-        if key in seen:
-            return
-        seen.add(key)
-        candidates.append((label, resolved))
-
-    add(APP_DIR, '앱 실행 파일 폴더')
-    add(LEGACY_DATA_DIR, '기존 데이터 원본')
-    if getattr(sys, 'frozen', False):
-        try:
-            if APP_DIR.parent.name.lower() == 'release':
-                add(APP_DIR.parent.parent, '프로젝트 루트 후보')
-        except Exception:
-            pass
-    return candidates
-
-def _legacy_root_item_info(path):
-    info = {
-        'name': path.name,
-        'path': str(path),
-        'kind': '폴더' if path.is_dir() else '파일',
-        'size': None,
-        'children': None,
-        'modified': '',
-    }
-    try:
-        mtime = _path_mtime(path)
-        info['modified'] = datetime.fromtimestamp(mtime).isoformat(timespec='seconds') if mtime else ''
-        if path.is_file():
-            info['size'] = _path_size(path)
-        elif path.is_dir():
-            try:
-                info['children'] = sum(1 for _ in path.iterdir())
-            except Exception:
-                info['children'] = None
-    except Exception as e:
-        info['error'] = str(e)
-    return info
-
-def runtime_legacy_root_data_status():
-    groups = []
-    for label, root in _legacy_root_candidates():
-        items = []
-        for name in LEGACY_ROOT_DATA_NAMES:
-            path = root / name
-            if path.exists():
-                items.append(_legacy_root_item_info(path))
-        if items:
-            groups.append({
-                'label': label,
-                'root': str(root),
-                'items': items,
-                'policy': '안내만 표시; 앱은 사용자 데이터 폴더만 사용하며 자동 삭제/이동하지 않음',
-            })
-    return groups
+# 레거시 사용자 데이터 마이그레이션은 migration.py 로 분리됨. 하위 호환 재노출.
+from migration import (
+    MIGRATION_LOG_PATH, MIGRATION_LOG_MAX_BYTES, MIGRATION_LOG_BACKUP_COUNT,
+    _RUNTIME_MIGRATION_EVENTS, _RUNTIME_MIGRATION_LOG_ERRORS,
+    _file_stamp, _rotate_migration_log, _append_migration_log, _record_migration_event,
+    _copy_legacy_file_to_user_data, migrate_legacy_user_data, runtime_migration_events,
+    runtime_migration_log_info, _path_key, _legacy_root_candidates, _legacy_root_item_info,
+    runtime_legacy_root_data_status,
+)
 
 migrate_legacy_user_data()
 
@@ -323,70 +131,10 @@ from runtime_tools import (
     check_runtime_environment, format_runtime_environment,
 )
 
-def _check_write_location(name, path, role, required=True):
-    path = Path(path)
-    try:
-        path.mkdir(parents=True, exist_ok=True)
-        probe_name = f'.mxf_qc_write_probe_{os.getpid()}_{datetime.now().strftime("%H%M%S%f")}.tmp'
-        probe = path / probe_name
-        probe.write_text('ok', encoding='utf-8')
-        try:
-            probe.unlink(missing_ok=True)
-        except Exception:
-            pass
-        return {
-            'name': name,
-            'ok': True,
-            'path': str(path),
-            'message': '쓰기 가능',
-            'role': role,
-            'required': required,
-            'hint': '',
-        }
-    except Exception as e:
-        return {
-            'name': name,
-            'ok': False,
-            'path': str(path),
-            'message': str(e),
-            'role': role,
-            'required': required,
-            'hint': '앱 폴더를 쓰기 가능한 위치에 두세요. Program Files처럼 권한이 막힌 위치는 피하는 것이 좋습니다.',
-        }
-
-def _check_read_location(name, path, role, required=True):
-    path = Path(path)
-    try:
-        ok = path.exists() and path.is_dir()
-        return {
-            'name': name,
-            'ok': ok,
-            'path': str(path),
-            'message': '읽기 가능' if ok else '폴더를 찾을 수 없습니다',
-            'role': role,
-            'required': required,
-            'hint': '' if ok else '앱 실행 파일 폴더가 이동/삭제됐는지 확인하세요.',
-        }
-    except Exception as e:
-        return {
-            'name': name,
-            'ok': False,
-            'path': str(path),
-            'message': str(e),
-            'role': role,
-            'required': required,
-            'hint': '앱 실행 파일 폴더 접근 권한을 확인하세요.',
-        }
-
-def check_runtime_storage():
-    return [
-        _check_read_location('앱 실행 파일 폴더', BASE_DIR, '프로그램 파일, tools, README 보관 위치'),
-        _check_write_location('사용자 데이터 폴더', USER_DATA_DIR, 'settings.json, archive.db, logs, tmp, backups, reports 저장 위치'),
-        _check_write_location('로그 폴더', LOG_DIR, 'logs/player.log 기록'),
-        _check_write_location('임시 폴더', TMP_DIR, '분석 캐시와 임시 작업 파일 생성'),
-        _check_write_location('백업 폴더', BACKUP_DIR, 'settings.json, archive.db 자동 백업', required=False),
-        _check_write_location('리포트 폴더', REPORT_DIR, '진단 리포트 zip 저장', required=False),
-    ]
+# 저장 위치 읽기/쓰기 가능 여부 점검은 storage_check.py 로 분리됨. 하위 호환 재노출.
+from storage_check import (
+    runtime_storage_policy, _check_write_location, _check_read_location, check_runtime_storage,
+)
 
 def friendly_error_text(area, detail='', filename=None, max_detail=160):
     """Convert technical VLC/FFmpeg errors into short operator-facing Korean text."""
@@ -926,109 +674,15 @@ from diagnostics import (
 )
 
 # ── 로거 ──────────────────────────────────────────────
-import logging as _logging
-from logging.handlers import TimedRotatingFileHandler as _TRFHandler
-
-_LOG_MAX_BYTES = 10 * 1024 * 1024
-_LOG_BACKUP_COUNT = 30
-
-class _SafeTimedRotatingFileHandler(_TRFHandler):
-    """다른 MXF QC Player 프로세스가 로그를 잡고 있어도 롤오버 실패를 삼킨다."""
-    def doRollover(self):
-        try:
-            super().doRollover()
-        except PermissionError as e:
-            try:
-                if self.stream:
-                    self.stream.flush()
-            except Exception:
-                pass
-            self.rolloverAt = self.computeRollover(int(time.time()))
-        except OSError as e:
-            try:
-                self.rolloverAt = self.computeRollover(int(time.time()))
-            except Exception:
-                pass
-
-def _rotate_large_log_file():
-    warnings = []
-    try:
-        LOG_DIR.mkdir(parents=True, exist_ok=True)
-        current = LOG_DIR / 'player.log'
-        if (
-            current.exists()
-            and not current.is_symlink()
-            and current.is_file()
-            and _path_size(current) > _LOG_MAX_BYTES
-        ):
-            stamp = _file_stamp()
-            rotated = LOG_DIR / f'player.log.{stamp}'
-            current.replace(rotated)
-            warnings.append(f'large log rotated: {rotated.name}')
-        backups = []
-        for candidate in LOG_DIR.glob('player.log.*'):
-            try:
-                if candidate.is_symlink() or not candidate.is_file():
-                    continue
-                backups.append(candidate)
-            except Exception:
-                continue
-        backups.sort(key=_path_mtime, reverse=True)
-        keep_count = max(1, _safe_int_value(_LOG_BACKUP_COUNT, 5))
-        for old in backups[keep_count:]:
-            try:
-                old.unlink()
-            except Exception as e:
-                warnings.append(f'old log cleanup failed: {old.name} ({e})')
-    except Exception as e:
-        warnings.append(f'large log rotation skipped: {e}')
-    return warnings
-
-def _make_logger():
-    logger = _logging.getLogger('player')
-    logger.setLevel(_logging.DEBUG)
-    if logger.handlers:  # 중복 방지
-        return logger
-    fmt = _logging.Formatter(
-        '[%(asctime)s] %(levelname)-5s | %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-    # 콘솔 출력 (WARNING 이상만)
-    ch = _logging.StreamHandler()
-    ch.setLevel(_logging.WARNING)
-    ch.setFormatter(fmt)
-    logger.addHandler(ch)
-    # 날짜별 로그 파일 (30일 보관)
-    try:
-        LOG_DIR.mkdir(parents=True, exist_ok=True)
-        rotation_warnings = _rotate_large_log_file()
-        fh = _SafeTimedRotatingFileHandler(
-            LOG_DIR / 'player.log',
-            when='midnight', interval=1, backupCount=30,
-            encoding='utf-8'
-        )
-        fh.setLevel(_logging.DEBUG)
-        fh.setFormatter(fmt)
-        logger.addHandler(fh)
-        for msg in rotation_warnings:
-            logger.warning(msg)
-    except Exception as e:
-        logger.warning(f'log file disabled: {LOG_DIR / "player.log"} ({e})')
-    for path, err in _RUNTIME_DIR_ERRORS:
-        logger.warning(f'runtime directory unavailable: {path} ({err})')
-    return logger
-
-log = _make_logger()
+# 파일 로거 생성/로테이션과 예외 기록은 logging_setup.py 로 분리됨. 하위 호환 재노출.
+from logging_setup import (
+    _LOG_MAX_BYTES, _LOG_BACKUP_COUNT, _SafeTimedRotatingFileHandler, _rotate_large_log_file,
+    _make_logger, log, _log_exc,
+)
 
 import process_registry as _process_registry
 _process_registry.set_logger(log)
 _process_registry.set_state_event_recorder(record_state_event)
-
-def _log_exc(label, exc=None):
-    """예외를 ERROR 레벨로 기록. except 블록에서 호출"""
-    import traceback
-    detail = traceback.format_exc() if exc is None else f'{type(exc).__name__}: {exc}'
-    log.error(f'{label}\n{detail}')
 
 # ── Qt 위젯 헬퍼 ─────────────────────────────────────────
 def mk_btn(text, w=None, h=26, color=None, bg=None):

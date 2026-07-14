@@ -19,7 +19,7 @@ if errorlevel 1 exit /b %errorlevel%
 
 echo.
 echo Running Python bytecode compile check...
-"%PY%" -m py_compile check_imports.py safe.py process_registry.py theme.py settings.py runtime_tools.py diagnostics.py constants.py db_models.py threads.py meters.py loudness_coordinator.py transport_controls.py video_panel.py right_panel.py main.py
+"%PY%" -m py_compile check_imports.py safe.py process_registry.py theme.py migration.py storage_check.py settings.py runtime_tools.py diagnostics.py logging_setup.py constants.py db_models.py threads.py meters.py loudness_coordinator.py transport_controls.py video_panel.py right_panel.py main.py
 if errorlevel 1 exit /b %errorlevel%
 
 where git > nul 2>&1
