@@ -1,5 +1,11 @@
 {
   "features": {
+    "remaining-cleanup-batch": {
+      "phase": "check",
+      "matchRate": 100,
+      "checkedAt": "2026-07-15T02:55:00+09:00",
+      "note": "잔여 작업 일괄(사용자 '전부 진행' 지시). ①죽은 코드 제거: VlcAudioAdapter·TranscodeCoordinator._preconvert·constants 죽은 import 7종(교차 재노출 0 확인) ②불활성 preconvert 기계장치 절제(진입점 제거로 데이터플로 영구 no-op — coordinator 필드/취소 경로·panel 위임/프로퍼티·main.py closeEvent 2줄·테스트 2종, 저장소 preconvert 참조 0) ③첫 프레임 시간 상태 타임라인 기록(record_state_event('cue',...) — 진단 ZIP 현장 판별용) ④blackdetect 전환 no-go 분석 문서화(docs/03-analysis/blackdetect-conversion.analysis.md — 픽셀 임계값 레인지 정규화 의미 불일치로 '동작 동일' 증명 불가). 게이트: check_imports 그린, pytest 83. Cluster A(메타데이터 probe)는 계속 보류(뮤텍스로 GUI 검증 불가·실부채인 인라인 중복/_metadata_ready 결합은 이동으로 해소 안 됨)"
+    },
     "improvement-batch-cue-qcrunner-transcode-markers": {
       "phase": "check",
       "matchRate": 100,
