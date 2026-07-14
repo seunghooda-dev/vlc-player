@@ -1,5 +1,11 @@
 {
   "features": {
+    "improvement-batch-cue-qcrunner-transcode-markers": {
+      "phase": "check",
+      "matchRate": 100,
+      "checkedAt": "2026-07-15T02:20:00+09:00",
+      "note": "개선 1~4번 배치. ①vout 워밍업 실측→no-ship 결정(2번째 CUE부터 자연 warm 0.15~0.19s, 합성 워밍업은 ~0.1s 한계+검증 불가로 미채택, cue-latency.plan §8) ②right_panel QC 워커 연결/정리 헬퍼 2종으로 5+10곳 중복 제거 ③TranscodeCoordinator 추출(video_panel 4108→3862, 이동 본문 pre-image 기계 diff 동치 확인) ④VLC 어댑터 마커 4종 pytest 이관. gap-detector 11/11 invariant 100%. 게이트: check_imports 그린, pytest 85. GUI 스모크는 사용자 실행 인스턴스 뮤텍스로 차단(단위+프로브 게이트로 커버). Cluster A(메타데이터 probe 상태기계)는 _metadata_ready 전역 결합·load_file 인라인 중복 때문에 고위험으로 평가—GUI 검증 가능 시점으로 보류"
+    },
     "ui-second-decomposition-and-constants-final": {
       "phase": "check",
       "matchRate": 100,
