@@ -43,3 +43,46 @@ jobs:
           # check_imports 는 한국어 섹션 헤더를 출력 — cp1252 러너에서 UnicodeEncodeError 방지
           PYTHONUTF8: '1'
         run: python check_imports.py
+
+  build-exe:
+    # PyInstaller 스펙 그대로 EXE 빌드 — push마다 아티팩트, v* 태그면 GitHub Release 첨부.
+    # spec은 VLC/FFmpeg를 번들하지 않으므로 러너에 없어도 빌드된다(도구는 실행 대상 PC에서 탐색).
+    # bat 체인(build.bat 등)은 VLC 게이트 스모크를 돌리므로 CI에서 재사용하지 않는다.
+    if: github.event_name == 'push'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install runtime deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Build EXE from spec
+        env:
+          PYTHONUTF8: '1'
+        run: pyinstaller --noconfirm "MXF QC Player.spec"
+      - name: Sanity smoke on built EXE (VLC 불필요 경로만)
+        env:
+          MXF_QC_USER_DATA_DIR: ${{ runner.temp }}\mxf_qc_exe
+        run: |
+          & "dist\MXF QC Player\MXF QC Player.exe" --db-smoke-test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & "dist\MXF QC Player\MXF QC Player.exe" --settings-smoke-test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Zip onedir package
+        run: Compress-Archive -Path "dist\MXF QC Player" -DestinationPath "MXF-QC-Player-win64.zip"
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MXF-QC-Player-win64-${{ github.run_number }}-${{ github.sha }}
+          path: MXF-QC-Player-win64.zip
+          retention-days: 14
+      - name: Attach to GitHub Release (v* 태그)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" "MXF-QC-Player-win64.zip" --title "MXF QC Player ${{ github.ref_name }}" --generate-notes

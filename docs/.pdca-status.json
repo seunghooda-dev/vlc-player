@@ -1,5 +1,12 @@
 {
   "features": {
+    "priority-batch-1to4": {
+      "phase": "check",
+      "matchRate": 100,
+      "startedAt": "2026-07-15T06:20:00+09:00",
+      "checkedAt": "2026-07-15T06:50:00+09:00",
+      "note": "사용자 goal: 1~4순위 무승인 일괄 완료. ①릴리스 파이프라인: ci.yml build-exe 잡(스펙 빌드→frozen EXE db/settings 스모크→zip 아티팩트 14일→v* 태그 시 gh release) — 로컬 spec 빌드 exit 0 + frozen EXE 스모크 2종 exit 0으로 사전 검증(버전 증가는 수동 유지). ③load_file 인라인 메타데이터 84줄→_apply_probe_metadata(preserve_selection) 통합 + 사문 블록 23줄 제거(8bcc290, 실기 A/B 동작보존). 부수 발견 결함 즉시 수정: 트랜스코드 경로 조기 CUE 완료 선언 제거(042d918) — .mov 미디어 스모크 exit 7→0, MXF 무회귀. ④diagnostics 마커→pytest 이관(449de70), RightPanel 추가 분해는 QcReportExporter 스킵 하 잔여 응집 작아 보류 판단 기록. ②현장 피드백은 사용자 몫(새 EXE 사용 중). 게이트: check_imports 그린, pytest 87, 실기 스모크 MXF/.mov PASS"
+    },
     "remaining-cleanup-batch": {
       "phase": "check",
       "matchRate": 100,
