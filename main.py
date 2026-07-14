@@ -2196,7 +2196,7 @@ def _run_db_smoke_test():
 def _run_settings_smoke_test():
     _setup_global_exception_handler()
     try:
-        import constants as cfg
+        import settings
     except Exception as e:
         log.error(f'settings smoke test failed: import error {e}')
         return 2
@@ -2214,8 +2214,8 @@ def _run_settings_smoke_test():
 
     def _reset_cache():
         try:
-            with cfg._settings_lock:
-                cfg._settings_cache = None
+            with settings._settings_lock:
+                settings._settings_cache = None
         except Exception:
             pass
 

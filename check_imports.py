@@ -7,7 +7,8 @@ import re, ast, sys, tempfile, csv, time
 from pathlib import Path
 
 FILES = [
-    'safe.py', 'process_registry.py', 'theme.py', 'constants.py', 'db_models.py', 'threads.py',
+    'safe.py', 'process_registry.py', 'theme.py', 'settings.py', 'runtime_tools.py', 'diagnostics.py',
+    'constants.py', 'db_models.py', 'threads.py',
     'meters.py', 'video_panel.py', 'right_panel.py', 'main.py'
 ]
 MODULE_NAMES = set(f.replace('.py', '') for f in FILES)
@@ -126,6 +127,8 @@ def check_core_logic():
         video_source = read_source('video_panel.py')
         threads_source = read_source('threads.py')
         constants_source = read_source('constants.py')
+        diagnostics_source = read_source('diagnostics.py')
+        runtime_tools_source = read_source('runtime_tools.py')
         if "('정지',           'S')" in main_source:
             errors.append("  FAIL stale S stop shortcut remains in help")
         if "('검수 취소',       'Esc')" not in main_source:
@@ -154,7 +157,7 @@ def check_core_logic():
             errors.append("  FAIL playback-priority meter scheduling missing")
         if 'def _schedule_loudness_analysis(self, filepath, delay_ms=1500)' not in video_source or 'settle_sec = 2.5' not in video_source:
             errors.append("  FAIL playback-priority loudness scheduling missing")
-        if "isoformat(timespec='milliseconds')" not in constants_source:
+        if "isoformat(timespec='milliseconds')" not in diagnostics_source:
             errors.append("  FAIL state timeline should retain millisecond timing")
         if 'def pause(self):\n        self._next_op()' not in video_source:
             errors.append("  FAIL VLC pause should invalidate delayed resume callbacks")
@@ -182,13 +185,13 @@ def check_core_logic():
             errors.append("  FAIL settings smoke test should verify save/reload/normalization")
         if '--diagnostic-smoke-test' not in main_source or 'diagnostic zip generated and verified' not in main_source:
             errors.append("  FAIL diagnostic smoke test should verify generated ZIP contents")
-        if 'storage_summary.json' not in main_source or '_diagnostic_storage_summary' not in constants_source:
+        if 'storage_summary.json' not in main_source or '_diagnostic_storage_summary' not in diagnostics_source:
             errors.append("  FAIL diagnostic report should include user-data storage summary")
         if '--qc-report-smoke-test' not in main_source or 'CSV/TXT reports generated and verified' not in main_source:
             errors.append("  FAIL QC report smoke test should verify CSV/TXT report files")
         if '--cleanup-smoke-test' not in main_source or 'generated cleanup stayed inside user data' not in main_source:
             errors.append("  FAIL cleanup smoke test should verify generated cleanup safety")
-        if "'severity': 'warning' if frozen else 'advisory'" not in constants_source or "severity == 'advisory'" not in main_source:
+        if "'severity': 'warning' if frozen else 'advisory'" not in runtime_tools_source or "severity == 'advisory'" not in main_source:
             errors.append("  FAIL package check logging should separate advisory dev tools warnings")
     except Exception as e:
         errors.append(f"  FAIL shortcut source check: {e}")
