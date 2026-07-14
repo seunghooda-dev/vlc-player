@@ -1369,7 +1369,6 @@ class MainWindow(QMainWindow):
             if getattr(self, '_warmup_thread', None):
                 worker_threads.append((self._warmup_thread, 'warmup_thread'))
             worker_threads.extend((t, 'transcode_thread') for t in list(getattr(vp, '_dead_threads', [])))
-            worker_threads.extend((t, 'preconvert_thread') for t in list(getattr(vp, '_preconvert_threads', [])))
             if getattr(rp, '_audio_thread', None):
                 worker_threads.append((rp._audio_thread, 'audio_thread'))
             if getattr(rp, '_black_thread', None):
@@ -1380,8 +1379,6 @@ class MainWindow(QMainWindow):
                 self._shutdown_worker_thread(thread, label)
             try:
                 vp._dead_threads.clear()
-                vp._preconvert_threads.clear()
-                vp._preconvert_jobs.clear()
                 rp._audio_thread = None
                 rp._black_thread = None
                 rp._freeze_thread = None

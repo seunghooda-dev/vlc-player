@@ -1,7 +1,7 @@
 """
 transcode_coordinator.py — 비직접재생 파일 변환/캐시 조정자
-VideoPanel에서 분리된 TranscodeCoordinator: CUE용 트랜스코드 시작/스왑, 임시파일 캐시 정리(LRU),
-사전변환(preconvert) 작업 수명 관리. DIRECT_VLC_EXTS(변환 불필요 확장자)의 원 소유 모듈.
+VideoPanel에서 분리된 TranscodeCoordinator: CUE용 트랜스코드 시작/스왑, 임시파일 캐시 정리(LRU).
+DIRECT_VLC_EXTS(변환 불필요 확장자)의 원 소유 모듈.
 """
 from pathlib import Path
 
@@ -24,8 +24,6 @@ class TranscodeCoordinator:
         self._tc_thread = None
         self._tc_cache = {}
         self._tc_cache_order = []
-        self._preconvert_threads = []
-        self._preconvert_jobs = {}
 
     def _evict_tc_cache(self, max_files=10, max_gb=2.0):
         """tmp 캐시 정리 — 파일 수/용량 초과 시 오래된 것 삭제"""
@@ -87,22 +85,6 @@ class TranscodeCoordinator:
                     total_bytes -= _safe_unlink_cache(p)
         self._tc_cache_order = order
 
-    def _cancel_preconvert_job(self, filepath=None):
-        jobs = list(self._preconvert_jobs.items())
-        for fp, thread in jobs:
-            if filepath and fp != filepath:
-                continue
-            self._preconvert_jobs.pop(fp, None)
-            if thread in self._preconvert_threads:
-                self._preconvert_threads.remove(thread)
-            if fp in self._tc_cache and not self._tc_cache.get(fp):
-                self._tc_cache.pop(fp, None)
-            try:
-                if thread and thread.isRunning():
-                    thread.abort()
-            except Exception as e:
-                log.debug(f'preconvert cancel: {e}')
-
     def _retire_tc(self):
         """_tc_thread를 abort 후 dead_threads로 이동.
         finished 시그널로 완전 종료 시점에 자동 제거 → isRunning() 타이밍 충돌 방지"""
@@ -125,17 +107,6 @@ class TranscodeCoordinator:
         panel = self._panel
         cache = getattr(self, '_tc_cache', {})
         cached_tmp = cache.get(filepath)
-        pre_job = getattr(self, '_preconvert_jobs', {}).pop(filepath, None)
-        if pre_job and pre_job.isRunning():
-            try:
-                pre_job.abort()
-            except Exception as e:
-                log.debug(f'preconvert abort for cue: {e}')
-            if hasattr(self, '_preconvert_threads') and pre_job in self._preconvert_threads:
-                self._preconvert_threads.remove(pre_job)
-            if filepath in cache:
-                del cache[filepath]
-            cached_tmp = None
         if cached_tmp and '_preview' in Path(cached_tmp).stem:
             del cache[filepath]
             cached_tmp = None

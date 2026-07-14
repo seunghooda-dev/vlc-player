@@ -54,30 +54,6 @@ def test_direct_vlc_exts_canonical_home():
     assert reexported is DIRECT_VLC_EXTS
 
 
-def test_cancel_preconvert_job_targets_single_file():
-    c = TranscodeCoordinator(_panel())
-    t1, t2 = FakeThread(), FakeThread()
-    c._preconvert_jobs = {'a.mov': t1, 'b.mov': t2}
-    c._preconvert_threads = [t1, t2]
-    c._tc_cache = {'a.mov': None, 'b.mov': None}  # 변환 중 마킹
-    c._cancel_preconvert_job('a.mov')
-    assert t1.aborted is True and t2.aborted is False
-    assert 'a.mov' not in c._preconvert_jobs and 'b.mov' in c._preconvert_jobs
-    assert c._preconvert_threads == [t2]
-    assert 'a.mov' not in c._tc_cache  # 미완성 캐시 마킹 제거
-
-
-def test_cancel_preconvert_job_all_and_keeps_completed_cache():
-    c = TranscodeCoordinator(_panel())
-    t1 = FakeThread()
-    c._preconvert_jobs = {'a.mov': t1}
-    c._preconvert_threads = [t1]
-    c._tc_cache = {'a.mov': 'C:/tmp/a.mp4'}  # 완료된 캐시는 보존
-    c._cancel_preconvert_job()
-    assert c._preconvert_jobs == {}
-    assert c._tc_cache == {'a.mov': 'C:/tmp/a.mp4'}
-
-
 def test_retire_tc_parks_thread_and_finished_removes():
     panel = _panel()
     c = TranscodeCoordinator(panel)

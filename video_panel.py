@@ -1612,21 +1612,9 @@ class VideoPanel(QWidget):
         self._cancel_audio_mix()
         self.status_changed.emit("  ⏏ EJECT — 파일 초기화됨")
 
-    # 트랜스코드/사전변환/캐시는 TranscodeCoordinator로 분리됨 — 외부 호출부 호환 위임.
-    def _cancel_preconvert_job(self, filepath=None):
-        return self._transcode_coordinator._cancel_preconvert_job(filepath)
-
+    # 트랜스코드/캐시는 TranscodeCoordinator로 분리됨 — 외부 호출부 호환 위임.
     def _evict_tc_cache(self, max_files=10, max_gb=2.0):
         return self._transcode_coordinator._evict_tc_cache(max_files=max_files, max_gb=max_gb)
-
-    @property
-    def _preconvert_threads(self):
-        # main.py 종료 경로가 vp._preconvert_threads를 직접 순회/clear한다.
-        return self._transcode_coordinator._preconvert_threads
-
-    @property
-    def _preconvert_jobs(self):
-        return self._transcode_coordinator._preconvert_jobs
 
     def add_files(self, start_dir=None):
         if self._is_busy_loading():
@@ -2233,8 +2221,6 @@ class VideoPanel(QWidget):
         if hasattr(self, 'audio_mix'):
             self._cancel_audio_mix()
         mark_step('audio_mix_stop')
-        self._cancel_preconvert_job()
-        mark_step('preconvert_cancel')
         self._retire_probe()
         mark_step('probe_retire')
         self._retire_tc()
@@ -2588,8 +2574,6 @@ class VideoPanel(QWidget):
         record_state_event('file', 'load requested', file=Path(filepath).name)
         self._stop_all()
         mark_step('stop_all')
-        self._cancel_preconvert_job(filepath)
-        mark_step('cancel_preconvert')
         self._reset_audio_recovery()
         mark_step('reset_audio')
         self._set_loading_state(True, f"⏳ 1/4 파일 점검 완료 — {Path(filepath).name}")
