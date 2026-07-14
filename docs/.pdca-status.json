@@ -1,10 +1,12 @@
 {
   "features": {
     "cue-latency": {
-      "phase": "plan",
+      "phase": "check",
+      "matchRate": 100,
       "startedAt": "2026-07-14T20:30:00+09:00",
+      "checkedAt": "2026-07-14T22:30:00+09:00",
       "planDoc": "docs/01-plan/features/cue-latency.plan.md",
-      "note": "사용자 지시로 Design 생략, Plan 확정 후 곧바로 Do 진행"
+      "note": "gap-detector 코드 정합 100% (V5 게이트는 메인 세션에서 직접 실행 확인: check_imports 그린 + pytest 55 + 실 MXF 스모크). 첫 프레임 1.22s→0.83s 실측"
     }
   }
 }

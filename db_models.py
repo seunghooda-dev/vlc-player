@@ -258,10 +258,6 @@ def sec_to_tc(sec, fps=29.97, df=None, offset_frames=0):
     frame = round(sec * fps)
     return frames_to_tc(frame, fps, df, offset_frames)
 
-def sec_fmt(s):
-    s = max(0.0, _safe_float(s, 0.0))
-    return f"{int(s//60):02d}:{int(s%60):02d}"
-
 def _parse_rate_text(value):
     text = _safe_text(value)
     if not text or text in ("0/0", "N/A"):

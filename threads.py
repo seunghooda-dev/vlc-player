@@ -454,28 +454,6 @@ class AudioAnalyzeThread(QThread):
         if self._proc and self._proc.poll() is None:
             terminate_child_process(self._proc, 'audio analyze ffmpeg')
 
-    def _run_ffmpeg_capture(self, cmd, timeout=300):
-        self._proc = register_child_process(subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            creationflags=_analysis_flags(), encoding='utf-8', errors='replace'), 'audio analyze ffmpeg')
-        try:
-            waited = 0
-            while self._proc.poll() is None:
-                if self._abort:
-                    self.abort()
-                    return ''
-                if waited >= timeout * 10:
-                    self.abort()
-                    raise TimeoutError('FFmpeg audio analyze timeout')
-                self.msleep(100)
-                waited += 1
-            out, err = self._proc.communicate(timeout=2)
-            if self._proc.returncode != 0 and not self._abort:
-                log.warning(f'audio analyze ffmpeg rc={self._proc.returncode}: {err[-500:]}')
-            return err or ''
-        finally:
-            unregister_child_process(self._proc)
-
     def _audio_12_filter(self, audio_streams, out_label='aud'):
         """분석 속도를 위해 QC 기준 채널인 1/2CH만 추출한다."""
         if not audio_streams:
