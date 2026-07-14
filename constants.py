@@ -7,8 +7,7 @@ MXF QC Player - PyQt6 완전판
 파일 탐색 + 비디오 플레이어 + DB + STT + 씬감지 + 검색
 """
 
-import sys, os, subprocess, hashlib, csv, shutil, threading, time, zipfile, math
-from collections import deque
+import sys, os, shutil, time
 from pathlib import Path
 from datetime import datetime
 

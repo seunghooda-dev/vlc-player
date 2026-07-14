@@ -42,7 +42,7 @@ from safe       import safe_float, safe_int
 from transport_controls import QCMarkerSlider
 from loudness_coordinator import LoudnessCoordinator
 from transcode_coordinator import TranscodeCoordinator, DIRECT_VLC_EXTS
-from vlc_player import VlcAudioAdapter, AudioMixPlayer, VlcPlayerAdapter
+from vlc_player import AudioMixPlayer, VlcPlayerAdapter
 EMPTY_STAGE_TEXT = "▶\n\nMXF / MP4 등 영상 파일을 열어주세요\n\n파일 추가 버튼 또는 파일 드래그로 불러오세요"
 INITIAL_EMPTY_STAGE_TEXT = "▶\n\nMXF / MP4 등 영상 파일을 열어주세요\n\n⏏ 파일을 드래그하거나 CUE 버튼을 누르세요"
 

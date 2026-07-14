@@ -1,6 +1,6 @@
 """
 vlc_player.py — VLC 재생·오디오 믹스 어댑터
-VlcAudioAdapter/AudioMixPlayer/VlcPlayerAdapter: video_panel에서 분리된 VLC 볼륨 제어, FFmpeg 오디오 믹스, VLC 트랜스포트 재생 어댑터
+AudioMixPlayer/VlcPlayerAdapter: video_panel에서 분리된 FFmpeg 오디오 믹스, VLC 트랜스포트 재생 어댑터
 """
 import math
 import os
@@ -18,17 +18,6 @@ from constants import (
     _hidden_subprocess_flags, record_state_event,
 )
 from safe import safe_float, safe_int
-
-
-class VlcAudioAdapter:
-    def __init__(self, player):
-        self.player = player
-
-    def setVolume(self, value):
-        try:
-            self.player.audio_set_volume(int(max(0.0, min(1.0, value)) * 100))
-        except Exception as e:
-            log.debug(f'vlc volume: {e}')
 
 
 class AudioMixPlayer(QObject):

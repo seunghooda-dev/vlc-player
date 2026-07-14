@@ -103,65 +103,6 @@ class TranscodeCoordinator:
             except Exception as e:
                 log.debug(f'preconvert cancel: {e}')
 
-    def _preconvert(self, filepath):
-        p = self._panel._video_file_path(filepath)
-        if not p:
-            log.debug(f'preconvert skipped invalid file: {self._panel._display_file_name(filepath, "?")}')
-            return
-        filepath = str(p)
-        # VLC 원본 재생 경로에서는 사전 변환이 첫 재생 반응성을 해친다.
-        if p.suffix.lower() in DIRECT_VLC_EXTS:
-            log.info(f'skip preconvert for VLC direct playback: {p.name}')
-            return
-        # 비-MXF 호환 경로에서만 백그라운드 변환 캐시를 사용한다.
-
-        if filepath in self._tc_cache:
-            return  # 이미 변환됨 또는 진행 중
-
-        self._tc_cache[filepath] = None  # 변환 중 마킹
-        pairs = self._panel._get_selected_ch_pairs()
-        t = TranscodeThread(filepath, pairs)
-
-        def _on_done(tmp_path, fp=filepath, thread=t):
-            if hasattr(self, '_tc_cache'):
-                self._tc_cache[fp] = tmp_path
-                if hasattr(self, '_tc_cache_order') and fp not in self._tc_cache_order:
-                    self._tc_cache_order.append(fp)
-                self._evict_tc_cache()  # 용량 초과 시 정리
-            # 완료된 스레드를 보관 목록에서 제거
-            if hasattr(self, '_preconvert_threads') and thread in self._preconvert_threads:
-                self._preconvert_threads.remove(thread)
-            if hasattr(self, '_preconvert_jobs'):
-                self._preconvert_jobs.pop(fp, None)
-            self._panel.ai_lbl.setText(f"✓ 사전변환 완료: {self._panel._display_file_name(fp)}")
-
-        def _on_err(err, fp=filepath, thread=t):
-            if hasattr(self, '_tc_cache') and fp in self._tc_cache:
-                del self._tc_cache[fp]   # 실패 시 캐시 제거
-            if hasattr(self, '_preconvert_threads') and thread in self._preconvert_threads:
-                self._preconvert_threads.remove(thread)
-            if hasattr(self, '_preconvert_jobs'):
-                self._preconvert_jobs.pop(fp, None)
-
-        def _on_finished(fp=filepath, thread=t):
-            if hasattr(self, '_preconvert_threads') and thread in self._preconvert_threads:
-                self._preconvert_threads.remove(thread)
-                log.debug(f'preconvert thread cleanup on finished: {self._panel._display_file_name(fp)}')
-            if hasattr(self, '_preconvert_jobs') and self._preconvert_jobs.get(fp) is thread:
-                self._preconvert_jobs.pop(fp, None)
-            if hasattr(self, '_tc_cache') and self._tc_cache.get(fp) is None:
-                self._tc_cache.pop(fp, None)
-
-        t.ready_full.connect(_on_done)
-        t.error.connect(_on_err)
-        t.finished.connect(_on_finished)
-
-        # ★ self에 보관 → GC 소멸 방지 (이게 없으면 함수 종료 즉시 크래시)
-        self._preconvert_threads.append(t)
-        self._preconvert_jobs[filepath] = t
-        t.start()
-        self._panel.ai_lbl.setText(f"⏳ 백그라운드 변환 중: {self._panel._display_file_name(filepath)}")
-
     def _retire_tc(self):
         """_tc_thread를 abort 후 dead_threads로 이동.
         finished 시그널로 완전 종료 시점에 자동 제거 → isRunning() 타이밍 충돌 방지"""
