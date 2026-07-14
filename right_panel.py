@@ -32,6 +32,7 @@ from db_models   import (
 )
 from threads     import AudioAnalyzeThread, BlackDetectThread, FreezeDetectThread
 from meters      import mk_label
+from safe        import safe_float, safe_int, safe_count
 
 FILE_ITEM_HTML_ROLE = Qt.ItemDataRole.UserRole.value + 10
 FILE_ITEM_PLAIN_ROLE = Qt.ItemDataRole.UserRole.value + 11
@@ -64,31 +65,35 @@ FILE_FILTER_TIPS = {
 }
 
 
-def _safe_float(value, default=0.0):
-    try:
-        parsed = float(value)
-        return parsed if math.isfinite(parsed) else default
-    except Exception:
-        return default
-
-
-def _safe_int(value, default=0):
-    try:
-        parsed = float(value)
-        if math.isfinite(parsed):
-            return int(parsed)
-    except Exception:
-        pass
-    return default
-
-
-def _safe_count(value):
-    return max(0, _safe_int(value, 0))
+# 숫자 변환 헬퍼는 safe.py 로 통합됨. 기존 호출부 호환을 위한 별칭.
+_safe_float = safe_float
+_safe_int = safe_int
+_safe_count = safe_count
 
 
 def _safe_text(value, default='—'):
     text = str(value or '').strip()
     return text if text else default
+
+
+def _csv_safe_cell(value):
+    """Excel CSV 수식 인젝션 방지.
+
+    소재 파일명 등 외부 문자열이 `=`, `@`, 탭/CR로 시작하면 Excel이 수식으로
+    실행할 수 있어 앞에 작은따옴표를 붙여 텍스트로 강제한다. `+`/`-` 는 순수
+    음수/양수 숫자(무음 dB 임계값 등)는 데이터로 보존하고 수식류만 방어한다.
+    """
+    if not isinstance(value, str) or not value:
+        return value
+    first = value[0]
+    if first in ('=', '@', '\t', '\r'):
+        return "'" + value
+    if first in ('+', '-'):
+        try:
+            float(value)
+        except ValueError:
+            return "'" + value
+    return value
 
 
 class FileListItemDelegate(QStyledItemDelegate):
@@ -1994,7 +1999,9 @@ class RightPanel(QWidget):
             with tmp.open('w', encoding='utf-8-sig', newline='') as fh:
                 writer = csv.DictWriter(fh, fieldnames=fieldnames)
                 writer.writeheader()
-                writer.writerows(rows)
+                writer.writerows(
+                    {k: _csv_safe_cell(v) for k, v in row.items()} for row in rows
+                )
                 fh.flush()
                 try:
                     os.fsync(fh.fileno())

@@ -28,6 +28,7 @@ from db_models import (
     load_clip_metadata_hint,
     probe as probe_media,
 )
+from safe import safe_float, safe_int, safe_count
 
 _BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
 _AUDIO_INDEX_CACHE_MAX_BYTES = 16 * 1024 * 1024
@@ -41,24 +42,10 @@ def _analysis_flags():
         return _hidden_subprocess_flags() | _BELOW_NORMAL_PRIORITY_CLASS
     return 0
 
-def _safe_float(value, default=0.0):
-    try:
-        parsed = float(value)
-        return parsed if math.isfinite(parsed) else default
-    except Exception:
-        return default
-
-def _safe_int(value, default=0):
-    try:
-        parsed = float(value)
-        if math.isfinite(parsed):
-            return int(parsed)
-    except Exception:
-        pass
-    return default
-
-def _safe_count(value):
-    return max(0, _safe_int(value, 0))
+# 숫자 변환 헬퍼는 safe.py 로 통합됨. 기존 호출부 호환을 위한 별칭.
+_safe_float = safe_float
+_safe_int = safe_int
+_safe_count = safe_count
 
 def _media_file_path(filepath):
     try:

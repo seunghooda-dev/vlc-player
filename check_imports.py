@@ -7,7 +7,7 @@ import re, ast, sys, tempfile, csv, time
 from pathlib import Path
 
 FILES = [
-    'constants.py', 'db_models.py', 'threads.py',
+    'safe.py', 'process_registry.py', 'theme.py', 'constants.py', 'db_models.py', 'threads.py',
     'meters.py', 'video_panel.py', 'right_panel.py', 'main.py'
 ]
 MODULE_NAMES = set(f.replace('.py', '') for f in FILES)
@@ -114,6 +114,7 @@ def check_core_logic():
         from constants import C, DEFAULT_SETTINGS, VIDEO_EXTS, _normalize_settings
         import db_models as dbm
         from db_models import frames_to_tc, is_df_fps, qc_summary_from_status, sanitize_qc_ranges, tc_to_frames, update_clip_qc
+        from meters import MeterController
         from threads import AudioAnalyzeThread, TranscodeThread
         from video_panel import AudioMixPlayer, DIRECT_VLC_EXTS, QCMarkerSlider, VideoPanel
     except Exception as e:
@@ -145,6 +146,12 @@ def check_core_logic():
             errors.append("  FAIL media smoke test should cover supported video extensions")
         if 'def _ensure_unpaused(self, seq=None)' not in video_source or 'self._player.set_pause(0)' not in video_source:
             errors.append("  FAIL VLC play should explicitly resume after CUE preroll pause")
+        if 'def _schedule_meter_start(self, delay_ms=450)' not in video_source or 'self.meter_ctrl.prepare_file(filepath)' not in video_source:
+            errors.append("  FAIL playback-priority meter scheduling missing")
+        if 'def _schedule_loudness_analysis(self, filepath, delay_ms=1500)' not in video_source or 'settle_sec = 2.5' not in video_source:
+            errors.append("  FAIL playback-priority loudness scheduling missing")
+        if "isoformat(timespec='milliseconds')" not in constants_source:
+            errors.append("  FAIL state timeline should retain millisecond timing")
         if 'def pause(self):\n        self._next_op()' not in video_source:
             errors.append("  FAIL VLC pause should invalidate delayed resume callbacks")
         if "'no_audio': False" not in threads_source:
@@ -2064,6 +2071,53 @@ def check_core_logic():
         audio_mix.set_channels([7, 9])
         if audio_mix.effective_channels() != [7]:
             errors.append(f"  FAIL audio mix source upper clamp: {audio_mix.effective_channels()}")
+
+        class FakeMeterTimer:
+            def __init__(self):
+                self.stopped = 0
+
+            def stop(self):
+                self.stopped += 1
+
+        class FakeMeterThread:
+            def __init__(self):
+                self.stopped = 0
+
+            def stop_meter(self):
+                self.stopped += 1
+
+        class FakeMeterRail:
+            def __init__(self):
+                self.levels = None
+
+            def set_levels(self, levels, peaks):
+                self.levels = (list(levels), list(peaks))
+
+        class FakeLoudnessRail:
+            def __init__(self):
+                self.reset_count = 0
+                self.live_reset_count = 0
+
+            def reset(self):
+                self.reset_count += 1
+
+            def reset_live(self):
+                self.live_reset_count += 1
+
+        meter_prepare = MeterController.__new__(MeterController)
+        meter_prepare._pos_timer = FakeMeterTimer()
+        meter_prepare._thread = FakeMeterThread()
+        meter_prepare._meter_file = None
+        meter_prepare.lm = FakeMeterRail()
+        meter_prepare.rm = FakeMeterRail()
+        meter_prepare.loud = FakeLoudnessRail()
+        MeterController.prepare_file(meter_prepare, 'C:/qc/idle.mxf')
+        if meter_prepare._thread.stopped != 1 or meter_prepare._pos_timer.stopped != 1:
+            errors.append("  FAIL idle meter preparation should stop timer/thread")
+        if meter_prepare.lm.levels != ([0] * 8, [0] * 8) or meter_prepare.rm.levels != ([0] * 8, [0] * 8):
+            errors.append("  FAIL idle meter preparation should clear visible rails")
+        if meter_prepare.loud.reset_count != 1 or meter_prepare.loud.live_reset_count != 1:
+            errors.append("  FAIL idle meter preparation should reset loudness state")
         transcode = TranscodeThread('C:/qc/no_audio.mxf', [(1, 2)])
         if transcode._build_filter([], [(1, 2)]) is not None:
             errors.append("  FAIL no-audio transcode filter should be video-only")

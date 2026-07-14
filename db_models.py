@@ -8,6 +8,7 @@ from sqlalchemy import create_engine, Column, String, Integer, Float, DateTime, 
 from sqlalchemy.orm import declarative_base, Session
 
 from constants import BASE_DIR, DB_PATH, FFMPEG, FFPROBE, log, backup_file_snapshot, _hidden_subprocess_flags
+from safe import safe_float, safe_int, safe_count
 
 SQLITE_BUSY_TIMEOUT_MS = 30000
 
@@ -152,24 +153,10 @@ def _check_db_integrity():
 _check_db_integrity()
 
 # ── 유틸 ──────────────────────────────────────────────────
-def _safe_float(value, default=0.0):
-    try:
-        parsed = float(value)
-        return parsed if math.isfinite(parsed) else default
-    except Exception:
-        return default
-
-def _safe_int(value, default=0):
-    try:
-        parsed = float(value)
-        if math.isfinite(parsed):
-            return int(parsed)
-    except Exception:
-        pass
-    return default
-
-def _safe_count(value):
-    return max(0, _safe_int(value, 0))
+# 숫자 변환 헬퍼는 safe.py 로 통합됨. 기존 호출부 호환을 위한 별칭.
+_safe_float = safe_float
+_safe_int = safe_int
+_safe_count = safe_count
 
 def _safe_text(value, default=""):
     text = str(value or "").strip()
@@ -540,7 +527,9 @@ def sanitize_qc_ranges(ranges, limit=2000):
 def _encode_qc_ranges(ranges):
     try:
         return json.dumps(_sanitize_qc_ranges(ranges), ensure_ascii=False, separators=(",", ":"))
-    except Exception:
+    except Exception as e:
+        # QC 구간을 빈 값으로 저장하게 되는 경로 — 왜 사라졌는지 흔적을 남긴다.
+        log.warning(f'_encode_qc_ranges failed, storing empty: {e}')
         return "[]"
 
 def _decode_qc_ranges(value):
@@ -558,7 +547,8 @@ def _decode_qc_ranges(value):
         if not isinstance(decoded, (list, tuple, dict)):
             return []
         return _sanitize_qc_ranges(decoded)
-    except Exception:
+    except Exception as e:
+        log.debug(f'_decode_qc_ranges failed, returning empty: {e}')
         return []
 
 def load_qc_status(filepath):

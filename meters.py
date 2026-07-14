@@ -557,12 +557,19 @@ class MeterController(QObject):
         self._pos_timer = QTimer()
         self._pos_timer.setInterval(80)
 
-    def start_file(self, filepath, ch_count, player, lkfs_ch=(1,2), audio_stream_count=0):
+    def prepare_file(self, filepath):
+        """Reset visible rails without starting FFmpeg while playback is idle."""
         self._pos_timer.stop()
         self._thread.stop_meter()
         if filepath != self._meter_file:
             self._meter_file = filepath
             self.loud.reset()
+        self.lm.set_levels([0] * 8, [0] * 8)
+        self.rm.set_levels([0] * 8, [0] * 8)
+        self.loud.reset_live()
+
+    def start_file(self, filepath, ch_count, player, lkfs_ch=(1,2), audio_stream_count=0):
+        self.prepare_file(filepath)
         self._thread.start_file(filepath, ch_count, (1, 2), audio_stream_count)
         try: self._pos_timer.timeout.disconnect()
         except: pass  # 연결 없으면 정상

@@ -38,6 +38,7 @@ from db_models  import (
 )
 from threads    import ProbeThread, TranscodeThread, LoudnessAnalyzeThread
 from meters     import SideMeter, LoudnessMeter, MeterController, mk_btn, mk_label, separator
+from safe       import safe_float, safe_int
 
 DIRECT_VLC_EXTS = {'.mxf', '.mp4'}
 EMPTY_STAGE_TEXT = "▶\n\nMXF / MP4 등 영상 파일을 열어주세요\n\n파일 추가 버튼 또는 파일 드래그로 불러오세요"
@@ -161,23 +162,9 @@ class AudioMixPlayer(QObject):
         # Seeking the external audio slightly ahead keeps MXF playback closer.
         self.start_lead_sec = 0.12
 
-    @staticmethod
-    def _safe_int(value, default=0):
-        try:
-            parsed = float(value)
-            if math.isfinite(parsed):
-                return int(parsed)
-        except Exception:
-            pass
-        return default
-
-    @staticmethod
-    def _safe_float(value, default=0.0):
-        try:
-            parsed = float(value)
-            return parsed if math.isfinite(parsed) else default
-        except Exception:
-            return default
+    # 숫자 변환 헬퍼는 safe.py 로 통합됨. 기존 self._safe_* 호출부 호환용 위임.
+    _safe_int = staticmethod(safe_int)
+    _safe_float = staticmethod(safe_float)
 
     @staticmethod
     def _file_name(filepath, default='-'):
@@ -766,6 +753,10 @@ class VideoPanel(QWidget):
         self._loudness_cache_order = []
         self._loudness_cache_limit = 32
         self._loudness_seq = 0
+        self._loudness_schedule_seq = 0
+        self._meter_start_seq = 0
+        self._play_started_at = 0.0
+        self._play_request_started_at = 0.0
         self._dead_threads = []   # abort된 스레드 보관 (GC 소멸 방지)
         self._dead_threads_limit = 16
         self._dead_threads_limit_logged = False
@@ -1575,23 +1566,9 @@ class VideoPanel(QWidget):
             fps = 29.97
         return max(1.0, fps)
 
-    @staticmethod
-    def _safe_float_value(value, default=0.0):
-        try:
-            parsed = float(value)
-            return parsed if math.isfinite(parsed) else default
-        except Exception:
-            return default
-
-    @staticmethod
-    def _safe_int_value(value, default=0):
-        try:
-            parsed = float(value)
-            if math.isfinite(parsed):
-                return int(parsed)
-        except Exception:
-            pass
-        return default
+    # safe.py 통합. VideoPanel._safe_*_value 호출 인터페이스 유지용 위임.
+    _safe_float_value = staticmethod(safe_float)
+    _safe_int_value = staticmethod(safe_int)
 
     def _meter_channel_count(self, info=None, fallback=2):
         info = info or getattr(self, 'cur_info', {}) or {}
@@ -2616,6 +2593,7 @@ class VideoPanel(QWidget):
             t.abort()   # abort는 finished 시그널 연결 후 호출 (순서 중요)
 
     def _retire_loudness_analysis(self):
+        self._loudness_schedule_seq += 1
         self._loudness_seq += 1
         if not self._loudness_thread:
             return
@@ -2763,13 +2741,9 @@ class VideoPanel(QWidget):
         mix_streams, mix_channels = self._provisional_audio_mix_layout(info)
         self.audio_mix.set_file(filepath, mix_streams, mix_channels)
         self.audio_mix.set_channels(self._selected_chs)
-        # Metadata is intentionally delayed for playback responsiveness, but
-        # meters should still appear immediately with a sensible provisional rail.
-        provisional_streams = max(0, self._safe_int_value(info.get("audio_stream_count", 0), 0))
-        if no_audio_hint:
-            self.meter_ctrl.set_playing(False)
-        else:
-            self.meter_ctrl.start_file(filepath, provisional_ch, self.player, (1, 2), provisional_streams)
+        # Keep the rails visible while idle, but do not repeatedly launch FFmpeg
+        # before PLAY. The meter starts after video/audio startup has settled.
+        self.meter_ctrl.prepare_file(filepath)
         self.tc_dur.setText(self._frames_to_tc(self._duration_frames(), include_offset=False))
         self._apply_qc_markers()
         self._res_text.setPlainText(f"{w}\u00d7{h}" if w and h else "")
@@ -2816,7 +2790,6 @@ class VideoPanel(QWidget):
         ch_count = max(0, self._safe_int_value(info.get('channels', 0), 0))
         audio_streams = max(0, self._safe_int_value(info.get('audio_stream_count', 0), 0))
         stream_count = max(audio_streams, ch_count)
-        meter_ch_count = self._meter_channel_count(info)
         self._set_audio_channel_display(info)
         first_enabled = None
         for cb, ch_no in self._ch_checks:
@@ -2851,20 +2824,19 @@ class VideoPanel(QWidget):
         QTimer.singleShot(2500, lambda: self.lbl_dbsaved.setText(""))
 
         self.ai_lbl.setText(f"⚠ {warnings[0]}" if warnings else "AI 분석 준비됨")
-        if self._audio_source_count_from_info(info) > 0:
-            self.meter_ctrl.start_file(
-                filepath, meter_ch_count, self.player, (1, 2),
-                audio_streams
-            )
-        else:
+        if self._audio_source_count_from_info(info) <= 0:
             self.meter_ctrl.set_playing(False)
+        elif was_playing:
+            self._schedule_meter_start(delay_ms=450)
+        else:
+            self.meter_ctrl.prepare_file(filepath)
         self.audio_mix.set_file(
             filepath,
             audio_streams,
             ch_count
         )
         self.audio_mix.set_channels(self._selected_chs)
-        self._start_loudness_analysis(filepath)
+        self._schedule_loudness_analysis(filepath)
         if getattr(self, '_cue_ready', False):
             self._set_loading_state(False)
         if emit_loaded:
@@ -3014,6 +2986,47 @@ class VideoPanel(QWidget):
         t.error.connect(_error)
         t.start()
         log.info(f'loudness auto analysis started: {file_name}')
+
+    def _schedule_loudness_analysis(self, filepath, delay_ms=1500):
+        """Keep full-file FFmpeg scans away from the first playback frames."""
+        p = self._video_file_path(filepath)
+        if not p or str(p) != self.cur_file:
+            return
+        filepath = str(p)
+        info = self.cur_info if isinstance(self.cur_info, dict) else {}
+        duration = max(0.0, self._safe_float_value(info.get('duration', self.duration), 0.0))
+        source_count = self._audio_source_count_from_info(info)
+        cache_key = self._loudness_cache_key(filepath)
+        if source_count <= 0 or duration > 300.0 or self._loudness_cache.get(cache_key):
+            self._start_loudness_analysis(filepath)
+            return
+
+        self._retire_loudness_analysis()
+        seq = self._loudness_schedule_seq
+        file_name = p.name
+        self.meter_ctrl.set_loudness_analysis_pending('WAIT')
+
+        def _run():
+            if seq != self._loudness_schedule_seq or filepath != self.cur_file:
+                return
+            if not getattr(self, '_metadata_ready', False):
+                return
+            if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+                started = float(getattr(self, '_play_started_at', 0.0) or 0.0)
+                age = max(0.0, time.monotonic() - started) if started else 0.0
+                settle_sec = 2.5
+                if age < settle_sec:
+                    remaining_ms = max(100, int(round((settle_sec - age) * 1000.0)))
+                    log.debug(
+                        f'loudness scan deferred for playback startup: '
+                        f'{file_name} remaining={remaining_ms}ms'
+                    )
+                    QTimer.singleShot(remaining_ms, _run)
+                    return
+            self._start_loudness_analysis(filepath)
+
+        QTimer.singleShot(max(0, int(delay_ms)), _run)
+        log.info(f'loudness scan scheduled: {file_name} delay={max(0, int(delay_ms))}ms')
 
     def _apply_loudness_result(self, filepath, result, from_cache=False):
         if filepath != self.cur_file:
@@ -3205,6 +3218,9 @@ class VideoPanel(QWidget):
             self._audio_recovery_timer.stop()
         if hasattr(self, '_playback_progress_timer'):
             self._playback_progress_timer.stop()
+        self._cancel_meter_start()
+        self._play_started_at = 0.0
+        self._play_request_started_at = 0.0
         self._reset_audio_recovery()
         self._cue_ready_seq += 1
         if hasattr(self, 'meter_ctrl'):
@@ -3701,7 +3717,6 @@ class VideoPanel(QWidget):
         ch_count = max(0, self._safe_int_value(info.get('channels', 0), 0))
         audio_streams = max(0, self._safe_int_value(info.get('audio_stream_count', 0), 0))
         stream_count = max(audio_streams, ch_count)
-        meter_ch_count = self._meter_channel_count(info)
         self._set_audio_channel_display(info)
         # 파일 채널 수에 따라 체크박스 활성화/비활성화
         first_enabled = None
@@ -3740,12 +3755,9 @@ class VideoPanel(QWidget):
         self.btn_freeze.setEnabled(False)
         self.ai_lbl.setText(f"⚠ {warnings[0]}" if warnings else "AI 분석 준비됨")
 
-        # 실시간 오디오 미터 시작 (채널 수 전달)
+        # Prepare the rails now; sampling starts only after PLAY settles.
         if self._audio_source_count_from_info(info) > 0:
-            self.meter_ctrl.start_file(
-                filepath, meter_ch_count, self.player, (1, 2),
-                audio_streams
-            )
+            self.meter_ctrl.prepare_file(filepath)
         else:
             self.meter_ctrl.set_playing(False)
         self.audio_mix.set_file(
@@ -3754,7 +3766,7 @@ class VideoPanel(QWidget):
             ch_count
         )
         self.audio_mix.set_channels(self._selected_chs)
-        self._start_loudness_analysis(filepath)
+        self._schedule_loudness_analysis(filepath)
         mark_step('meter_loudness_start')
 
         if Path(filepath).suffix.lower() in DIRECT_VLC_EXTS:
@@ -3873,9 +3885,7 @@ class VideoPanel(QWidget):
             self.ai_lbl.setText(
                 "⏳ 전체 변환 중... (재생 가능)" if is_preview
                 else "✓ CUE 완료 — ▶ 재생버튼을 누르세요")
-            self.meter_ctrl.start_file(
-                self.cur_file, self._meter_channel_count(), self.player, (1, 2),
-                self.cur_info.get('audio_stream_count', 0))
+            self.meter_ctrl.prepare_file(self.cur_file)
         except Exception as e:
             # setSource 실패해도 프로그램 유지
             self.ai_lbl.setText(f'⚠ {friendly_error_title("player_load", e, self.cur_file)}')
@@ -4027,10 +4037,27 @@ class VideoPanel(QWidget):
         if lead is None:
             lead = 0.0 if getattr(self, '_first_audio_start_after_cue', False) else None
         self._first_audio_start_after_cue = False
+        mix_started = time.monotonic()
         if not self.audio_mix.play(max(0.0, pos / 1000.0), lead_sec=lead):
             title = (self.audio_mix.last_error or '오디오 출력 시작에 실패했습니다.').splitlines()[0]
             self.ai_lbl.setText(f'⚠ {title}')
             self.status_changed.emit(f'  ⚠ {title}')
+        else:
+            play_started = float(getattr(self, '_play_started_at', 0.0) or 0.0)
+            latency_ms = int(round(max(0.0, time.monotonic() - play_started) * 1000.0)) if play_started else 0
+            spawn_ms = int(round(max(0.0, time.monotonic() - mix_started) * 1000.0))
+            file_name = Path(self.cur_file).name
+            log.info(
+                f'playback audio ready file={file_name} '
+                f'latency={latency_ms}ms spawn={spawn_ms}ms'
+            )
+            record_state_event(
+                'playback-start',
+                'audio children ready',
+                file=file_name,
+                latency=f'{latency_ms}ms',
+                spawn=f'{spawn_ms}ms',
+            )
 
     def _restart_audio_mix(self, pos_ms=None, lead_sec=None):
         if not self.cur_file:
@@ -4151,6 +4178,52 @@ class VideoPanel(QWidget):
                 seq, file_at_schedule, start_ms, target_delta_ms, deadline
             )
         )
+
+    def _cancel_meter_start(self):
+        self._meter_start_seq += 1
+
+    def _schedule_meter_start(self, delay_ms=450):
+        if not self.cur_file:
+            return
+        self._meter_start_seq += 1
+        seq = self._meter_start_seq
+        file_at_schedule = self.cur_file
+
+        def _run():
+            if seq != self._meter_start_seq or file_at_schedule != self.cur_file:
+                return
+            if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+                return
+            info = self.cur_info if isinstance(self.cur_info, dict) else {}
+            if getattr(self, '_metadata_ready', False):
+                if self._audio_source_count_from_info(info) <= 0:
+                    self.meter_ctrl.set_playing(False)
+                    return
+            elif self._metadata_hint_says_no_audio(info):
+                self.meter_ctrl.set_playing(False)
+                return
+            streams = max(0, self._safe_int_value(info.get('audio_stream_count', 0), 0))
+            self.meter_ctrl.start_file(
+                file_at_schedule,
+                self._meter_channel_count(info),
+                self.player,
+                (1, 2),
+                streams,
+            )
+            play_started = float(getattr(self, '_play_started_at', 0.0) or 0.0)
+            latency_ms = int(round(max(0.0, time.monotonic() - play_started) * 1000.0)) if play_started else 0
+            log.info(
+                f'audio meter started file={Path(file_at_schedule).name} '
+                f'latency={latency_ms}ms channels={self._meter_channel_count(info)}'
+            )
+            record_state_event(
+                'playback-start',
+                'meter ready',
+                file=Path(file_at_schedule).name,
+                latency=f'{latency_ms}ms',
+            )
+
+        QTimer.singleShot(max(0, int(delay_ms)), _run)
 
     def _audio_mix_expected(self):
         if not self.cur_file:
@@ -4423,6 +4496,7 @@ class VideoPanel(QWidget):
             record_state_event('transport', 'pause requested', file=Path(self.cur_file).name, pos=f'{self.player.position()}ms')
             self.player.pause()
         else:
+            self._play_request_started_at = time.monotonic()
             selected_channels = self._get_selected_audio_channels()
             channel_label = self._audio_channel_label(selected_channels)
             status_channel_label = self._audio_channel_status_label(selected_channels)
@@ -4591,10 +4665,15 @@ class VideoPanel(QWidget):
                 self._right_panel.refresh_explorer()
         # LED 깜빡임 제어
         if playing:
+            state_entered = time.monotonic()
+            self._play_started_at = state_entered
+            request_started = float(getattr(self, '_play_request_started_at', 0.0) or 0.0)
+            state_latency_ms = int(round(max(0.0, state_entered - request_started) * 1000.0)) if request_started else 0
             log.info(
                 f'play state entered file={Path(self.cur_file).name if self.cur_file else "-"} '
                 f'pos={self.player.position()}ms metadata={self._metadata_ready} cue={self._cue_ready} '
-                f'audio_first={getattr(self, "_first_audio_start_after_cue", False)}'
+                f'audio_first={getattr(self, "_first_audio_start_after_cue", False)} '
+                f'state_latency={state_latency_ms}ms'
             )
             record_state_event(
                 'transport',
@@ -4603,6 +4682,7 @@ class VideoPanel(QWidget):
                 pos=f'{self.player.position()}ms',
                 metadata=self._metadata_ready,
                 cue=self._cue_ready,
+                latency=f'{state_latency_ms}ms',
             )
             audio_expected = self._audio_mix_expected()
             if self.cur_file:
@@ -4620,11 +4700,17 @@ class VideoPanel(QWidget):
             self.player.audio_set_volume(0)
             if audio_expected:
                 if getattr(self, '_first_audio_start_after_cue', False):
-                    self._schedule_audio_mix(delay_ms=20)
+                    self._schedule_audio_mix(delay_ms=0)
                 else:
-                    self._schedule_audio_mix(delay_ms=40)
+                    self._schedule_audio_mix(delay_ms=20)
             else:
                 self._cancel_audio_mix()
+            if self._loudness_thread and self._loudness_thread.isRunning():
+                log.info(
+                    f'loudness scan yielded to playback startup: '
+                    f'{Path(self.cur_file).name if self.cur_file else "-"}'
+                )
+                self._schedule_loudness_analysis(self.cur_file, delay_ms=2500)
             self._arm_play_start_watchdog('state')
         else:
             if self.cur_file:
@@ -4644,6 +4730,9 @@ class VideoPanel(QWidget):
             self._frame_clock_active = False
             self._frame_display_timer.stop()
             self._audio_recovery_timer.stop()
+            self._cancel_meter_start()
+            self._play_started_at = 0.0
+            self._play_request_started_at = 0.0
             self._set_display_position_ms(self.player.position())
             self._cancel_audio_mix()
             self._led_timer.stop()
@@ -4661,11 +4750,9 @@ class VideoPanel(QWidget):
             )
         )
         if meter_expected:
-            if not self.meter_ctrl._thread.isRunning():
-                self.meter_ctrl.start_file(
-                    self.cur_file, self._meter_channel_count(), self.player, (1, 2),
-                    self.cur_info.get('audio_stream_count', 0))
+            self._schedule_meter_start(delay_ms=450)
         else:
+            self._cancel_meter_start()
             self.meter_ctrl.set_playing(False)
 
     def _on_player_error(self, error, error_string):
