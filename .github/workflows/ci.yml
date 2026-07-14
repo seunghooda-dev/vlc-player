@@ -20,6 +20,8 @@ jobs:
       - name: Run unit tests
         env:
           MXF_QC_USER_DATA_DIR: ${{ runner.temp }}\mxf_qc_ci
+          # 러너 콘솔은 cp1252 — 한국어 테스트 출력/독스트링이 UnicodeEncodeError로 죽지 않게 UTF-8 모드 고정
+          PYTHONUTF8: '1'
         run: python -m pytest
 
   import-gate:
@@ -38,4 +40,6 @@ jobs:
         env:
           MXF_QC_USER_DATA_DIR: ${{ runner.temp }}\mxf_qc_ci
           QT_QPA_PLATFORM: offscreen
+          # check_imports 는 한국어 섹션 헤더를 출력 — cp1252 러너에서 UnicodeEncodeError 방지
+          PYTHONUTF8: '1'
         run: python check_imports.py

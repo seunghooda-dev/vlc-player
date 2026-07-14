@@ -1,5 +1,13 @@
-"""LoudnessCoordinator._normalize_loudness_result 순수 로직 회귀 테스트"""
+"""LoudnessCoordinator._normalize_loudness_result 순수 로직 회귀 테스트
+
+loudness_coordinator 는 PyQt6 를 import 하므로, PyQt6 가 없는 최소 CI 환경에서는
+스킵한다(전체 import 는 import-gate 잡이 커버).
+"""
 import math
+
+import pytest
+
+pytest.importorskip("PyQt6")
 
 from loudness_coordinator import LoudnessCoordinator
 
