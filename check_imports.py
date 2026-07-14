@@ -9,7 +9,7 @@ from pathlib import Path
 FILES = [
     'safe.py', 'process_registry.py', 'theme.py', 'settings.py', 'runtime_tools.py', 'diagnostics.py',
     'constants.py', 'db_models.py', 'threads.py',
-    'meters.py', 'video_panel.py', 'right_panel.py', 'main.py'
+    'meters.py', 'loudness_coordinator.py', 'transport_controls.py', 'video_panel.py', 'right_panel.py', 'main.py'
 ]
 MODULE_NAMES = set(f.replace('.py', '') for f in FILES)
 
@@ -125,6 +125,7 @@ def check_core_logic():
         main_source = read_source('main.py')
         right_source = read_source('right_panel.py')
         video_source = read_source('video_panel.py')
+        loudness_source = read_source('loudness_coordinator.py')
         threads_source = read_source('threads.py')
         constants_source = read_source('constants.py')
         diagnostics_source = read_source('diagnostics.py')
@@ -155,7 +156,7 @@ def check_core_logic():
             errors.append("  FAIL cue readiness timer fallback must be preserved")
         if 'def _schedule_meter_start(self, delay_ms=450)' not in video_source or 'self.meter_ctrl.prepare_file(filepath)' not in video_source:
             errors.append("  FAIL playback-priority meter scheduling missing")
-        if 'def _schedule_loudness_analysis(self, filepath, delay_ms=1500)' not in video_source or 'settle_sec = 2.5' not in video_source:
+        if 'def _schedule_loudness_analysis(self, filepath, delay_ms=1500)' not in loudness_source or 'settle_sec = 2.5' not in loudness_source:
             errors.append("  FAIL playback-priority loudness scheduling missing")
         if "isoformat(timespec='milliseconds')" not in diagnostics_source:
             errors.append("  FAIL state timeline should retain millisecond timing")

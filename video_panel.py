@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import (
     Qt, QTimer, QUrl, pyqtSignal, QSize, QSizeF, QRectF, QObject
 )
-from PyQt6.QtGui   import QColor, QFont, QDragEnterEvent, QDropEvent, QPainter
+from PyQt6.QtGui   import QColor, QFont, QDragEnterEvent, QDropEvent
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtMultimediaWidgets import QGraphicsVideoItem
 
@@ -36,99 +36,15 @@ from db_models  import (
     probe, save_clip, frames_to_tc, tc_to_frames,
     load_qc_status, load_clip_metadata_hint, update_clip_qc,
 )
-from threads    import ProbeThread, TranscodeThread, LoudnessAnalyzeThread
+from threads    import ProbeThread, TranscodeThread
 from meters     import SideMeter, LoudnessMeter, MeterController, mk_btn, mk_label, separator
 from safe       import safe_float, safe_int
+from transport_controls import QCMarkerSlider
+from loudness_coordinator import LoudnessCoordinator
 
 DIRECT_VLC_EXTS = {'.mxf', '.mp4'}
 EMPTY_STAGE_TEXT = "▶\n\nMXF / MP4 등 영상 파일을 열어주세요\n\n파일 추가 버튼 또는 파일 드래그로 불러오세요"
 INITIAL_EMPTY_STAGE_TEXT = "▶\n\nMXF / MP4 등 영상 파일을 열어주세요\n\n⏏ 파일을 드래그하거나 CUE 버튼을 누르세요"
-
-
-class QCMarkerSlider(QSlider):
-    """Progress slider with lightweight QC result overlays."""
-    def __init__(self, orientation, parent=None):
-        super().__init__(orientation, parent)
-        self._qc_markers = {"black": [], "mute": [], "freeze": []}
-        self._qc_duration = 0.0
-        self.setMinimumHeight(18)
-
-    @staticmethod
-    def _finite_seconds(value, default=None):
-        try:
-            seconds = float(value)
-            if math.isfinite(seconds):
-                return max(0.0, seconds)
-        except Exception:
-            pass
-        return default
-
-    @classmethod
-    def _clean_ranges(cls, ranges):
-        cleaned = []
-        for item in ranges or []:
-            if not isinstance(item, dict):
-                continue
-            start = cls._finite_seconds(item.get("start"))
-            if start is None:
-                continue
-            duration = cls._finite_seconds(item.get("duration"))
-            end = cls._finite_seconds(item.get("end"))
-            if end is None and duration is not None:
-                end = start + duration
-            if end is None:
-                end = start
-            if end < start:
-                continue
-            row = dict(item)
-            row["start"] = start
-            row["end"] = end
-            if duration is None:
-                row["duration"] = max(0.0, end - start)
-            cleaned.append(row)
-        return cleaned
-
-    def set_qc_markers(self, black_ranges=None, mute_ranges=None, freeze_ranges=None, duration_sec=0.0):
-        self._qc_markers = {
-            "black": self._clean_ranges(black_ranges),
-            "mute": self._clean_ranges(mute_ranges),
-            "freeze": self._clean_ranges(freeze_ranges),
-        }
-        self._qc_duration = self._finite_seconds(duration_sec, 0.0) or 0.0
-        self.update()
-
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        if self.orientation() != Qt.Orientation.Horizontal or self._qc_duration <= 0:
-            return
-        black = self._qc_markers.get("black") or []
-        mute = self._qc_markers.get("mute") or []
-        freeze = self._qc_markers.get("freeze") or []
-        if not black and not mute and not freeze:
-            return
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-        track_left = 7
-        track_width = max(1, self.width() - track_left * 2)
-        marker_top = max(1, int(self.height() * 0.12))
-        marker_h = max(3, int((self.height() - marker_top * 2 - 2) / 3))
-
-        def _draw_ranges(ranges, color, y):
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(color))
-            for r in ranges:
-                start = r.get("start", 0.0)
-                end = r.get("end", start)
-                start = min(start, self._qc_duration)
-                end = min(max(end, start + 0.001), self._qc_duration)
-                x1 = track_left + int((start / self._qc_duration) * track_width)
-                x2 = track_left + int((end / self._qc_duration) * track_width)
-                painter.drawRect(x1, y, max(3, x2 - x1), marker_h)
-
-        _draw_ranges(black, QColor(255, 74, 103, 210), marker_top)
-        _draw_ranges(mute, QColor(255, 170, 48, 210), marker_top + marker_h + 1)
-        _draw_ranges(freeze, QColor(183, 148, 244, 220), marker_top + (marker_h + 1) * 2)
-        painter.end()
 
 
 class VlcAudioAdapter:
@@ -774,12 +690,7 @@ class VideoPanel(QWidget):
         self._metadata_ready = False
         self._cue_ready = False
         self._file_loaded_emitted = False
-        self._loudness_thread = None
-        self._loudness_cache = {}
-        self._loudness_cache_order = []
-        self._loudness_cache_limit = 32
-        self._loudness_seq = 0
-        self._loudness_schedule_seq = 0
+        self._loudness_coordinator = LoudnessCoordinator(self)
         self._meter_start_seq = 0
         self._play_started_at = 0.0
         self._play_request_started_at = 0.0
@@ -2619,28 +2530,7 @@ class VideoPanel(QWidget):
             t.abort()   # abort는 finished 시그널 연결 후 호출 (순서 중요)
 
     def _retire_loudness_analysis(self):
-        self._loudness_schedule_seq += 1
-        self._loudness_seq += 1
-        if not self._loudness_thread:
-            return
-        t = self._loudness_thread
-        self._loudness_thread = None
-
-        def _on_finished(thread=t):
-            try:
-                self._dead_threads.remove(thread)
-            except ValueError:
-                pass
-
-        try:
-            t.finished.connect(_on_finished)
-        except Exception:
-            pass
-        self._track_dead_thread(t)
-        try:
-            t.abort()
-        except Exception as e:
-            log.debug(f'loudness abort: {e}')
+        return self._loudness_coordinator._retire_loudness_analysis()
 
     def _retire_probe(self):
         self._probe_seq += 1
@@ -2869,203 +2759,26 @@ class VideoPanel(QWidget):
             self._emit_file_loaded_once()
 
     def _loudness_cache_key(self, filepath):
-        try:
-            path = Path(filepath)
-            size = _path_size(path)
-            mtime_ns = _path_mtime_ns(path)
-            if not size and not mtime_ns:
-                return str(filepath)
-            return f'{path.resolve()}|{size}|{mtime_ns}'
-        except Exception:
-            return str(filepath)
+        return self._loudness_coordinator._loudness_cache_key(filepath)
 
     def _touch_loudness_cache(self, key):
-        if not key:
-            return
-        cache = getattr(self, '_loudness_cache', {})
-        order = [
-            item for item in getattr(self, '_loudness_cache_order', [])
-            if item in cache and item != key
-        ]
-        if key in cache:
-            order.append(key)
-        self._loudness_cache_order = order
+        return self._loudness_coordinator._touch_loudness_cache(key)
 
     def _store_loudness_cache(self, key, result):
-        if not key or not isinstance(result, dict):
-            return
-        if not hasattr(self, '_loudness_cache'):
-            self._loudness_cache = {}
-        self._loudness_cache[key] = dict(result)
-        self._touch_loudness_cache(key)
-        limit = max(1, self._safe_int_value(getattr(self, '_loudness_cache_limit', 32), 32))
-        while len(self._loudness_cache_order) > limit:
-            old = self._loudness_cache_order.pop(0)
-            self._loudness_cache.pop(old, None)
-            log.debug('loudness cache evicted oldest entry')
+        return self._loudness_coordinator._store_loudness_cache(key, result)
 
     def _normalize_loudness_result(self, result):
-        if not isinstance(result, dict):
-            log.warning(f'loudness result ignored: unexpected type {type(result).__name__}')
-            return None
-        try:
-            integrated = float(result.get('integrated'))
-        except Exception:
-            log.warning('loudness result ignored: missing integrated value')
-            return None
-        if not math.isfinite(integrated):
-            log.warning(f'loudness result ignored: non-finite integrated value {integrated!r}')
-            return None
-        normalized = dict(result)
-        normalized['integrated'] = integrated
-        return normalized
+        return self._loudness_coordinator._normalize_loudness_result(result)
 
     def _start_loudness_analysis(self, filepath):
-        self._retire_loudness_analysis()
-        p = self._video_file_path(filepath)
-        if not p:
-            return
-        filepath = str(p)
-        file_name = p.name
-        stream_count = max(0, self._safe_int_value(self.cur_info.get('audio_stream_count', 0), 0))
-        ch_count = max(0, self._safe_int_value(self.cur_info.get('channels', 0), 0))
-        if stream_count <= 0 and ch_count <= 0:
-            self.meter_ctrl.set_loudness_analysis_error('NO AUD')
-            return
-        missing = format_missing_runtime_tools(['FFmpeg'])
-        if missing:
-            self.meter_ctrl.set_loudness_analysis_error('NO FF')
-            title = missing.splitlines()[0]
-            self.status_changed.emit(f'  ⚠ {title}')
-            log.warning(f'loudness analysis blocked: {missing}')
-            return
-
-        duration = max(0.0, self._safe_float_value(self.cur_info.get('duration', self.duration), 0.0))
-        if duration > 300.0:
-            self.meter_ctrl.set_loudness_analysis_pending('LIVE')
-            log.info(
-                f'loudness full-file auto scan skipped for long file: '
-                f'{file_name} duration={duration:.1f}s'
-            )
-            record_state_event('loudness', 'full scan skipped', file=file_name, duration=f'{duration:.1f}s')
-            return
-
-        key = self._loudness_cache_key(filepath)
-        cached = self._loudness_cache.get(key)
-        if cached:
-            self._touch_loudness_cache(key)
-            self._apply_loudness_result(filepath, cached, from_cache=True)
-            return
-
-        self.meter_ctrl.set_loudness_analysis_pending('SCAN')
-        self._loudness_seq += 1
-        seq = self._loudness_seq
-        t = LoudnessAnalyzeThread(
-            filepath,
-            stream_count,
-            ch_count or 2,
-            duration,
-        )
-        self._loudness_thread = t
-        file_at_start = filepath
-
-        def _progress(msg, fp=file_at_start, s=seq):
-            if s != self._loudness_seq:
-                return
-            if fp != self.cur_file:
-                return
-            text = 'SCAN'
-            if '%' in msg:
-                pct = msg.rsplit(' ', 1)[-1]
-                text = pct[:8]
-            self.meter_ctrl.set_loudness_analysis_pending(text)
-
-        def _done(result, fp=file_at_start, cache_key=key, thread=t, s=seq):
-            if s != self._loudness_seq:
-                log.debug(f'stale loudness result ignored: {self._display_file_name(fp)}')
-                return
-            if self._loudness_thread is thread:
-                self._loudness_thread = None
-            normalized = self._normalize_loudness_result(result)
-            if normalized is None:
-                if fp == self.cur_file:
-                    self.meter_ctrl.set_loudness_analysis_error('ERR')
-                    self.status_changed.emit(f'  ⚠ 라우드니스 결과 오류 — {self._display_file_name(fp)}')
-                return
-            self._store_loudness_cache(cache_key, normalized)
-            self._apply_loudness_result(fp, normalized)
-
-        def _error(err, fp=file_at_start, thread=t, s=seq):
-            if s != self._loudness_seq:
-                log.debug(f'stale loudness error ignored: {self._display_file_name(fp)}')
-                return
-            if self._loudness_thread is thread:
-                self._loudness_thread = None
-            if fp == self.cur_file:
-                self.meter_ctrl.set_loudness_analysis_error('ERR')
-                self.status_changed.emit(
-                    f'  ⚠ {friendly_error_title("loudness", err, fp)} — {self._display_file_name(fp)}')
-            log.error(f'LoudnessAnalyze UI error: {err}')
-
-        t.progress.connect(_progress)
-        t.finished.connect(_done)
-        t.error.connect(_error)
-        t.start()
-        log.info(f'loudness auto analysis started: {file_name}')
+        return self._loudness_coordinator._start_loudness_analysis(filepath)
 
     def _schedule_loudness_analysis(self, filepath, delay_ms=1500):
         """Keep full-file FFmpeg scans away from the first playback frames."""
-        p = self._video_file_path(filepath)
-        if not p or str(p) != self.cur_file:
-            return
-        filepath = str(p)
-        info = self.cur_info if isinstance(self.cur_info, dict) else {}
-        duration = max(0.0, self._safe_float_value(info.get('duration', self.duration), 0.0))
-        source_count = self._audio_source_count_from_info(info)
-        cache_key = self._loudness_cache_key(filepath)
-        if source_count <= 0 or duration > 300.0 or self._loudness_cache.get(cache_key):
-            self._start_loudness_analysis(filepath)
-            return
-
-        self._retire_loudness_analysis()
-        seq = self._loudness_schedule_seq
-        file_name = p.name
-        self.meter_ctrl.set_loudness_analysis_pending('WAIT')
-
-        def _run():
-            if seq != self._loudness_schedule_seq or filepath != self.cur_file:
-                return
-            if not getattr(self, '_metadata_ready', False):
-                return
-            if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
-                started = float(getattr(self, '_play_started_at', 0.0) or 0.0)
-                age = max(0.0, time.monotonic() - started) if started else 0.0
-                settle_sec = 2.5
-                if age < settle_sec:
-                    remaining_ms = max(100, int(round((settle_sec - age) * 1000.0)))
-                    log.debug(
-                        f'loudness scan deferred for playback startup: '
-                        f'{file_name} remaining={remaining_ms}ms'
-                    )
-                    QTimer.singleShot(remaining_ms, _run)
-                    return
-            self._start_loudness_analysis(filepath)
-
-        QTimer.singleShot(max(0, int(delay_ms)), _run)
-        log.info(f'loudness scan scheduled: {file_name} delay={max(0, int(delay_ms))}ms')
+        return self._loudness_coordinator._schedule_loudness_analysis(filepath, delay_ms=delay_ms)
 
     def _apply_loudness_result(self, filepath, result, from_cache=False):
-        if filepath != self.cur_file:
-            return
-        result = self._normalize_loudness_result(result)
-        if result is None:
-            self.meter_ctrl.set_loudness_analysis_error('ERR')
-            self.status_changed.emit(f'  ⚠ 라우드니스 결과 오류 — {self._display_file_name(filepath)}')
-            return
-        integrated = result.get('integrated')
-        self.meter_ctrl.set_loudness_analysis_result(integrated)
-        src = '캐시' if from_cache else '완료'
-        self.status_changed.emit(f'  ▌LKFS {src}  I {integrated:.1f}  |  1/2CH')
+        return self._loudness_coordinator._apply_loudness_result(filepath, result, from_cache=from_cache)
 
     def _set_loading_state(self, loading, message=None):
         self._loading = bool(loading)
@@ -4743,7 +4456,7 @@ class VideoPanel(QWidget):
                     self._schedule_audio_mix(delay_ms=20)
             else:
                 self._cancel_audio_mix()
-            if self._loudness_thread and self._loudness_thread.isRunning():
+            if self._loudness_coordinator._loudness_thread and self._loudness_coordinator._loudness_thread.isRunning():
                 log.info(
                     f'loudness scan yielded to playback startup: '
                     f'{Path(self.cur_file).name if self.cur_file else "-"}'
