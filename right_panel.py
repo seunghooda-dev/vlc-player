@@ -3619,10 +3619,12 @@ class RightPanel(QWidget):
         offset = self._batch_tc_offset_frames(self._batch_current_info)
         seq = self._next_analysis_seq('black', fp)
         self._black_thread = BlackDetectThread(fp, fps, self._batch_amount, self._batch_threshold, df, offset)
-        self._black_thread.progress.connect(lambda m, s=seq: self._on_batch_progress('black', s, m))
-        self._black_thread.finished.connect(lambda ranges, s=seq: self._on_batch_black_done(ranges, seq=s))
-        self._black_thread.error.connect(lambda err, s=seq: self._on_batch_black_error(err, seq=s))
-        self._black_thread.start()
+        self._start_analysis_worker(
+            self._black_thread, seq,
+            lambda s, m: self._on_batch_progress('black', s, m),
+            self._on_batch_black_done,
+            self._on_batch_black_error,
+        )
         self._start_analysis_timeout('black', '일괄 블랙 검출', seq, seconds=self._batch_timeout_seconds())
 
     def _on_batch_progress(self, kind, seq, message):
@@ -3649,8 +3651,7 @@ class RightPanel(QWidget):
             self._log_stale_analysis('black', seq, 'batch black done')
             return
         self._stop_analysis_timeout()
-        if getattr(self, '_black_thread', None) and not self._black_thread.isRunning():
-            self._black_thread = None
+        self._release_finished_thread('_black_thread')
         ranges = sanitize_qc_ranges(ranges)
         if hasattr(self.vp, '_set_file_status'):
             self.vp._set_file_status(
@@ -3671,8 +3672,7 @@ class RightPanel(QWidget):
             self._log_stale_analysis('black', seq, 'batch black error')
             return
         self._stop_analysis_timeout()
-        if getattr(self, '_black_thread', None) and not self._black_thread.isRunning():
-            self._black_thread = None
+        self._release_finished_thread('_black_thread')
         if hasattr(self.vp, '_set_file_status'):
             self.vp._set_file_status(fp, analysis='mute', black='error', black_count=0, black_ranges=[])
         log.error(f'batch qc black error file={self._path_name(fp)}: {err}')
@@ -3697,10 +3697,12 @@ class RightPanel(QWidget):
         offset = self._batch_tc_offset_frames(self._batch_current_info)
         seq = self._next_analysis_seq('audio', fp)
         self._audio_thread = AudioAnalyzeThread(fp, fps, self._batch_mute_thr, self._batch_mute_dur, df, offset)
-        self._audio_thread.progress.connect(lambda m, s=seq: self._on_batch_progress('audio', s, m))
-        self._audio_thread.finished.connect(lambda result, s=seq: self._on_batch_audio_done(result, seq=s))
-        self._audio_thread.error.connect(lambda err, s=seq: self._on_batch_audio_error(err, seq=s))
-        self._audio_thread.start()
+        self._start_analysis_worker(
+            self._audio_thread, seq,
+            lambda s, m: self._on_batch_progress('audio', s, m),
+            self._on_batch_audio_done,
+            self._on_batch_audio_error,
+        )
         self._start_analysis_timeout('audio', '일괄 뮤트 검출', seq, seconds=self._batch_timeout_seconds())
 
     def _on_batch_audio_done(self, result, seq=None):
@@ -3711,8 +3713,7 @@ class RightPanel(QWidget):
             self._log_stale_analysis('audio', seq, 'batch audio done')
             return
         self._stop_analysis_timeout()
-        if getattr(self, '_audio_thread', None) and not self._audio_thread.isRunning():
-            self._audio_thread = None
+        self._release_finished_thread('_audio_thread')
         if not isinstance(result, dict):
             log.warning(f'batch qc audio returned unexpected result type: {type(result).__name__}')
             result = {}
@@ -3740,8 +3741,7 @@ class RightPanel(QWidget):
             self._log_stale_analysis('audio', seq, 'batch audio error')
             return
         self._stop_analysis_timeout()
-        if getattr(self, '_audio_thread', None) and not self._audio_thread.isRunning():
-            self._audio_thread = None
+        self._release_finished_thread('_audio_thread')
         if hasattr(self.vp, '_set_file_status'):
             self.vp._set_file_status(fp, analysis=None, mute='error', mute_count=0, mute_ranges=[])
         log.error(f'batch qc audio error file={self._path_name(fp)}: {err}')
@@ -3848,12 +3848,12 @@ class RightPanel(QWidget):
             getattr(self.vp, 'df', None),
             getattr(self.vp, '_tc_offset_frames', 0),
         )
-        self._black_thread.progress.connect(
-            lambda m, s=seq: self._on_analysis_progress('black', s, m)
+        self._start_analysis_worker(
+            self._black_thread, seq,
+            lambda s, m: self._on_analysis_progress('black', s, m),
+            self._on_black_done,
+            self._on_black_error,
         )
-        self._black_thread.finished.connect(lambda ranges, s=seq: self._on_black_done(ranges, seq=s))
-        self._black_thread.error.connect(lambda err, s=seq: self._on_black_error(err, seq=s))
-        self._black_thread.start()
         self._start_analysis_timeout('black', '블랙 검출', seq)
 
     def _on_analysis_progress(self, kind, seq, message):
@@ -3879,6 +3879,22 @@ class RightPanel(QWidget):
         state[key] = (now, message)
         self._analysis_progress_last = state
         return True
+
+    def _start_analysis_worker(self, thread, seq, on_progress, on_finished, on_error):
+        """분석 워커의 progress/finished/error 시그널을 seq 스냅샷과 함께 연결하고 시작한다.
+        각 검출 사이트(단일 블랙/뮤트/프리즈·일괄 블랙/뮤트)에 흩어져 있던 connect+start
+        판박이를 한곳으로 모은다. seq 기본인자 캡처로 지연 시그널의 스냅샷 안전성을 유지한다."""
+        thread.progress.connect(lambda m, s=seq: on_progress(s, m))
+        thread.finished.connect(lambda result, s=seq: on_finished(result, seq=s))
+        thread.error.connect(lambda err, s=seq: on_error(err, seq=s))
+        thread.start()
+
+    def _release_finished_thread(self, attr):
+        """완료/에러 콜백에서 끝난 워커 참조를 정리한다.
+        아직 실행 중이면(지연 시그널 도착) 참조를 유지해 살아있는 QThread가 GC되지 않게 한다."""
+        thread = getattr(self, attr, None)
+        if thread and not thread.isRunning():
+            setattr(self, attr, None)
 
     def _issue_count_text(self, count):
         count = max(0, _safe_int(count, 0))
@@ -3916,8 +3932,7 @@ class RightPanel(QWidget):
             return
         self._stop_analysis_timeout()
         self.btn_run_black.setEnabled(True)
-        if getattr(self, '_black_thread', None) and not self._black_thread.isRunning():
-            self._black_thread = None
+        self._release_finished_thread('_black_thread')
         ranges = sanitize_qc_ranges(ranges)
         if hasattr(self.vp, '_set_file_status'):
             fp = getattr(self, '_black_file', self.vp.cur_file)
@@ -3964,8 +3979,7 @@ class RightPanel(QWidget):
         title = friendly_error_title('black', err, fp)
         self.black_status.setText(f"  ⚠ {title}")
         self.btn_run_black.setEnabled(True)
-        if getattr(self, '_black_thread', None) and not self._black_thread.isRunning():
-            self._black_thread = None
+        self._release_finished_thread('_black_thread')
         if hasattr(self.vp, '_set_file_status'):
             self.vp._set_file_status(fp, analysis=None, black="error", black_count=0, black_ranges=[])
         try:
@@ -4244,12 +4258,12 @@ class RightPanel(QWidget):
             getattr(self.vp, 'df', None),
             getattr(self.vp, '_tc_offset_frames', 0),
         )
-        self._audio_thread.progress.connect(
-            lambda m, s=seq: self._on_analysis_progress('audio', s, m)
+        self._start_analysis_worker(
+            self._audio_thread, seq,
+            lambda s, m: self._on_analysis_progress('audio', s, m),
+            self._on_audio_done,
+            self._on_audio_error,
         )
-        self._audio_thread.finished.connect(lambda result, s=seq: self._on_audio_done(result, seq=s))
-        self._audio_thread.error.connect(lambda err, s=seq: self._on_audio_error(err, seq=s))
-        self._audio_thread.start()
         self._start_analysis_timeout('audio', '뮤트 검출', seq)
 
     def _on_audio_done(self, result, seq=None):
@@ -4258,8 +4272,7 @@ class RightPanel(QWidget):
             return
         self._stop_analysis_timeout()
         self.btn_run_audio.setEnabled(True)
-        if getattr(self, '_audio_thread', None) and not self._audio_thread.isRunning():
-            self._audio_thread = None
+        self._release_finished_thread('_audio_thread')
         if not isinstance(result, dict):
             log.warning(f'audio analysis returned unexpected result type: {type(result).__name__}')
             result = {}
@@ -4335,8 +4348,7 @@ class RightPanel(QWidget):
         title = friendly_error_title('audio', err, fp)
         self.audio_status.setText(f"  ⚠ {title}")
         self.btn_run_audio.setEnabled(True)
-        if getattr(self, '_audio_thread', None) and not self._audio_thread.isRunning():
-            self._audio_thread = None
+        self._release_finished_thread('_audio_thread')
         if hasattr(self.vp, '_set_file_status'):
             self.vp._set_file_status(fp, analysis=None, mute="error", mute_count=0, mute_ranges=[])
         try:
@@ -4404,12 +4416,12 @@ class RightPanel(QWidget):
             getattr(self.vp, 'df', None),
             getattr(self.vp, '_tc_offset_frames', 0),
         )
-        self._freeze_thread.progress.connect(
-            lambda m, s=seq: self._on_analysis_progress('freeze', s, m)
+        self._start_analysis_worker(
+            self._freeze_thread, seq,
+            lambda s, m: self._on_analysis_progress('freeze', s, m),
+            self._on_freeze_done,
+            self._on_freeze_error,
         )
-        self._freeze_thread.finished.connect(lambda ranges, s=seq: self._on_freeze_done(ranges, seq=s))
-        self._freeze_thread.error.connect(lambda err, s=seq: self._on_freeze_error(err, seq=s))
-        self._freeze_thread.start()
         self._start_analysis_timeout('freeze', '프리즈 검출', seq)
 
     def _on_freeze_done(self, ranges, seq=None):
@@ -4418,8 +4430,7 @@ class RightPanel(QWidget):
             return
         self._stop_analysis_timeout()
         self.btn_run_freeze.setEnabled(True)
-        if getattr(self, '_freeze_thread', None) and not self._freeze_thread.isRunning():
-            self._freeze_thread = None
+        self._release_finished_thread('_freeze_thread')
         ranges = sanitize_qc_ranges(ranges)
         if hasattr(self.vp, '_set_file_status'):
             fp = getattr(self, '_freeze_file', self.vp.cur_file)
@@ -4467,8 +4478,7 @@ class RightPanel(QWidget):
         title = friendly_error_title('freeze', err, fp)
         self.freeze_status.setText(f"  ⚠ {title}")
         self.btn_run_freeze.setEnabled(True)
-        if getattr(self, '_freeze_thread', None) and not self._freeze_thread.isRunning():
-            self._freeze_thread = None
+        self._release_finished_thread('_freeze_thread')
         if hasattr(self.vp, '_set_file_status'):
             self.vp._set_file_status(fp, analysis=None, freeze="error", freeze_count=0, freeze_ranges=[])
         try:

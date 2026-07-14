@@ -1559,6 +1559,7 @@ def check_core_logic():
 
         class BatchAudioDoneProbe:
             _on_batch_audio_done = RightPanel._on_batch_audio_done
+            _release_finished_thread = RightPanel._release_finished_thread
             _analysis_matches = RightPanel._analysis_matches
             _log_stale_analysis = RightPanel._log_stale_analysis
             _path_name = staticmethod(lambda value, default='파일': Path(str(value or '')).name or default)
