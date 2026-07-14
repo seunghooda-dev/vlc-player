@@ -1,5 +1,11 @@
 {
   "features": {
+    "ui-second-decomposition-and-constants-final": {
+      "phase": "check",
+      "matchRate": 100,
+      "checkedAt": "2026-07-15T00:15:00+09:00",
+      "note": "migration/storage_check/logging_setup(constants 716줄로 수렴) + vlc_player(어댑터 3클래스)/file_list_view 추출. 게이트 그린, pytest 62. CUE 현장 실측: UHD 95GB 0.79s·HD 50분물 0.34s(프로브, 앱 동일 메커니즘) — 앱 내 재확인은 실행 중 플레이어 종료 후 가능"
+    },
     "constants-split-and-videopanel-decomposition": {
       "phase": "check",
       "matchRate": 100,
