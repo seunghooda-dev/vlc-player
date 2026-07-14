@@ -9,7 +9,8 @@ from pathlib import Path
 FILES = [
     'safe.py', 'process_registry.py', 'theme.py', 'migration.py', 'storage_check.py', 'settings.py', 'runtime_tools.py', 'diagnostics.py',
     'logging_setup.py', 'constants.py', 'db_models.py', 'threads.py',
-    'meters.py', 'loudness_coordinator.py', 'transport_controls.py', 'video_panel.py', 'right_panel.py', 'main.py'
+    'meters.py', 'loudness_coordinator.py', 'transport_controls.py', 'vlc_player.py', 'video_panel.py',
+    'file_list_view.py', 'right_panel.py', 'main.py'
 ]
 MODULE_NAMES = set(f.replace('.py', '') for f in FILES)
 
@@ -126,6 +127,7 @@ def check_core_logic():
         main_source = read_source('main.py')
         right_source = read_source('right_panel.py')
         video_source = read_source('video_panel.py')
+        vlc_source = read_source('vlc_player.py')
         loudness_source = read_source('loudness_coordinator.py')
         threads_source = read_source('threads.py')
         constants_source = read_source('constants.py')
@@ -149,9 +151,9 @@ def check_core_logic():
             errors.append("  FAIL MXF smoke test should use the real transport play path")
         if '--media-smoke-test' not in main_source or 'allow_supported_media=True' not in main_source or 'VIDEO_EXTS' not in main_source:
             errors.append("  FAIL media smoke test should cover supported video extensions")
-        if 'def _ensure_unpaused(self, seq=None)' not in video_source or 'self._player.set_pause(0)' not in video_source:
+        if 'def _ensure_unpaused(self, seq=None)' not in vlc_source or 'self._player.set_pause(0)' not in vlc_source:
             errors.append("  FAIL VLC play should explicitly resume after CUE preroll pause")
-        if 'def has_video_output(self)' not in video_source or 'ready = has_vout and elapsed >= 0.15' not in video_source:
+        if 'def has_video_output(self)' not in vlc_source or 'ready = has_vout and elapsed >= 0.15' not in video_source:
             errors.append("  FAIL vout-aware cue readiness missing")
         if 'fallback_ready = elapsed >= 0.90' not in video_source:
             errors.append("  FAIL cue readiness timer fallback must be preserved")
@@ -161,7 +163,7 @@ def check_core_logic():
             errors.append("  FAIL playback-priority loudness scheduling missing")
         if "isoformat(timespec='milliseconds')" not in diagnostics_source:
             errors.append("  FAIL state timeline should retain millisecond timing")
-        if 'def pause(self):\n        self._next_op()' not in video_source:
+        if 'def pause(self):\n        self._next_op()' not in vlc_source:
             errors.append("  FAIL VLC pause should invalidate delayed resume callbacks")
         if "'no_audio': False" not in threads_source:
             errors.append("  FAIL audio analysis normal result should include no_audio=False")
@@ -175,7 +177,7 @@ def check_core_logic():
             errors.append("  FAIL MXF smoke test should verify channel changes during playback")
         if '_current_process_media_children' not in main_source or 'stray media children after cleanup' not in main_source:
             errors.append("  FAIL MXF smoke test should verify stray ffmpeg/ffplay cleanup")
-        if "'channels': list(self.effective_channels())" not in video_source or "'requested_channels': list(self.channels or [])" not in video_source:
+        if "'channels': list(self.effective_channels())" not in vlc_source or "'requested_channels': list(self.channels or [])" not in vlc_source:
             errors.append("  FAIL audio mix process status should expose effective and requested channels")
         if '--db-smoke-test' not in main_source or 'load_qc_status' not in main_source or 'update_clip_qc' not in main_source:
             errors.append("  FAIL DB smoke test should verify QC persistence")

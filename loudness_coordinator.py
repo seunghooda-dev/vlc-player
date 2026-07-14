@@ -27,6 +27,9 @@ class LoudnessCoordinator:
         self._loudness_seq = 0
         self._loudness_schedule_seq = 0
 
+    def is_loudness_running(self):
+        return bool(self._loudness_thread and self._loudness_thread.isRunning())
+
     def _retire_loudness_analysis(self):
         self._loudness_schedule_seq += 1
         self._loudness_seq += 1
