@@ -160,8 +160,7 @@ def check_core_logic():
             errors.append("  FAIL playback-priority meter scheduling missing")
         if 'def _schedule_loudness_analysis(self, filepath, delay_ms=1500)' not in loudness_source or 'settle_sec = 2.5' not in loudness_source:
             errors.append("  FAIL playback-priority loudness scheduling missing")
-        if "isoformat(timespec='milliseconds')" not in diagnostics_source:
-            errors.append("  FAIL state timeline should retain millisecond timing")
+        # 상태 타임라인 밀리초 포맷 검사는 tests/test_diagnostics.py 실호출로 이관됨.
         if "'no_audio': False" not in threads_source:
             errors.append("  FAIL audio analysis normal result should include no_audio=False")
         if '--qc-smoke-test' not in main_source or 'BlackDetectThread' not in main_source:
