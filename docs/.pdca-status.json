@@ -1,5 +1,11 @@
 {
   "features": {
+    "constants-split-and-videopanel-decomposition": {
+      "phase": "check",
+      "matchRate": 100,
+      "checkedAt": "2026-07-14T23:20:00+09:00",
+      "note": "settings/runtime_tools/diagnostics 3분할(8e84113) + LoudnessCoordinator/QCMarkerSlider 추출(f750312). gap-detector 설계매치 15/15·회귀 5/5, pre-image 함수 diff로 본문 동치 확정(승인 치환만). 게이트: check_imports 그린, pytest 55, 실 MXF·settings·diagnostic 스모크 통과"
+    },
     "cue-latency": {
       "phase": "check",
       "matchRate": 100,
