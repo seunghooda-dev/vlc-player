@@ -1,5 +1,13 @@
 {
   "features": {
+    "app-rename": {
+      "phase": "check",
+      "matchRate": 100,
+      "startedAt": "2026-07-15T07:20:00+09:00",
+      "checkedAt": "2026-07-15T07:50:00+09:00",
+      "planDoc": "docs/01-plan/features/app-rename.plan.md",
+      "note": "MXF QC Player → MasterQC (버전 1.1.0.0). 데이터 폴더 %LOCALAPPDATA%\\MasterQC(버전 무접미)로 전환 + 이전 폴더 복사 마이그레이션(오버라이드 가드 포함, tests/test_migration.py 3종). 코드 20치환·bat 10종·spec 개명·ci.yml·version_info. E2E 격리 마이그레이션 검증(LOCALAPPDATA 재지정): 복사·원본보존 확인. 실기 MXF 스모크 PASS. 게이트: check_imports 그린, pytest 90. 환경변수 MXF_QC_USER_DATA_DIR·아이콘 파일명·GitHub 저장소명(vlc-player)은 유지"
+    },
     "priority-batch-1to4": {
       "phase": "check",
       "matchRate": 100,

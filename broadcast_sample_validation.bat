@@ -3,13 +3,13 @@ chcp 65001 > nul
 setlocal
 cd /d "%~dp0"
 
-set "APP_NAME=MXF QC Player"
-set "APP_VERSION=V.1.0"
+set "APP_NAME=MasterQC"
+set "APP_VERSION=V.1.1"
 set "PLAYER_EXE=%~dp0%APP_NAME%.exe"
 if not exist "%PLAYER_EXE%" set "PLAYER_EXE=%~dp0release\%APP_NAME% %APP_VERSION%\%APP_NAME%.exe"
 
 set "TARGET=%~1"
-set "REPORT_DIR=%LOCALAPPDATA%\%APP_NAME% %APP_VERSION%\reports"
+set "REPORT_DIR=%LOCALAPPDATA%\%APP_NAME%\reports"
 if not exist "%REPORT_DIR%" mkdir "%REPORT_DIR%" > nul 2>&1
 for /f %%T in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-Date -Format yyyyMMdd_HHmmss"') do set "STAMP=%%T"
 set "REPORT=%REPORT_DIR%\broadcast-sample-validation-%STAMP%.txt"

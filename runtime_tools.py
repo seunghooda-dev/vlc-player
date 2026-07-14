@@ -325,7 +325,7 @@ def check_runtime_environment():
 def format_runtime_environment(runtime=None):
     runtime = runtime or check_runtime_environment()
     lines = []
-    lines.append('MXF QC Player V.1.0 실행 환경 진단')
+    lines.append('MasterQC V.1.1 실행 환경 진단')
     lines.append('=' * 42)
     lines.append(f"상태: {'정상' if runtime.get('ok') else '확인 필요'}")
     if runtime.get('problems'):

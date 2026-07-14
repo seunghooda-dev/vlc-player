@@ -103,6 +103,12 @@ def _copy_legacy_file_to_user_data(name, source, target):
         _record_migration_event(name, source, target, 'failed', str(e))
 
 def migrate_legacy_user_data():
+    # 개명 전 기본 폴더(MXF QC Player V.1.0)를 우선 소스로 복사 — 대상이 이미 있으면 스킵되므로
+    # 아래 레거시(repo/release) 소스보다 먼저 시도해야 실사용 데이터가 우선한다.
+    # 단 오버라이드(스모크/CI 격리 폴더)에서는 실사용 데이터를 끌어오면 안 되므로 건너뛴다.
+    if not getattr(_c, 'USER_DATA_DIR_IS_OVERRIDDEN', False):
+        _copy_legacy_file_to_user_data('settings.json', _c.PREVIOUS_SETTINGS_PATH, _c.SETTINGS_PATH)
+        _copy_legacy_file_to_user_data('archive.db', _c.PREVIOUS_DB_PATH, _c.DB_PATH)
     _copy_legacy_file_to_user_data('settings.json', _c.LEGACY_SETTINGS_PATH, _c.SETTINGS_PATH)
     _copy_legacy_file_to_user_data('archive.db', _c.LEGACY_DB_PATH, _c.DB_PATH)
     return list(_RUNTIME_MIGRATION_EVENTS)

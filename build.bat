@@ -7,7 +7,7 @@ set "PY=C:\Users\seung\AppData\Local\Python\bin\python.exe"
 if not exist "%PY%" set "PY=python"
 
 echo ================================================
-echo   MXF QC Player V.1.0 - build desktop executable
+echo   MasterQC V.1.1 - build desktop executable
 echo ================================================
 echo.
 
@@ -41,7 +41,7 @@ if not exist "%ProgramFiles%\VideoLAN\VLC\libvlc.dll" (
     --clean ^
     --onedir ^
     --windowed ^
-    --name "MXF QC Player" ^
+    --name "MasterQC" ^
     --icon "assets\mxf_qc_player.ico" ^
     --version-file "version_info.txt" ^
     --add-data "assets;assets" ^
@@ -50,7 +50,7 @@ if not exist "%ProgramFiles%\VideoLAN\VLC\libvlc.dll" (
     main.py
 if errorlevel 1 goto fail
 
-set "DIST_EXE=%CD%\dist\MXF QC Player\MXF QC Player.exe"
+set "DIST_EXE=%CD%\dist\MasterQC\MasterQC.exe"
 if not exist "%DIST_EXE%" (
     echo [error] Built EXE was not found: %DIST_EXE%
     goto fail
@@ -62,10 +62,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "$p = Start-Process -File
 if errorlevel 1 goto fail
 
 echo.
-echo Build complete: dist\MXF QC Player\MXF QC Player.exe
+echo Build complete: dist\MasterQC\MasterQC.exe
 echo Build mode: onedir
 echo Runtime files will be created in the user data folder:
-echo   %LOCALAPPDATA%\MXF QC Player V.1.0
+echo   %LOCALAPPDATA%\MasterQC
 echo Release folders should contain only program files, tools, README, and licenses.
 echo External dependencies are not bundled: VLC, FFmpeg, FFplay must be installed or placed in PATH/app tools folder.
 exit /b 0

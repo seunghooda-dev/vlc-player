@@ -9,7 +9,7 @@ _LOG_MAX_BYTES = 10 * 1024 * 1024
 _LOG_BACKUP_COUNT = 30
 
 class _SafeTimedRotatingFileHandler(_TRFHandler):
-    """다른 MXF QC Player 프로세스가 로그를 잡고 있어도 롤오버 실패를 삼킨다."""
+    """다른 MasterQC 프로세스가 로그를 잡고 있어도 롤오버 실패를 삼킨다."""
     def doRollover(self):
         try:
             super().doRollover()

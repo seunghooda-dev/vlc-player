@@ -19,4 +19,4 @@ settings.json
 venv/
 *.spec
 # 현행 빌드 정의는 재현성을 위해 추적한다 (레거시 ArchiveTagger.spec 등은 계속 무시)
-!MXF QC Player.spec
+!MasterQC.spec

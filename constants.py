@@ -3,7 +3,7 @@ constants.py — 색상, 스타일, 경로, 로거
 모든 모듈이 import하는 공통 상수
 """
 """
-MXF QC Player - PyQt6 완전판
+MasterQC - PyQt6 완전판
 파일 탐색 + 비디오 플레이어 + DB + STT + 씬감지 + 검색
 """
 
@@ -42,19 +42,24 @@ APP_DIR      = _runtime_app_dir()
 RESOURCE_DIR = _runtime_resource_dir()
 BASE_DIR     = APP_DIR
 
-APP_DATA_NAME = "MXF QC Player V.1.0"
+APP_DATA_NAME = "MasterQC"
+# 개명(MasterQC) 이전 명칭 — 이전 데이터 폴더 마이그레이션과 레거시 경로 탐색에만 사용
+PREVIOUS_APP_DATA_NAME = "MXF QC Player V.1.0"
 USER_DATA_DIR_ENV = "MXF_QC_USER_DATA_DIR"
 
-def _default_user_data_dir():
+def _platform_data_dir(name):
     if os.name == 'nt':
         root = os.environ.get('LOCALAPPDATA')
         if root:
-            return Path(root) / APP_DATA_NAME
-        return Path.home() / 'AppData' / 'Local' / APP_DATA_NAME
+            return Path(root) / name
+        return Path.home() / 'AppData' / 'Local' / name
     root = os.environ.get('XDG_DATA_HOME')
     if root:
-        return Path(root) / APP_DATA_NAME
-    return Path.home() / '.local' / 'share' / APP_DATA_NAME
+        return Path(root) / name
+    return Path.home() / '.local' / 'share' / name
+
+def _default_user_data_dir():
+    return _platform_data_dir(APP_DATA_NAME)
 
 def _user_data_dir():
     override = os.environ.get(USER_DATA_DIR_ENV, '').strip()
@@ -62,7 +67,14 @@ def _user_data_dir():
         return Path(override).expanduser()
     return _default_user_data_dir()
 
+# 오버라이드(스모크/CI 격리 폴더) 여부 — True면 이전 실사용 데이터 마이그레이션을 건너뛴다.
+USER_DATA_DIR_IS_OVERRIDDEN = bool(os.environ.get(USER_DATA_DIR_ENV, '').strip())
 USER_DATA_DIR = _user_data_dir()
+
+# 개명 전 기본 사용자 데이터 폴더 — 최초 실행 시 여기서 settings/db를 복사 이전한다.
+PREVIOUS_DATA_DIR = _platform_data_dir(PREVIOUS_APP_DATA_NAME)
+PREVIOUS_SETTINGS_PATH = PREVIOUS_DATA_DIR / "settings.json"
+PREVIOUS_DB_PATH = PREVIOUS_DATA_DIR / "archive.db"
 USER_DB_PATH = USER_DATA_DIR / "archive.db"
 USER_SETTINGS_PATH = USER_DATA_DIR / "settings.json"
 USER_LOG_DIR = USER_DATA_DIR / "logs"
@@ -71,8 +83,9 @@ USER_BACKUP_DIR = USER_DATA_DIR / "backups"
 USER_REPORT_DIR = USER_DATA_DIR / "reports"
 
 def _legacy_user_data_dir():
+    # 과거 레이아웃은 개명 전 이름의 release 폴더에 사용자 데이터를 뒀다.
     if not getattr(sys, 'frozen', False):
-        release_dir = APP_DIR / 'release' / APP_DATA_NAME
+        release_dir = APP_DIR / 'release' / PREVIOUS_APP_DATA_NAME
         if release_dir.exists():
             return release_dir
     return APP_DIR
@@ -372,7 +385,7 @@ def cache_summary():
 def format_cache_summary(summary=None, max_entries=30):
     summary = summary or cache_summary()
     lines = []
-    lines.append('MXF QC Player 캐시 상태')
+    lines.append('MasterQC 캐시 상태')
     lines.append('=' * 42)
     lines.append(f"위치: {summary.get('root')}")
     lines.append(f"전체 용량: {format_bytes(summary.get('total_bytes', 0))}")

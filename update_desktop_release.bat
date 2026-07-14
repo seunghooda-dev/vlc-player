@@ -3,8 +3,8 @@ chcp 65001 > nul
 setlocal
 cd /d "%~dp0"
 
-set "APP_NAME=MXF QC Player"
-set "APP_VERSION=V.1.0"
+set "APP_NAME=MasterQC"
+set "APP_VERSION=V.1.1"
 set "PACKAGE_DIR=%CD%\release\%APP_NAME% %APP_VERSION%"
 set "TARGET_EXE=%PACKAGE_DIR%\%APP_NAME%.exe"
 set "TARGET_ICON=%PACKAGE_DIR%\mxf_qc_player.ico"
@@ -15,7 +15,7 @@ echo   %APP_NAME% %APP_VERSION% - desktop update
 echo ================================================
 echo.
 echo User data is stored outside the release folder:
-echo   %LOCALAPPDATA%\%APP_NAME% %APP_VERSION%
+echo   %LOCALAPPDATA%\%APP_NAME%
 echo The release folder will contain only program files, tools, README, and licenses.
 
 if exist "%TARGET_EXE%" (
@@ -54,6 +54,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$shortcut.Description='%APP_NAME% %APP_VERSION%';" ^
   "$shortcut.IconLocation=$icon + ',0';" ^
   "$shortcut.Save();" ^
+  "$legacy=Join-Path $desktop 'MXF QC Player V.1.0.lnk'; if(Test-Path -LiteralPath $legacy){ Remove-Item -LiteralPath $legacy -Force };" ^
   "try { Start-Process -FilePath ie4uinit.exe -ArgumentList '-show' -WindowStyle Hidden -Wait } catch {};" ^
   "Write-Host $shortcutPath"
 if errorlevel 1 goto fail

@@ -9,7 +9,7 @@ set "MXF_QC_USER_DATA_DIR=%CD%\tmp\dev_check_user_data"
 if not exist "%MXF_QC_USER_DATA_DIR%" mkdir "%MXF_QC_USER_DATA_DIR%" > nul 2>&1
 
 echo ================================================
-echo   MXF QC Player V.1.0 - development check
+echo   MasterQC V.1.1 - development check
 echo ================================================
 echo   user data: %MXF_QC_USER_DATA_DIR%
 echo.
@@ -36,7 +36,7 @@ if errorlevel 1 (
 if exist "ArchiveTagger.spec" (
     echo.
     echo [WARN] Legacy ArchiveTagger.spec exists locally.
-    echo        build.bat does not use it; current builds use the MXF QC Player name.
+    echo        build.bat does not use it; current builds use the MasterQC name.
 )
 
 echo.

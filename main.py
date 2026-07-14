@@ -72,8 +72,8 @@ from right_panel  import RightPanel
 from threads      import RuntimeWarmupThread, BlackDetectThread, AudioAnalyzeThread, FreezeDetectThread
 
 
-APP_WINDOW_TITLE = "MXF QC Player V.1.0"
-APP_MUTEX_NAME = r"Local\MXF_QC_Player_V1_SingleInstance"
+APP_WINDOW_TITLE = "MasterQC V.1.1"
+APP_MUTEX_NAME = r"Local\MasterQC_SingleInstance"
 APP_ICON_PATH = RESOURCE_DIR / "assets" / "mxf_qc_player.ico"
 _single_instance_handle = None
 
@@ -362,7 +362,7 @@ class MainWindow(QMainWindow):
 
         # 상태 바
         self.vp.status_changed.connect(self.statusBar().showMessage)
-        self.statusBar().showMessage("  ● READY   |   MXF QC Player V.1.0   |   GPU: NVIDIA")
+        self.statusBar().showMessage("  ● READY   |   MasterQC V.1.1   |   GPU: NVIDIA")
 
         self.vp.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.vp.setFocus()
@@ -435,7 +435,7 @@ class MainWindow(QMainWindow):
         self._log_legacy_root_data(runtime)
         self._log_audio_child_status(runtime)
         if runtime.get('ok'):
-            msg = "  ● READY   |   VLC / FFmpeg / FFprobe / FFplay / 저장 위치 OK   |   MXF QC Player V.1.0"
+            msg = "  ● READY   |   VLC / FFmpeg / FFprobe / FFplay / 저장 위치 OK   |   MasterQC V.1.1"
             self.statusBar().showMessage(msg)
             try:
                 self.vp.ai_lbl.setText("✓ 실행 환경 확인 완료 — VLC / FFmpeg / FFprobe / FFplay / 저장 위치 OK")
@@ -619,7 +619,8 @@ class MainWindow(QMainWindow):
         candidates = []
         for root in roots:
             try:
-                candidates.extend(root.glob('MXF QC Player V.1.0*.zip'))
+                candidates.extend(root.glob('MasterQC*.zip'))
+                candidates.extend(root.glob('MXF QC Player V.1.0*.zip'))  # 개명 전 패키지도 계속 인식
             except Exception:
                 pass
         candidates = [p for p in candidates if p.is_file()]
@@ -1656,7 +1657,7 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
     app = QApplication(sys.argv)
     _configure_app_style(app)
     if not _acquire_single_instance():
-        log.error(f'{label} smoke test failed: MXF QC Player is already running')
+        log.error(f'{label} smoke test failed: MasterQC is already running')
         return 3
 
     runtime = check_runtime_environment()
@@ -2081,7 +2082,7 @@ def _run_db_smoke_test():
     sample_path = TMP_DIR / f'db_smoke_{os.getpid()}_{time.time_ns()}.mxf'
     clip_id = ''
     try:
-        sample_path.write_bytes(b'MXF QC Player database smoke placeholder\n')
+        sample_path.write_bytes(b'MasterQC database smoke placeholder\n')
         stat = sample_path.stat()
         clip_id = save_clip({
             'filename': sample_path.name,
@@ -2515,7 +2516,7 @@ def _run_qc_report_smoke_test():
             ('csv attention column', saved_rows and '확인필요' in saved_rows[0] and '확인사유' in saved_rows[0]),
             ('csv issue values', issue_row.get('확인필요') == 'Y' and '블랙 2' in issue_row.get('확인사유', '') and '무음 1' in issue_row.get('확인사유', '')),
             ('csv missing values', missing_row.get('확인필요') == 'Y' and '파일 없음' in missing_row.get('확인사유', '')),
-            ('txt title', 'MXF QC Player V.1.0 - QC 결과 리포트' in txt),
+            ('txt title', 'MasterQC V.1.1 - QC 결과 리포트' in txt),
             ('txt summary', '검수요약:' in txt and '확인 필요 파일: 2개' in txt),
             ('txt issue detail', 'issue.mxf: 블랙 2, 무음 1, 메타 확인' in txt),
             ('txt missing detail', 'missing.mxf: 파일 없음, 메타 확인' in txt),
@@ -2798,7 +2799,7 @@ def _run_ui_layout_check():
     app = QApplication(sys.argv)
     _configure_app_style(app)
     if not _acquire_single_instance():
-        log.error('ui layout check failed: MXF QC Player is already running')
+        log.error('ui layout check failed: MasterQC is already running')
         return 3
 
     win = MainWindow()
@@ -2901,7 +2902,7 @@ def main():
     if not _acquire_single_instance():
         sys.exit(0)
     log.info('=' * 50)
-    log.info(f'MXF QC Player 시작 — Python {sys.version.split()[0]}')
+    log.info(f'MasterQC 시작 — Python {sys.version.split()[0]}')
     log.info(f'LOG_DIR: {LOG_DIR}')
     cleaned = cleanup_orphan_audio_processes()
     if cleaned:
@@ -2925,7 +2926,7 @@ def main():
     QTimer.singleShot(700, win.start_runtime_warmup)
     ret = app.exec()
     _final_child_cleanup('app exit')
-    log.info('MXF QC Player 종료')
+    log.info('MasterQC 종료')
     sys.exit(ret)
 
 if __name__ == "__main__":

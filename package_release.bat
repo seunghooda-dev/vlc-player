@@ -3,15 +3,15 @@ chcp 65001 > nul
 setlocal
 cd /d "%~dp0"
 
-set "APP_NAME=MXF QC Player"
-set "APP_VERSION=V.1.0"
+set "APP_NAME=MasterQC"
+set "APP_VERSION=V.1.1"
 set "PACKAGE_NAME=%APP_NAME% %APP_VERSION%"
 set "RELEASE_ROOT=release"
 set "PACKAGE_DIR=%CD%\%RELEASE_ROOT%\%PACKAGE_NAME%"
 for /f %%T in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-Date -Format yyyyMMdd_HHmmss"') do set "BUILD_STAMP=%%T"
 set "ZIP_PATH=%CD%\%RELEASE_ROOT%\%PACKAGE_NAME%_%BUILD_STAMP%.zip"
 set "ZIP_LATEST_PATH=%CD%\%RELEASE_ROOT%\%PACKAGE_NAME%.zip"
-set "USER_DATA_DIR=%LOCALAPPDATA%\%PACKAGE_NAME%"
+set "USER_DATA_DIR=%LOCALAPPDATA%\%APP_NAME%"
 
 echo ================================================
 echo   %PACKAGE_NAME% - portable release package

@@ -64,25 +64,25 @@ jobs:
       - name: Build EXE from spec
         env:
           PYTHONUTF8: '1'
-        run: pyinstaller --noconfirm "MXF QC Player.spec"
+        run: pyinstaller --noconfirm "MasterQC.spec"
       - name: Sanity smoke on built EXE (VLC 불필요 경로만)
         env:
           MXF_QC_USER_DATA_DIR: ${{ runner.temp }}\mxf_qc_exe
         run: |
-          & "dist\MXF QC Player\MXF QC Player.exe" --db-smoke-test
+          & "dist\MasterQC\MasterQC.exe" --db-smoke-test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & "dist\MXF QC Player\MXF QC Player.exe" --settings-smoke-test
+          & "dist\MasterQC\MasterQC.exe" --settings-smoke-test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Zip onedir package
-        run: Compress-Archive -Path "dist\MXF QC Player" -DestinationPath "MXF-QC-Player-win64.zip"
+        run: Compress-Archive -Path "dist\MasterQC" -DestinationPath "MasterQC-win64.zip"
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MXF-QC-Player-win64-${{ github.run_number }}-${{ github.sha }}
-          path: MXF-QC-Player-win64.zip
+          name: MasterQC-win64-${{ github.run_number }}-${{ github.sha }}
+          path: MasterQC-win64.zip
           retention-days: 14
       - name: Attach to GitHub Release (v* 태그)
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" "MXF-QC-Player-win64.zip" --title "MXF QC Player ${{ github.ref_name }}" --generate-notes
+        run: gh release create "${{ github.ref_name }}" "MasterQC-win64.zip" --title "MasterQC ${{ github.ref_name }}" --generate-notes
