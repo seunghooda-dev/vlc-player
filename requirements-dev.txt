@@ -1,0 +1,4 @@
+# 개발/CI 전용 의존성 — 런타임 requirements.txt 와 분리한다.
+# 순수 로직 pytest 스위트는 GUI/VLC 없이 아래 두 패키지만으로 돌아간다.
+SQLAlchemy==2.0.46
+pytest>=8,<10

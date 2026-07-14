@@ -16,6 +16,15 @@ checks for metadata QC, settings normalization, audio channel clamping, supporte
 video extensions, and DF/NDF timecode conversion. It does not launch playback or
 build an EXE, so it should stay quick enough to run after ordinary source edits.
 
+Pure-logic unit tests live under `tests\` and run with `pytest` (dev dependency in
+`requirements-dev.txt`). They need no GUI or VLC, so they also run headless in CI
+(`.github\workflows\ci.yml`). Run them with:
+
+    python -m pytest
+
+The GitHub Actions CI runs the pytest suite plus the full `check_imports.py` gate
+(the import gate uses the Qt offscreen platform so it works without a display).
+
 If `ArchiveTagger.spec` exists locally, `dev_check.bat` prints a warning. That
 file is a legacy ignored artifact and is not used by the current build path.
 Current packaged builds are driven by `build.bat` and use the `MXF QC Player`

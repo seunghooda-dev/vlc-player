@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unit-tests:
+    # 순수 로직 회귀 테스트 — GUI/VLC 불필요, 헤드리스로 안정 실행.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      - name: Run unit tests
+        env:
+          MXF_QC_USER_DATA_DIR: ${{ runner.temp }}\mxf_qc_ci
+        run: python -m pytest
+
+  import-gate:
+    # check_imports.py 전체 게이트 — PyQt6 필요, 오프스크린 플랫폼으로 헤드리스 실행.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install runtime deps needed for import gate
+        run: |
+          python -m pip install --upgrade pip
+          pip install PyQt6==6.10.2 SQLAlchemy==2.0.46 numpy==2.4.1
+      - name: Import consistency + QC logic gate
+        env:
+          MXF_QC_USER_DATA_DIR: ${{ runner.temp }}\mxf_qc_ci
+          QT_QPA_PLATFORM: offscreen
+        run: python check_imports.py
