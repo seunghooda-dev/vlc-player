@@ -559,6 +559,13 @@ class VlcPlayerAdapter(QObject):
         except Exception as e:
             log.debug(f'vlc resume after play: {e}')
 
+    def has_video_output(self):
+        """첫 프레임 렌더 후 vout 개수가 1 이상 — CUE 준비 완료 조기 감지에 사용."""
+        try:
+            return int(self._player.has_vout() or 0) > 0
+        except Exception:
+            return False
+
     def pause(self):
         self._next_op()
         try:
@@ -595,10 +602,29 @@ class VlcPlayerAdapter(QObject):
             self.playbackStateChanged.emit(self._state)
             self._emit_duration(seq)
 
-        QTimer.singleShot(120, lambda: _freeze('freeze-1'))
-        QTimer.singleShot(260, lambda: _freeze('freeze-2'))
-        QTimer.singleShot(520, lambda: _freeze('freeze-3'))
-        QTimer.singleShot(860, lambda: _freeze('freeze-4'))
+        # 조기 pause + 반복 seek는 VLC preroll을 방해해 첫 프레임을 늦춘다
+        # (실측: 블라인드 freeze 1.22s vs vout 감지 후 freeze 0.86s).
+        # vout(첫 프레임 렌더) 감지 즉시 1회 freeze한다. vout 미보고 파일은
+        # CUE 완료 경로의 _force_cue_position(0.90s fallback)이 pause를 걸고,
+        # 그마저 실패하는 비정상 경우를 위한 최후 음소거 가드만 1.4s에 둔다.
+        preroll_t0 = time.monotonic()
+
+        def _preroll_tick():
+            if not self._is_current_op(seq):
+                return
+            elapsed = time.monotonic() - preroll_t0
+            if self.has_video_output():
+                log.info(f'vlc preroll first frame at {elapsed:.2f}s')
+                _freeze('freeze-vout')
+                QTimer.singleShot(140, lambda: _freeze('freeze-settle'))
+                return
+            if elapsed >= 1.4:
+                log.debug(f'vlc preroll guard freeze without vout at {elapsed:.2f}s')
+                _freeze('freeze-guard')
+                return
+            QTimer.singleShot(40, _preroll_tick)
+
+        QTimer.singleShot(40, _preroll_tick)
 
     def stop(self):
         self._next_op()
@@ -3147,12 +3173,23 @@ class VideoPanel(QWidget):
             except Exception as e:
                 log.debug(f'vlc cue length poll: {e}')
             # MXF는 preroll 전에는 get_length()가 0으로 남는 경우가 많다.
-            # probe duration이 있으면 프리롤/seek 타이머가 지나간 뒤 CUE 완료로 본다.
             has_duration_hint = bool(media_len and media_len > 0) or bool(self.duration and self.duration > 0)
-            ready = elapsed >= 0.45 and has_duration_hint
+            # 완료를 실제 첫 프레임(vout)에 정렬한다. 과거의 0.45s 고정 대기 완료는
+            # 프레임이 뜨기 전에 pause+seek(_force_cue_position)를 걸어 preroll을
+            # 방해했고, 그 결과 첫 화면이 오히려 늦어졌다(실측 1.22s). vout 미보고
+            # 파일은 기존과 동일한 0.90s 타이머 fallback으로 완료한다.
+            has_vout = False
+            try:
+                if hasattr(self.player, 'has_video_output'):
+                    has_vout = self.player.has_video_output()
+            except Exception as e:
+                log.debug(f'vlc cue vout poll: {e}')
+            ready = has_vout and elapsed >= 0.15
             fallback_ready = elapsed >= 0.90
             if ready or fallback_ready:
-                if media_len and media_len > 0:
+                if has_vout:
+                    log.info(f'VLC cue ready via vout: {file_name} elapsed={elapsed:.2f}s')
+                elif media_len and media_len > 0:
                     log.debug(f'VLC cue ready: {file_name} length={media_len}ms elapsed={elapsed:.2f}s')
                 elif not has_duration_hint:
                     log.warning(f'VLC cue fallback without duration: {file_name}')
@@ -3164,6 +3201,7 @@ class VideoPanel(QWidget):
                     file=file_name,
                     elapsed=f'{elapsed:.2f}s',
                     media_len=f'{media_len}ms',
+                    vout=has_vout,
                     fallback=fallback_ready,
                 )
                 self._empty_proxy.hide()

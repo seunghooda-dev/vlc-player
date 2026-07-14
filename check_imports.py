@@ -146,6 +146,10 @@ def check_core_logic():
             errors.append("  FAIL media smoke test should cover supported video extensions")
         if 'def _ensure_unpaused(self, seq=None)' not in video_source or 'self._player.set_pause(0)' not in video_source:
             errors.append("  FAIL VLC play should explicitly resume after CUE preroll pause")
+        if 'def has_video_output(self)' not in video_source or 'ready = has_vout and elapsed >= 0.15' not in video_source:
+            errors.append("  FAIL vout-aware cue readiness missing")
+        if 'fallback_ready = elapsed >= 0.90' not in video_source:
+            errors.append("  FAIL cue readiness timer fallback must be preserved")
         if 'def _schedule_meter_start(self, delay_ms=450)' not in video_source or 'self.meter_ctrl.prepare_file(filepath)' not in video_source:
             errors.append("  FAIL playback-priority meter scheduling missing")
         if 'def _schedule_loudness_analysis(self, filepath, delay_ms=1500)' not in video_source or 'settle_sec = 2.5' not in video_source:

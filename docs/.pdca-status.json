@@ -1,0 +1,10 @@
+{
+  "features": {
+    "cue-latency": {
+      "phase": "plan",
+      "startedAt": "2026-07-14T20:30:00+09:00",
+      "planDoc": "docs/01-plan/features/cue-latency.plan.md",
+      "note": "사용자 지시로 Design 생략, Plan 확정 후 곧바로 Do 진행"
+    }
+  }
+}
