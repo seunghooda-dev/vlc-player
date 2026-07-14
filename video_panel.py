@@ -2685,14 +2685,19 @@ class VideoPanel(QWidget):
         self.btn_freeze.setEnabled(False)
         mark_step('metadata_apply')
 
-        # CUE — 캐시 확인 후 즉시 또는 변환 후 player에 올림 (TranscodeCoordinator로 위임)
+        # CUE — 캐시 확인 후 즉시 또는 변환 후 player에 올림 (TranscodeCoordinator로 위임).
+        # CUE 완료 선언은 변환 소스가 실제로 player에 올라오는 _on_transcode_ready/full에서
+        # _complete_transcode_cue_load()로 수행한다 — 변환 전 조기 PLAY로 인한 VLC 재생 실패 방지.
         self._transcode_coordinator.start_transcode_for_cue(filepath, load_seq)
 
-        # 미터 위치 갱신
-
+    def _complete_transcode_cue_load(self, filepath, preview=False):
+        """트랜스코드 소스가 player에 올라온 뒤 CUE 완료를 선언한다(조기 선언 금지)."""
+        info = self.cur_info or {}
+        message = ("⏳ 전체 변환 중... (재생 가능)" if preview
+                   else "✓ CUE 완료 — ▶ 재생버튼을 누르세요")
         self._complete_file_load(
             filepath,
-            "✓ CUE 완료 — ▶ 재생버튼을 누르세요",
+            message,
             f"  ▌CUE  {Path(filepath).name}  |  {info.get('format_short','—')}  {info.get('width',0)}×{info.get('height',0)}  —  ▶ 재생버튼을 누르세요",
         )
 

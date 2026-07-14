@@ -148,6 +148,8 @@ class TranscodeCoordinator:
                 el.setText(f'⚠ {friendly}')
                 ai.setText(f'⚠ {friendly_error_title("ffmpeg_transcode", msg, fp)}')
                 panel.prog_ai.hide(); panel.prog_ai.setRange(0, 0)
+                # 완료 선언이 ready 시점으로 이동 — 변환 실패 시 여기서 로딩 잠금 해제
+                panel._set_loading_state(False)
             self._tc_thread.error.connect(_tc_err)
             self._tc_thread.start()
 
@@ -156,7 +158,9 @@ class TranscodeCoordinator:
         if expected_file and not panel._load_is_current(load_seq, expected_file):
             log.debug(f'stale transcode ready ignored: {Path(expected_file).name}')
             return
-        if not panel.cur_file or getattr(panel, '_loading', False): return
+        # CUE 완료 선언이 이 슬롯으로 이동해 로드 중(_loading)에도 실행돼야 한다 —
+        # 스테일 차단은 위의 load_seq 가드가 담당한다.
+        if not panel.cur_file: return
         import os
         if not os.path.exists(tmp): return
         try:
@@ -166,13 +170,13 @@ class TranscodeCoordinator:
             panel._empty_proxy.hide(); panel._video_item.show()
             panel.player.pause()
             QTimer.singleShot(120, lambda: panel._show_cue_first_frame(0))
-            panel.ai_lbl.setText(
-                "⏳ 전체 변환 중... (재생 가능)" if is_preview
-                else "✓ CUE 완료 — ▶ 재생버튼을 누르세요")
             panel.meter_ctrl.prepare_file(panel.cur_file)
+            # 소스가 실제로 올라온 지금이 CUE 완료 시점 — 조기 PLAY로 인한 재생 실패 방지.
+            panel._complete_transcode_cue_load(expected_file or panel.cur_file, preview=is_preview)
         except Exception as e:
             # setSource 실패해도 프로그램 유지
             panel.ai_lbl.setText(f'⚠ {friendly_error_title("player_load", e, panel.cur_file)}')
+            panel._set_loading_state(False)
             log.error(f'transcode ready load error: {e}')
 
     def _on_transcode_full(self, tmp, expected_file=None, load_seq=None):
@@ -180,7 +184,7 @@ class TranscodeCoordinator:
         if expected_file and not panel._load_is_current(load_seq, expected_file):
             log.debug(f'stale transcode full ignored: {Path(expected_file).name}')
             return
-        if not panel.cur_file or getattr(panel, '_loading', False): return
+        if not panel.cur_file: return
         import os
         if not os.path.exists(tmp): return
         try:
@@ -205,7 +209,10 @@ class TranscodeCoordinator:
                 if panel.cur_file not in self._tc_cache_order:
                     self._tc_cache_order.append(panel.cur_file)
                 self._evict_tc_cache()
-            panel.ai_lbl.setText("✓ CUE 완료 — ▶ 재생버튼을 누르세요")
+            # 프리뷰 없이 ready_full만 오는 경우에도 완료가 보장되도록 여기서도 선언
+            # (_emit_file_loaded_once 게이트로 중복 발행은 방지됨).
+            panel._complete_transcode_cue_load(expected_file or panel.cur_file)
         except Exception as e:
             panel.ai_lbl.setText(f'⚠ {friendly_error_title("player_load", e, panel.cur_file)}')
+            panel._set_loading_state(False)
             log.error(f'transcode full swap error: {e}')
