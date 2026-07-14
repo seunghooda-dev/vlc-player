@@ -493,11 +493,14 @@ class VlcPlayerAdapter(QObject):
             elapsed = time.monotonic() - preroll_t0
             if self.has_video_output():
                 log.info(f'vlc preroll first frame at {elapsed:.2f}s')
+                # 상태 타임라인 기록 — 진단 ZIP만으로 현장 CUE 성능(느린 스토리지 등) 판별용
+                record_state_event('cue', 'first frame rendered', elapsed=f'{elapsed:.2f}s')
                 _freeze('freeze-vout')
                 QTimer.singleShot(140, lambda: _freeze('freeze-settle'))
                 return
             if elapsed >= 1.4:
                 log.debug(f'vlc preroll guard freeze without vout at {elapsed:.2f}s')
+                record_state_event('cue', 'preroll guard freeze without vout', elapsed=f'{elapsed:.2f}s')
                 _freeze('freeze-guard')
                 return
             QTimer.singleShot(40, _preroll_tick)
