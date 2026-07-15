@@ -115,9 +115,10 @@ class SideMeter(QWidget):
         GAP     = 1
         ROW     = max(4, (H - GAP * (n - 1)) // n)
         lbl_font = QFont('Cascadia Mono', max(5, min(8, ROW - 2)), QFont.Weight.Bold)
-        # 두 자리 채널 번호(11~16)가 배율/폰트와 무관하게 잘리지 않도록 라벨 폭을 실측으로 결정
+        # 두 자리 채널 번호(11~16)가 배율/폰트와 무관하게 잘리지 않도록 라벨 폭을 실측으로 결정.
+        # 현장 환경(디스플레이 배율·폰트 대체)의 렌더 편차까지 감안해 여유를 크게 둔다.
         widest  = max((QFontMetrics(lbl_font).horizontalAdvance(str(c)) for c in self.channel_numbers), default=10)
-        LBL_W   = max(22, widest + 6)
+        LBL_W   = max(26, widest + 10)
         SEG_W   = 3
         SEG_GAP = 1
         BAR_W   = W - LBL_W - 2
@@ -153,8 +154,10 @@ class SideMeter(QWidget):
             if ROW >= 7:
                 p.setPen(QColor('#ffffff'))
                 p.setFont(lbl_font)
+                # TextDontClip: 만에 하나 라벨 폭 계산보다 실제 렌더가 넓어도 숫자가 잘리지 않게
                 p.drawText(LBL_X, y, LBL_W, ROW,
-                    Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
+                    Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter
+                    | Qt.TextFlag.TextDontClip,
                     str(ch_num))
 
             # 바 배경 없음
