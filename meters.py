@@ -94,8 +94,11 @@ class SideMeter(QWidget):
         self._peaks  = [0.0] * len(self.channel_numbers)
         self.setFixedWidth(140)
         self.setFixedHeight(104)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setStyleSheet("background:transparent;")
+        # 불투명 위젯으로 유지한다 — 투명(WA_TranslucentBackground) 위젯은 VLC 네이티브
+        # HWND 형제 옆에서 화면 합성이 낡은 프레임에 고착되는 문제가 실기에서 확인됨
+        # (grab()은 정상인데 화면만 이전 프레임 유지). 스테이지가 검정이라 시각 차이 없음.
+        self.setAutoFillBackground(False)
+        self.setStyleSheet("background:#000000;")
 
     def set_levels(self, levels, peaks):
         count = len(self.channel_numbers)
@@ -110,6 +113,8 @@ class SideMeter(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
         W = self.width(); H = self.height()
+        # 불투명 배경을 직접 채운다 (합성 안정성 — __init__ 주석 참조)
+        p.fillRect(0, 0, W, H, QColor(0, 0, 0))
 
         n       = len(self.channel_numbers)
         GAP     = 1

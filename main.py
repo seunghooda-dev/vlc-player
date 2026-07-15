@@ -2794,6 +2794,53 @@ def _run_single_instance_smoke_test():
         except Exception:
             pass
 
+def _run_meter_dump():
+    # 임시 진단: 앱 컨텍스트에서 좌측 레일의 위젯 렌더(grab)와 화면 합성을 분리 덤프
+    _setup_global_exception_handler()
+    app = QApplication(sys.argv)
+    _configure_app_style(app)
+    if not _acquire_single_instance():
+        log.error('meter dump failed: MasterQC is already running')
+        return 3
+    win = MainWindow()
+    win.show()
+    result = {'code': 1}
+
+    def _dump():
+        try:
+            vp = win.vp
+            rail = vp.vlc_side_left
+            out_dir = Path(os.environ.get('TEMP', '.'))
+            pm = rail.grab()
+            pm.save(str(out_dir / 'meter_dump_grab.png'))
+            img = pm.toImage()
+            dpr = pm.devicePixelRatio()
+            row6_y0 = int(5 * 18 * dpr)
+            row6_y1 = int((5 * 18 + 17) * dpr)
+            prof = ''
+            for x in range(0, int(45 * dpr)):
+                hit = any(
+                    img.pixelColor(x, y).red() > 200 and img.pixelColor(x, y).green() > 200
+                    and img.pixelColor(x, y).blue() > 200
+                    for y in range(row6_y0, min(row6_y1, img.height()))
+                )
+                prof += '#' if hit else '.'
+            log.info(f'meter dump: rail size={rail.width()}x{rail.height()} dpr={dpr} row6(11) grab profile: {prof}')
+            scr = app.primaryScreen()
+            wpm = scr.grabWindow(win.winId())
+            wpm.save(str(out_dir / 'meter_dump_screen.png'))
+            log.info(f'meter dump saved to {out_dir}')
+            result['code'] = 0
+        except Exception as e:
+            log.error(f'meter dump error: {e}')
+        finally:
+            QTimer.singleShot(100, app.quit)
+
+    QTimer.singleShot(1500, _dump)
+    app.exec()
+    return result['code']
+
+
 def _run_ui_layout_check():
     _setup_global_exception_handler()
     app = QApplication(sys.argv)
@@ -2969,6 +3016,8 @@ if __name__ == "__main__":
         sys.exit(_run_single_instance_smoke_test())
     if '--ui-layout-check' in sys.argv:
         sys.exit(_run_ui_layout_check())
+    if '--meter-dump' in sys.argv:
+        sys.exit(_run_meter_dump())
     if '--export-diagnostics' in sys.argv:
         destination = _arg_value('--export-diagnostics') or None
         report = create_diagnostic_report(destination)
