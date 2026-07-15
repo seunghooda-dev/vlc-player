@@ -106,15 +106,18 @@ class SideMeter(QWidget):
         self.update()
 
     def paintEvent(self, e):
-        from PyQt6.QtGui import QPainter, QColor, QFont
+        from PyQt6.QtGui import QPainter, QColor, QFont, QFontMetrics
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
         W = self.width(); H = self.height()
 
         n       = len(self.channel_numbers)
-        LBL_W   = 22
         GAP     = 1
         ROW     = max(4, (H - GAP * (n - 1)) // n)
+        lbl_font = QFont('Cascadia Mono', max(5, min(8, ROW - 2)), QFont.Weight.Bold)
+        # 두 자리 채널 번호(11~16)가 배율/폰트와 무관하게 잘리지 않도록 라벨 폭을 실측으로 결정
+        widest  = max((QFontMetrics(lbl_font).horizontalAdvance(str(c)) for c in self.channel_numbers), default=10)
+        LBL_W   = max(22, widest + 6)
         SEG_W   = 3
         SEG_GAP = 1
         BAR_W   = W - LBL_W - 2
@@ -149,7 +152,7 @@ class SideMeter(QWidget):
             p.fillRect(LBL_X, y, LBL_W, ROW, box_col)
             if ROW >= 7:
                 p.setPen(QColor('#ffffff'))
-                p.setFont(QFont('Cascadia Mono', max(5, min(8, ROW - 2)), QFont.Weight.Bold))
+                p.setFont(lbl_font)
                 p.drawText(LBL_X, y, LBL_W, ROW,
                     Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
                     str(ch_num))
