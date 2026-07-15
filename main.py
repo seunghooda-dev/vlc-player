@@ -2832,8 +2832,8 @@ def _run_ui_layout_check():
         for name, actual, minimum in checks:
             if _safe_int(actual, 0) < _safe_int(minimum, 0):
                 return f'{label}: {name} too small actual={actual} min={minimum}'
-        expected_left = [1, 3, 5, 7]
-        expected_right = [2, 4, 6, 8]
+        expected_left = [1, 3, 5, 7, 9, 11, 13, 15]
+        expected_right = [2, 4, 6, 8, 10, 12, 14, 16]
         if list(getattr(vp.vlc_side_left, 'channel_numbers', [])) != expected_left:
             return f'{label}: left audio meter channels changed {getattr(vp.vlc_side_left, "channel_numbers", [])}'
         if list(getattr(vp.vlc_side_right, 'channel_numbers', [])) != expected_right:
@@ -2852,6 +2852,9 @@ def _run_ui_layout_check():
                 return f'{label}: {name} outside video stage {meter_rect}'
             if meter_rect.intersects(video_rect):
                 return f'{label}: {name} overlaps video surface {meter_rect} vs {video_rect}'
+        # 16채널 확장 후 우측 레일은 하단 라우드니스 미터와 겹치면 안 된다(적응 높이 검증)
+        if vp.vlc_side_right.geometry().intersects(vp.vlc_loud_meter.geometry()):
+            return f'{label}: right audio meter overlaps loudness meter'
         log.info(
             f'ui layout check ok: {label} window={win.width()}x{win.height()} '
             f'video={vp.video_view.width()}x{vp.video_view.height()} '

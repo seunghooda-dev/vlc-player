@@ -256,13 +256,14 @@ class VideoPanel(QWidget):
 
         # VLC renders into a native HWND. Keep meters outside the video surface
         # as stable broadcast rails so playback cannot cover or move them.
-        self.vlc_side_left  = SideMeter(left=True, channel_numbers=[1,3,5,7])
-        self.vlc_side_right = SideMeter(left=False, channel_numbers=[2,4,6,8])
+        # UHD 16채널 마스터 대응 — 좌 홀수 8행 / 우 짝수 8행 (바 크기 17px 행 유지)
+        self.vlc_side_left  = SideMeter(left=True, channel_numbers=[1,3,5,7,9,11,13,15])
+        self.vlc_side_right = SideMeter(left=False, channel_numbers=[2,4,6,8,10,12,14,16])
         self.vlc_loud_meter = LoudnessMeter()
         self.vlc_side_left.setFixedWidth(116)
         self.vlc_side_right.setFixedWidth(116)
-        self.vlc_side_left.setFixedHeight(74)
-        self.vlc_side_right.setFixedHeight(74)
+        self.vlc_side_left.setFixedHeight(144)
+        self.vlc_side_right.setFixedHeight(144)
         self.vlc_loud_meter.setFixedWidth(70)
         self.vlc_loud_meter.setFixedHeight(208)
         for w in (self.vlc_side_left, self.vlc_side_right, self.vlc_loud_meter):
@@ -368,6 +369,14 @@ class VideoPanel(QWidget):
             right_x = video_x + video_w + 2
             loud_x = video_x + video_w + (right_col_w - loud_w) // 2
             loud_y = stage_h - self.vlc_loud_meter.height() - 2
+
+            # 16채널 레일 높이 적응 — 목표 144(8행×17px), 좁은 창에서는 축소하되
+            # 우측 레일은 하단 라우드니스 미터와 절대 겹치지 않게 클램프
+            rail_target = 144
+            left_avail = max(39, stage_h - audio_y - 2)
+            right_avail = max(39, loud_y - audio_y - 4)
+            self.vlc_side_left.setFixedHeight(min(rail_target, left_avail))
+            self.vlc_side_right.setFixedHeight(min(rail_target, right_avail))
 
             self.vlc_side_left.move(left_x, audio_y)
             self.vlc_side_right.move(right_x, audio_y)
@@ -900,7 +909,8 @@ class VideoPanel(QWidget):
         count = max(streams, channels)
         if count <= 0:
             count = self._safe_int_value(fallback, 2)
-        return max(1, min(8, count))
+        # UHD 16채널 마스터까지 레벨 미터 측정 (probe의 channels는 스트림 합계라 모든 배치 커버)
+        return max(1, min(16, count))
 
     def _audio_channel_control_count(self, info=None):
         info = info or getattr(self, 'cur_info', {}) or {}

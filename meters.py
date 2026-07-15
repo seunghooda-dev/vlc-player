@@ -606,14 +606,14 @@ class MeterController(QObject):
         # 오디오 미터는 항상 원본의 전체 채널 레벨을 보여준다.
         # 선택 채널은 출력 라우팅/LKFS 기준으로만 사용하고,
         # 미터 표시 자체는 숨기지 않는다.
-        level_values = _safe_sequence(levels)[:8]
-        peak_values = _safe_sequence(peaks)[:8]
-        src_levels = level_values + [0.0] * max(0, 8 - len(level_values))
-        src_peaks  = peak_values + [0.0] * max(0, 8 - len(peak_values))
-        odd_lv = [src_levels[i] for i in range(0,8,2)]
-        odd_pk = [src_peaks[i]  for i in range(0,8,2)]
-        evn_lv = [src_levels[i] for i in range(1,8,2)]
-        evn_pk = [src_peaks[i]  for i in range(1,8,2)]
+        level_values = _safe_sequence(levels)[:16]
+        peak_values = _safe_sequence(peaks)[:16]
+        src_levels = level_values + [0.0] * max(0, 16 - len(level_values))
+        src_peaks  = peak_values + [0.0] * max(0, 16 - len(peak_values))
+        odd_lv = [src_levels[i] for i in range(0,16,2)]
+        odd_pk = [src_peaks[i]  for i in range(0,16,2)]
+        evn_lv = [src_levels[i] for i in range(1,16,2)]
+        evn_pk = [src_peaks[i]  for i in range(1,16,2)]
         self.lm.set_levels(odd_lv, odd_pk)
         self.rm.set_levels(evn_lv, evn_pk)
         self.loud.update_lkfs(lkfs_m, lkfs_s, lkfs_i)
