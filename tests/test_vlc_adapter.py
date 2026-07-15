@@ -155,12 +155,33 @@ def test_audio_mix_effective_channels_respects_source_max():
 
 def test_audio_mix_set_channels_dedup_clamp_and_empty():
     amp = AudioMixPlayer()
-    amp.set_channels([1, 1, 2, 9, 0, 3])  # 중복 제거 + 1..8 범위만
-    assert amp.channels == [1, 2, 3]
+    amp.set_channels([1, 1, 2, 9, 0, 3, 16, 17])  # 중복 제거 + 1..16 범위만 (UHD 16채널)
+    assert amp.channels == [1, 2, 9, 3, 16]
     amp.set_channels([])  # 명시적 빈 목록은 빈 채로 유지
     assert amp.channels == []
     amp.set_channels(None)  # None은 기본 [1,2]
     assert amp.channels == [1, 2]
+    amp.set_channels([17, 0])  # 전부 범위 밖이면 기본 [1,2]
+    assert amp.channels == [1, 2]
+
+
+def test_audio_mix_filter_maps_high_channels_single_stream():
+    # UHD 1×16ch 소재에서 9·10번 선택 → pan이 c8/c9(0-기반)로 매핑돼야 한다
+    amp = AudioMixPlayer()
+    amp.set_file('x.mxf', audio_stream_count=1, channel_count=16)
+    amp.set_channels([9, 10])
+    filt = amp._build_filter()
+    assert 'c0=c8' in filt and 'c0=c9' in filt
+
+
+def test_audio_mix_filter_maps_high_channels_multi_stream():
+    # 16모노 스트림 소재에서 15·16번 선택 → 0:a:14 / 0:a:15 스트림 선택
+    amp = AudioMixPlayer()
+    amp.set_file('x.mxf', audio_stream_count=16, channel_count=16)
+    amp.set_channels([15, 16])
+    src15, _ = amp._source_for_channel(15, 0)
+    src16, _ = amp._source_for_channel(16, 1)
+    assert src15 == '0:a:14' and src16 == '0:a:15'
 
 
 def test_audio_mix_diagnostic_status_reports_channels():

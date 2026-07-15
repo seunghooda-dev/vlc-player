@@ -729,7 +729,7 @@ class VideoPanel(QWidget):
             f"QCheckBox::indicator:checked{{background:qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 {C['teal']},stop:1 {C['blue']});border-color:{C['teal']};}}"
             f"QCheckBox::indicator:hover{{border-color:{C['border2']};}}"
         )
-        for i in range(8):
+        for i in range(16):
             ch_no = i + 1
             cb = QCheckBox(f"{ch_no}")
             cb.setStyleSheet(CH_STYLE)
@@ -920,7 +920,7 @@ class VideoPanel(QWidget):
         if count <= 0 and getattr(self, 'cur_file', None):
             selected = getattr(self, '_selected_chs', []) or [1, 2]
             count = max(2, max((self._safe_int_value(ch, 0) for ch in selected), default=0))
-        return max(0, min(8, count))
+        return max(0, min(16, count))
 
     @staticmethod
     def _audio_source_count_from_info(info):
@@ -935,7 +935,7 @@ class VideoPanel(QWidget):
         source_count = self._audio_source_count_from_info(info)
         if source_count <= 0:
             return "0CH"
-        visible_count = max(1, min(8, source_count))
+        visible_count = max(1, min(16, source_count))
         if source_count > visible_count:
             return f"{visible_count}CH/{source_count}CH"
         return f"{visible_count}CH"
@@ -1898,7 +1898,7 @@ class VideoPanel(QWidget):
         )
         no_audio_hint = self._metadata_hint_says_no_audio(info)
         provisional_ch = 0 if no_audio_hint else (
-            max(1, min(8, hinted_ch)) if hinted_ch else (8 if p.suffix.lower() == ".mxf" else 2)
+            max(1, min(16, hinted_ch)) if hinted_ch else (16 if p.suffix.lower() == ".mxf" else 2)
         )
         self._set_audio_channel_display(self._provisional_audio_display_info(info, provisional_ch))
         for cb, ch_no in self._ch_checks:
@@ -2729,7 +2729,7 @@ class VideoPanel(QWidget):
         selected = self._get_selected_audio_channels()
         ch = selected[0] if selected else 1
         if ch % 2 == 1:
-            return (ch, min(ch + 1, 8))
+            return (ch, min(ch + 1, 16))
         return (max(1, ch - 1), ch)
 
     def _get_selected_ch_pairs(self):
@@ -2759,7 +2759,7 @@ class VideoPanel(QWidget):
                 n = int(ch)
             except Exception:
                 continue
-            if 1 <= n <= 8 and n not in cleaned:
+            if 1 <= n <= 16 and n not in cleaned:
                 cleaned.append(n)
         return ",".join(str(ch) for ch in cleaned) if cleaned else "오디오 없음"
 

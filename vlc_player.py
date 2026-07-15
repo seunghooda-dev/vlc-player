@@ -89,17 +89,17 @@ class AudioMixPlayer(QObject):
             explicit_empty = len(source) == 0
         for ch in source:
             n = self._safe_int(ch, 0)
-            if 1 <= n <= 8 and n not in cleaned:
+            if 1 <= n <= 16 and n not in cleaned:
                 cleaned.append(n)
         self.channels = [] if explicit_empty else (cleaned or [1, 2])
 
     def _max_output_channel(self):
         if not self.audio_layout_known:
-            return 8
+            return 16
         if self.audio_stream_count > 1:
-            return max(1, min(8, self.audio_stream_count))
+            return max(1, min(16, self.audio_stream_count))
         if self.channel_count > 0:
-            return max(1, min(8, self.channel_count))
+            return max(1, min(16, self.channel_count))
         return 0
 
     def effective_channels(self):
@@ -107,7 +107,7 @@ class AudioMixPlayer(QObject):
         cleaned = []
         for ch in self.channels or []:
             n = self._safe_int(ch, 0)
-            if 1 <= n <= 8 and (source_max <= 0 or n <= source_max) and n not in cleaned:
+            if 1 <= n <= 16 and (source_max <= 0 or n <= source_max) and n not in cleaned:
                 cleaned.append(n)
         if cleaned:
             return cleaned
@@ -303,7 +303,7 @@ class AudioMixPlayer(QObject):
         return True
 
     def _source_for_channel(self, ch, idx):
-        ch = max(1, min(8, self._safe_int(ch, 1)))
+        ch = max(1, min(16, self._safe_int(ch, 1)))
         if self.audio_stream_count > 1:
             return f'0:a:{ch - 1}', ''
         label = f'mono{idx}'
@@ -319,7 +319,7 @@ class AudioMixPlayer(QObject):
     def _build_filter(self):
         channels = []
         for ch in self.effective_channels() or [1, 2]:
-            n = max(1, min(8, self._safe_int(ch, 0)))
+            n = max(1, min(16, self._safe_int(ch, 0)))
             if n not in channels:
                 channels.append(n)
         channels = channels or [1, 2]
@@ -557,7 +557,7 @@ class VlcPlayerAdapter(QObject):
             parsed = float(channel_no)
             if not math.isfinite(parsed):
                 parsed = 1
-            self._selected_audio_channel = max(1, min(8, int(parsed)))
+            self._selected_audio_channel = max(1, min(16, int(parsed)))
         except Exception:
             self._selected_audio_channel = 1
         self._audio_apply_attempts = 0

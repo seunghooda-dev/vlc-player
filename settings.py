@@ -123,7 +123,7 @@ def _settings_audio_channels(value):
             ch = int(raw)
         except Exception:
             continue
-        if 1 <= ch <= 8 and ch not in out:
+        if 1 <= ch <= 16 and ch not in out:
             out.append(ch)
     return out or _settings_data_copy(DEFAULT_SETTINGS['audio_channels'])
 

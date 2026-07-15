@@ -2011,8 +2011,11 @@ def check_core_logic():
         if DEFAULT_SETTINGS.get('audio_channels') != [1, 2]:
             errors.append(f"  FAIL default audio channels: {DEFAULT_SETTINGS.get('audio_channels')}")
         normalized = _normalize_settings({'audio_channels': [1, 2, 9, 16, 2, 'bad']})
-        if normalized.get('audio_channels') != [1, 2]:
+        if normalized.get('audio_channels') != [1, 2, 9, 16]:
             errors.append(f"  FAIL audio settings channel clamp: {normalized.get('audio_channels')}")
+        over_normalized = _normalize_settings({'audio_channels': [17, 0, 'bad']})
+        if over_normalized.get('audio_channels') != [1, 2]:
+            errors.append(f"  FAIL audio settings over-range fallback: {over_normalized.get('audio_channels')}")
         damaged_settings = _normalize_settings({
             'volume': 250,
             'playback_rate': 9,
@@ -2049,8 +2052,11 @@ def check_core_logic():
 
         audio_mix = AudioMixPlayer()
         audio_mix.set_channels([1, 2, 9, 16, 2, 'bad'])
-        if audio_mix.channels != [1, 2]:
+        if audio_mix.channels != [1, 2, 9, 16]:
             errors.append(f"  FAIL audio mix channel clamp: {audio_mix.channels}")
+        audio_mix.set_channels([17, 0, 'bad'])
+        if audio_mix.channels != [1, 2]:
+            errors.append(f"  FAIL audio mix over-range fallback: {audio_mix.channels}")
         audio_mix.set_channels([8, 7])
         if audio_mix.channels != [8, 7]:
             errors.append(f"  FAIL audio mix channel upper bound: {audio_mix.channels}")
@@ -2411,7 +2417,9 @@ def check_core_logic():
             _audio_source_count_from_info = staticmethod(VideoPanel._audio_source_count_from_info)
             _audio_channel_display_text = VideoPanel._audio_channel_display_text
         display_probe = ChannelDisplayProbe()
-        if VideoPanel._audio_channel_display_text(display_probe, {'audio_stream_count': 16, 'channels': 1}) != '8CH/16CH':
+        if VideoPanel._audio_channel_display_text(display_probe, {'audio_stream_count': 16, 'channels': 1}) != '16CH':
+            errors.append("  FAIL 16-channel display text")
+        if VideoPanel._audio_channel_display_text(display_probe, {'audio_stream_count': 32, 'channels': 1}) != '16CH/32CH':
             errors.append("  FAIL capped source channel display text")
         if VideoPanel._audio_channel_display_text(display_probe, {'audio_stream_count': 8, 'channels': 1}) != '8CH':
             errors.append("  FAIL 8-channel display text")
@@ -2422,10 +2430,10 @@ def check_core_logic():
         if VideoPanel._audio_source_count_from_info({'audio_stream_count': 4, 'channels': 1}) != 4:
             errors.append("  FAIL multi-stream source count")
         provisional_display_info = VideoPanel._provisional_audio_display_info(
-            {'audio_stream_count': 16, 'channels': 1},
-            8,
+            {'audio_stream_count': 32, 'channels': 1},
+            16,
         )
-        if VideoPanel._audio_channel_display_text(display_probe, provisional_display_info) != '8CH/16CH':
+        if VideoPanel._audio_channel_display_text(display_probe, provisional_display_info) != '16CH/32CH':
             errors.append("  FAIL provisional capped source channel display text")
         provisional_unknown_info = VideoPanel._provisional_audio_display_info({}, 8)
         if VideoPanel._audio_channel_display_text(display_probe, provisional_unknown_info) != '8CH':
@@ -2536,8 +2544,10 @@ def check_core_logic():
             errors.append("  FAIL enabled checked audio channel selection")
         if VideoPanel._audio_channel_label([]) != '오디오 없음':
             errors.append("  FAIL empty audio channel label")
-        if VideoPanel._audio_channel_label([1, '2', 2, 9, 'bad']) != '1,2':
+        if VideoPanel._audio_channel_label([1, '2', 2, 9, 'bad']) != '1,2,9':
             errors.append("  FAIL cleaned audio channel label")
+        if VideoPanel._audio_channel_label([17, 'bad']) != '오디오 없음':
+            errors.append("  FAIL over-range audio channel label")
         if VideoPanel._audio_channel_status_label([]) != '오디오 없음':
             errors.append("  FAIL empty audio channel status label")
         if VideoPanel._audio_channel_status_label([1, 2]) != 'CH 1,2':
