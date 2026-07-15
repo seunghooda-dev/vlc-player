@@ -676,8 +676,10 @@ class VideoPanel(QWidget):
         vol_pod_l.addWidget(self.vol_slider)
         vol_pod_l.addWidget(self.vol_pct)
 
+        # 좌우 컬럼은 콘텐츠 기반 최소만 갖는다(인위적 고정 최소는 좁은 창에서
+        # 행 최소 합이 패널 폭을 넘어 트랜스포트 버튼 겹침을 유발했음).
+        # 중앙 정렬은 양쪽 stretch 1이 유지한다.
         left_col = QWidget()
-        left_col.setMinimumWidth(342)
         left_col_l = QHBoxLayout(left_col)
         left_col_l.setContentsMargins(0,0,0,0)
         left_col_l.setSpacing(0)
@@ -694,7 +696,6 @@ class VideoPanel(QWidget):
         center_l.addWidget(transport_pod([self.btn_fwd, self.btn_goe, self.btn_p1]))
 
         right_col = QWidget()
-        right_col.setMinimumWidth(342)
         right_col_l = QHBoxLayout(right_col)
         right_col_l.setContentsMargins(0,0,0,0)
         right_col_l.setSpacing(8)

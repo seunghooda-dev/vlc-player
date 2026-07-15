@@ -197,7 +197,9 @@ class MainWindow(QMainWindow):
         width = _safe_int(size[0] if isinstance(size, (list, tuple)) and len(size) > 0 else 1400, 1400)
         height = _safe_int(size[1] if isinstance(size, (list, tuple)) and len(size) > 1 else 980, 980)
         self.resize(max(640, width), max(480, height))
-        self.setMinimumSize(1100, 760)
+        # 트랜스포트 행 실측 최소(중앙 pod 487 + 우측 vol/CUE ≈ 280 + 여백)와
+        # 우측 패널(320)을 합쳐 겹침 없이 수용 가능한 정직한 최소 크기.
+        self.setMinimumSize(1240, 760)
         self.setStyleSheet(STYLE)
         self.setAcceptDrops(True)
         self._build_ui()
@@ -309,7 +311,7 @@ class MainWindow(QMainWindow):
         self.vp = VideoPanel()
         self.rp = RightPanel(self.vp)
         self.vp._right_panel = self.rp   # Explorer 연동
-        self.vp.setMinimumWidth(720)
+        self.vp.setMinimumWidth(900)
         self.rp.setMinimumWidth(320)
         self.vp.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         self.rp.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
@@ -2886,6 +2888,24 @@ def _run_ui_layout_check():
         ch_numbers = [n for _, n in getattr(vp, '_ch_checks', [])]
         if ch_numbers != list(range(1, 17)):
             return f'{label}: audio select checkboxes changed {ch_numbers}'
+        # 트랜스포트 겹침 금지 — 좁은 창에서 버튼/볼륨이 서로 침범하면 실패
+        def _global_rect(w):
+            top_left = w.mapToGlobal(w.rect().topLeft())
+            r = w.rect()
+            r.moveTopLeft(top_left)
+            return r
+        transport_widgets = (
+            ('play button', vp.btn_play),
+            ('volume slider', vp.vol_slider),
+            ('folder button', vp.btn_folder),
+            ('cue button', vp.btn_cue),
+        )
+        for i in range(len(transport_widgets)):
+            for j in range(i + 1, len(transport_widgets)):
+                n1, w1 = transport_widgets[i]
+                n2, w2 = transport_widgets[j]
+                if _global_rect(w1).intersects(_global_rect(w2)):
+                    return f'{label}: transport overlap {n1} vs {n2}'
         if list(getattr(vp.vlc_side_left, 'channel_numbers', [])) != expected_left:
             return f'{label}: left audio meter channels changed {getattr(vp.vlc_side_left, "channel_numbers", [])}'
         if list(getattr(vp.vlc_side_right, 'channel_numbers', [])) != expected_right:
@@ -2925,6 +2945,8 @@ def _run_ui_layout_check():
                     f'dpi={screen.logicalDotsPerInch():.1f} scale={screen.devicePixelRatio():.2f}'
                 )
             cases = [
+                # 최소보다 작게 요청 → Qt가 창 최소 크기로 클램프 → 최소 크기에서 겹침 검사
+                ('window-minimum', 800, 600),
                 ('minimum-safe', 1280, 800),
                 ('hd-workspace', 1600, 900),
                 ('full-hd', 1920, 1080),
