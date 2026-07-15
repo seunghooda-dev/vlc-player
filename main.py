@@ -242,7 +242,7 @@ class MainWindow(QMainWindow):
             "font-weight:700;background:transparent;"
         )
         tbl.addWidget(mark)
-        ttl = QLabel("MXF  QC  PLAYER")
+        ttl = QLabel("MASTER  QC")
         ttl.setStyleSheet(
             f"color:{C['text1']};font-family:'Cascadia Mono','Consolas','D2Coding';"
             "font-size:14px;font-weight:800;letter-spacing:0px;background:transparent;"
@@ -2276,7 +2276,7 @@ def _run_settings_smoke_test():
             ('layout settings persisted', loaded.get('window_size') == [1600, 900] and loaded.get('splitter_sizes') == [1100, 420]),
             ('volume normalized', normalized.get('volume') == 100 and reloaded_normalized.get('volume') == 100),
             ('playback rate normalized', normalized.get('playback_rate') == 2.0 and reloaded_normalized.get('playback_rate') == 2.0),
-            ('audio channels normalized', normalized.get('audio_channels') == [1, 2] and reloaded_normalized.get('audio_channels') == [1, 2]),
+            ('audio channels normalized', normalized.get('audio_channels') == [1, 2, 9] and reloaded_normalized.get('audio_channels') == [1, 2, 9]),
             ('detection settings normalized', (
                 normalized.get('black_amount') == '100'
                 and normalized.get('black_threshold') == '255'
@@ -2881,6 +2881,10 @@ def _run_ui_layout_check():
                 return f'{label}: {name} too small actual={actual} min={minimum}'
         expected_left = [1, 3, 5, 7, 9, 11, 13, 15]
         expected_right = [2, 4, 6, 8, 10, 12, 14, 16]
+        # 출력 선택 체크박스 16채널 확장 회귀 가드
+        ch_numbers = [n for _, n in getattr(vp, '_ch_checks', [])]
+        if ch_numbers != list(range(1, 17)):
+            return f'{label}: audio select checkboxes changed {ch_numbers}'
         if list(getattr(vp.vlc_side_left, 'channel_numbers', [])) != expected_left:
             return f'{label}: left audio meter channels changed {getattr(vp.vlc_side_left, "channel_numbers", [])}'
         if list(getattr(vp.vlc_side_right, 'channel_numbers', [])) != expected_right:
