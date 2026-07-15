@@ -1,5 +1,11 @@
 {
   "features": {
+    "transport-overlap-and-release-v114": {
+      "phase": "check",
+      "matchRate": 100,
+      "checkedAt": "2026-07-16T07:50:00+09:00",
+      "note": "좁은 창 트랜스포트 겹침 해소: 행 최소 합(~1210px, 중앙 pod 487 실측)이 창 최소(1100)의 vp 배분(~770)을 초과하던 구조 — 좌우 컬럼 인위적 342 최소 제거(콘텐츠 기반) + vp 720→900 + 창 1100→1240×760. ui-layout-check에 겹침 금지 단언(재생·볼륨·폴더·CUE 상호)과 window-minimum 클램프 케이스 추가(4케이스 PASS). v1.1.4 릴리스: bump_version.py 첫 실전(두 소스 원자 갱신) → 태그 → CI zip 자동 첨부 → 바탕화면 배포(바로가기 MasterQC v1.1.4.lnk 자동 갱신) — 절차 전 구간 무수동 확인. 사용자 육안 검수 완료"
+    },
     "audio-select-16ch-and-stability": {
       "phase": "check",
       "matchRate": 100,
