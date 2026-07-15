@@ -27,8 +27,10 @@ GitHub `seunghooda-dev/vlc-player` (origin/main 직push, v* 태그 → Release �
 
 ## 버전·배포
 
-- 표시 버전은 `constants.APP_VERSION` 단일 소스(창 제목·리포트·바로가기 파생) —
-  릴리스 시 version_info.txt와 함께 올리고 `git tag vX.Y.Z && git push origin vX.Y.Z`.
+- 릴리스는 `python bump_version.py X.Y.Z` 한 명령으로 두 버전 소스(constants.APP_VERSION,
+  version_info.txt)를 갱신 → 커밋 → `git tag vX.Y.Z && git push origin vX.Y.Z`.
+  두 소스가 어긋나면 tests/test_version_sync.py가 게이트를 빨갛게 만든다.
+  APP_VERSION은 창 제목·리포트·바로가기 이름의 단일 소스.
 - 바탕화면 배포: `update_desktop_release.bat` (빌드→검증→릴리스 폴더 교체→바로가기 자동 갱신).
   실행 중 앱이 있으면 릴리스 폴더 잠김 — 먼저 종료. bat 간 호출은 `%~dp0` 절대 경로 유지.
 - 단일 인스턴스 뮤텍스 `Local\MasterQC_SingleInstance` — 앱 실행 중엔 GUI 스모크 전부 차단.

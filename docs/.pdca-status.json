@@ -1,5 +1,12 @@
 {
   "features": {
+    "audio-select-16ch-and-stability": {
+      "phase": "check",
+      "matchRate": 100,
+      "checkedAt": "2026-07-15T15:55:00+09:00",
+      "planDoc": "docs/01-plan/features/audio-select-16ch.plan.md",
+      "note": "출력 선택 체크박스 16채널(설정 저장 1..16·믹스/어댑터 캡 해제, 9·10→c8/c9, 15·16→0:a:14/15 단위검증). 미터 라벨 실기 이슈 최종 해결: 원인은 투명 레일+VLC 네이티브 형제의 화면 합성 고착(그림은 정상, 화면만 낡음) — 불투명 배경 전환, --meter-dump 진단 CLI 신설. UHD 16ch 실증: 재생 중 캡처 픽셀 판독 16/16 ALL ACTIVE. 안정성 배터리: CLI 스모크 7종 0, QC 검출 PASS, UHD 135초 연속재생 PASS(드리프트 0·자식정리 검증). v1.1.2/v1.1.3 릴리스, 바탕화면 배포. 잔여(선택): 수시간 소크 테스트(현장 bat), broadcast_sample_set 일괄 검증"
+    },
     "meter-16ch": {
       "phase": "check",
       "matchRate": 100,
