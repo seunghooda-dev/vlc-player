@@ -1,5 +1,12 @@
 {
   "features": {
+    "meter-16ch": {
+      "phase": "check",
+      "matchRate": 100,
+      "checkedAt": "2026-07-15T11:20:00+09:00",
+      "planDoc": "docs/01-plan/features/meter-16ch.plan.md",
+      "note": "레벨 바 16채널(좌 홀수 8행/우 짝수 8행, 행 17px 유지, 레일 적응 높이로 라우드니스 비겹침). 라벨 두 자리 잘림 2차 수정: 실측 폭+여유 26/+10px + TextDontClip — 사용자 실기 확인 '정상적으로 보여'. 게이트: pytest 93·check_imports·ui-layout-check(비겹침 단언 포함) 그린, CI run 19~21 그린. 바탕화면 배포 반영 완료"
+    },
     "app-rename": {
       "phase": "check",
       "matchRate": 100,
