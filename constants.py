@@ -42,6 +42,9 @@ APP_DIR      = _runtime_app_dir()
 RESOURCE_DIR = _runtime_resource_dir()
 BASE_DIR     = APP_DIR
 
+# 표시용 앱 버전 — 창 제목/리포트/바로가기 표기의 단일 소스.
+# 릴리스 시 version_info.txt(EXE 리소스)와 함께 올린다.
+APP_VERSION = "1.1.3"
 APP_DATA_NAME = "MasterQC"
 # 개명(MasterQC) 이전 명칭 — 이전 데이터 폴더 마이그레이션과 레거시 경로 탐색에만 사용
 PREVIOUS_APP_DATA_NAME = "MXF QC Player V.1.0"

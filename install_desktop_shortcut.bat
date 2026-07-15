@@ -8,7 +8,6 @@ set "APP_VERSION=V.1.1"
 set "PACKAGE_NAME=%APP_NAME% %APP_VERSION%"
 set "TARGET_EXE=%CD%\%APP_NAME%.exe"
 set "TARGET_ICON=%CD%\mxf_qc_player.ico"
-set "SHORTCUT_NAME=%PACKAGE_NAME%.lnk"
 
 echo ================================================
 echo   %PACKAGE_NAME% - target PC shortcut setup
@@ -31,13 +30,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$desktop=[Environment]::GetFolderPath('Desktop');" ^
   "$target=$env:TARGET_EXE;" ^
   "$icon=$env:TARGET_ICON;" ^
-  "$shortcutPath=Join-Path $desktop $env:SHORTCUT_NAME;" ^
-  "if(Test-Path -LiteralPath $shortcutPath){ Remove-Item -LiteralPath $shortcutPath -Force };" ^
+  "$ver='v'+((Get-Item $target).VersionInfo.ProductVersion -replace '\.\d+$','');" ^
+  "Get-ChildItem -Path $desktop -Filter '%APP_NAME%*.lnk' -ErrorAction SilentlyContinue | Remove-Item -Force;" ^
+  "$shortcutPath=Join-Path $desktop ('%APP_NAME% '+$ver+'.lnk');" ^
   "$shell=New-Object -ComObject WScript.Shell;" ^
   "$shortcut=$shell.CreateShortcut($shortcutPath);" ^
   "$shortcut.TargetPath=$target;" ^
   "$shortcut.WorkingDirectory=(Split-Path -Parent $target);" ^
-  "$shortcut.Description='%PACKAGE_NAME%';" ^
+  "$shortcut.Description=('%APP_NAME% '+$ver);" ^
   "$shortcut.IconLocation=$icon + ',0';" ^
   "$shortcut.Save();" ^
   "try { Start-Process -FilePath ie4uinit.exe -ArgumentList '-show' -WindowStyle Hidden -Wait } catch {};" ^
@@ -55,6 +55,5 @@ if errorlevel 1 (
 
 echo.
 echo Done.
-echo Desktop shortcut:
-echo   %USERPROFILE%\Desktop\%SHORTCUT_NAME%
+echo Desktop shortcut path is printed above.
 exit /b 0

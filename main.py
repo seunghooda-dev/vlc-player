@@ -57,6 +57,7 @@ from PyQt6.QtGui     import (
 from PyQt6.QtMultimedia import QMediaPlayer
 
 from constants    import (
+    APP_VERSION,
     C, STYLE, LOG_DIR, TMP_DIR, BASE_DIR, RESOURCE_DIR, REPORT_DIR, BACKUP_DIR, APP_DIR, USER_DATA_DIR,
     SETTINGS_PATH, DB_PATH, log, APP_FONT_QT, VIDEO_EXTS,
     check_runtime_environment, format_runtime_environment, format_runtime_startup_alert,
@@ -72,7 +73,7 @@ from right_panel  import RightPanel
 from threads      import RuntimeWarmupThread, BlackDetectThread, AudioAnalyzeThread, FreezeDetectThread
 
 
-APP_WINDOW_TITLE = "MasterQC V.1.1"
+APP_WINDOW_TITLE = f"MasterQC v{APP_VERSION}"
 APP_MUTEX_NAME = r"Local\MasterQC_SingleInstance"
 APP_ICON_PATH = RESOURCE_DIR / "assets" / "mxf_qc_player.ico"
 _single_instance_handle = None
@@ -362,7 +363,7 @@ class MainWindow(QMainWindow):
 
         # 상태 바
         self.vp.status_changed.connect(self.statusBar().showMessage)
-        self.statusBar().showMessage("  ● READY   |   MasterQC V.1.1   |   GPU: NVIDIA")
+        self.statusBar().showMessage(f"  ● READY   |   MasterQC v{APP_VERSION}   |   GPU: NVIDIA")
 
         self.vp.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.vp.setFocus()
@@ -435,7 +436,7 @@ class MainWindow(QMainWindow):
         self._log_legacy_root_data(runtime)
         self._log_audio_child_status(runtime)
         if runtime.get('ok'):
-            msg = "  ● READY   |   VLC / FFmpeg / FFprobe / FFplay / 저장 위치 OK   |   MasterQC V.1.1"
+            msg = f"  ● READY   |   VLC / FFmpeg / FFprobe / FFplay / 저장 위치 OK   |   MasterQC v{APP_VERSION}"
             self.statusBar().showMessage(msg)
             try:
                 self.vp.ai_lbl.setText("✓ 실행 환경 확인 완료 — VLC / FFmpeg / FFprobe / FFplay / 저장 위치 OK")
@@ -2516,7 +2517,7 @@ def _run_qc_report_smoke_test():
             ('csv attention column', saved_rows and '확인필요' in saved_rows[0] and '확인사유' in saved_rows[0]),
             ('csv issue values', issue_row.get('확인필요') == 'Y' and '블랙 2' in issue_row.get('확인사유', '') and '무음 1' in issue_row.get('확인사유', '')),
             ('csv missing values', missing_row.get('확인필요') == 'Y' and '파일 없음' in missing_row.get('확인사유', '')),
-            ('txt title', 'MasterQC V.1.1 - QC 결과 리포트' in txt),
+            ('txt title', f'MasterQC v{APP_VERSION} - QC 결과 리포트' in txt),
             ('txt summary', '검수요약:' in txt and '확인 필요 파일: 2개' in txt),
             ('txt issue detail', 'issue.mxf: 블랙 2, 무음 1, 메타 확인' in txt),
             ('txt missing detail', 'missing.mxf: 파일 없음, 메타 확인' in txt),

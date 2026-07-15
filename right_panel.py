@@ -22,6 +22,7 @@ from PyQt6.QtGui  import QColor, QFontMetrics, QTextDocument, QTextOption, QDesk
 from PyQt6.QtMultimedia import QMediaPlayer
 
 from constants   import (
+    APP_VERSION,
     C, VIDEO_EXTS, BASE_DIR, REPORT_DIR, log, load_settings, save_settings,
     friendly_error_title, format_missing_runtime_tools, heavy_analysis_status,
     format_bytes, record_state_event, _path_size, _path_mtime_ns,
@@ -1628,7 +1629,7 @@ class RightPanel(QWidget):
             frame_mode = self._frame_mode_label(fps, info.get('df'))
             meta_status, meta_issues = self._metadata_qc_summary(info, fp)
             row = {
-                '앱버전': 'MasterQC V.1.1',
+                '앱버전': f'MasterQC v{APP_VERSION}',
                 '검수시각': datetime.now().isoformat(timespec='seconds'),
                 'QC상태': badge,
                 '파일명': f.get('name') or p_name,
@@ -1878,7 +1879,7 @@ class RightPanel(QWidget):
         target.parent.mkdir(parents=True, exist_ok=True)
         tmp = target.with_name(f'.{target.name}.{time.time_ns()}.tmp')
         lines = []
-        lines.append('MasterQC V.1.1 - QC 결과 리포트')
+        lines.append(f'MasterQC v{APP_VERSION} - QC 결과 리포트')
         lines.append('=' * 64)
         lines.append(f'생성시각: {datetime.now().isoformat(timespec="seconds")}')
         lines.append(f'파일수  : {len(rows)}')

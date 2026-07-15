@@ -8,7 +8,6 @@ set "APP_VERSION=V.1.1"
 set "PACKAGE_DIR=%CD%\release\%APP_NAME% %APP_VERSION%"
 set "TARGET_EXE=%PACKAGE_DIR%\%APP_NAME%.exe"
 set "TARGET_ICON=%PACKAGE_DIR%\mxf_qc_player.ico"
-set "SHORTCUT_NAME=%APP_NAME% %APP_VERSION%.lnk"
 
 echo ================================================
 echo   %APP_NAME% %APP_VERSION% - desktop update
@@ -45,13 +44,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$desktop=[Environment]::GetFolderPath('Desktop');" ^
   "$target=$env:TARGET_EXE;" ^
   "$icon=$env:TARGET_ICON;" ^
-  "$shortcutPath=Join-Path $desktop $env:SHORTCUT_NAME;" ^
-  "if(Test-Path -LiteralPath $shortcutPath){ Remove-Item -LiteralPath $shortcutPath -Force };" ^
+  "$ver='v'+((Get-Item $target).VersionInfo.ProductVersion -replace '\.\d+$','');" ^
+  "Get-ChildItem -Path $desktop -Filter '%APP_NAME%*.lnk' -ErrorAction SilentlyContinue | Remove-Item -Force;" ^
+  "$shortcutPath=Join-Path $desktop ('%APP_NAME% '+$ver+'.lnk');" ^
   "$shell=New-Object -ComObject WScript.Shell;" ^
   "$shortcut=$shell.CreateShortcut($shortcutPath);" ^
   "$shortcut.TargetPath=$target;" ^
   "$shortcut.WorkingDirectory=(Split-Path -Parent $target);" ^
-  "$shortcut.Description='%APP_NAME% %APP_VERSION%';" ^
+  "$shortcut.Description=('%APP_NAME% '+$ver);" ^
   "$shortcut.IconLocation=$icon + ',0';" ^
   "$shortcut.Save();" ^
   "$legacy=Join-Path $desktop 'MXF QC Player V.1.0.lnk'; if(Test-Path -LiteralPath $legacy){ Remove-Item -LiteralPath $legacy -Force };" ^
