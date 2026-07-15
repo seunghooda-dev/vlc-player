@@ -21,11 +21,11 @@ echo The release folder will contain only program files, tools, README, and lice
 if exist "%TARGET_EXE%" (
     echo.
     echo Backing up current release before update...
-    call backup_release.bat
+    call "%~dp0backup_release.bat"
     if errorlevel 1 goto fail
 )
 
-call package_release.bat
+call "%~dp0package_release.bat"
 if errorlevel 1 goto fail
 
 if not exist "%TARGET_EXE%" (

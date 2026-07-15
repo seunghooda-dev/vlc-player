@@ -23,7 +23,7 @@ echo User data folder:
 echo   %USER_DATA_DIR%
 echo.
 
-call build.bat
+call "%~dp0build.bat"
 if errorlevel 1 goto fail
 
 if not exist "dist\%APP_NAME%\%APP_NAME%.exe" (
