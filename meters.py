@@ -154,11 +154,20 @@ class SideMeter(QWidget):
             if ROW >= 7:
                 p.setPen(QColor('#ffffff'))
                 p.setFont(lbl_font)
-                # TextDontClip: 만에 하나 라벨 폭 계산보다 실제 렌더가 넓어도 숫자가 잘리지 않게
-                p.drawText(LBL_X, y, LBL_W, ROW,
-                    Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter
-                    | Qt.TextFlag.TextDontClip,
-                    str(ch_num))
+                # 글자별 x를 직접 계산해 한 글자씩 그린다 — 실기(패키징 앱)에서 두 자리
+                # 숫자의 글리프가 같은 위치에 겹쳐 찍히는 셰이핑 이상이 관찰되어,
+                # 문자열 셰이핑에 의존하지 않는 방식으로 어떤 환경에서도 겹침/소실을 차단.
+                text = str(ch_num)
+                fmp = QFontMetrics(lbl_font)
+                total_w = sum(fmp.horizontalAdvance(c) for c in text)
+                tx = LBL_X + max(1, (LBL_W - total_w) // 2)
+                for c in text:
+                    cw = fmp.horizontalAdvance(c)
+                    p.drawText(tx, y, cw + 2, ROW,
+                        Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+                        | Qt.TextFlag.TextDontClip,
+                        c)
+                    tx += cw
 
             # 바 배경 없음
 
