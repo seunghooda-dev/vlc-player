@@ -3050,6 +3050,18 @@ class VideoPanel(QWidget):
         self._audio_recovery_cooldown_until = 0.0
         self._audio_recovery_limit_logged = False
 
+    def _near_end_of_media(self, margin_ms=2000):
+        """재생 위치가 소재 끝 부근인지 — EOF에서 오디오 프로세스가 정상 종료(exit 0)하는
+        것을 결함으로 오판해 무의미한 복구 재시도/안정성 실패 판정을 내리지 않기 위한 가드."""
+        try:
+            dur_ms = int(float(self.duration or 0) * 1000)
+            if dur_ms <= 0:
+                return False
+            pos_ms = int(self.player.position() or 0)
+            return pos_ms >= dur_ms - max(0, int(margin_ms))
+        except Exception:
+            return False
+
     def _check_audio_mix_recovery(self):
         if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
             return
@@ -3059,6 +3071,8 @@ class VideoPanel(QWidget):
             return
         if self.audio_mix.is_running():
             return
+        if self._near_end_of_media():
+            return  # 파일 끝 부근 — 오디오 스트림 정상 종료, 재기동 불필요
 
         now = time.monotonic()
         if now < self._audio_recovery_cooldown_until:

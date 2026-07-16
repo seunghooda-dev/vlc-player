@@ -46,7 +46,8 @@ def peak_memory_sampler(proc_name, stop_evt, out):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--hours', type=float, default=8.0)
-    ap.add_argument('--play-seconds', type=int, default=570)
+    # 기본 540s — 10분 소재 기준 EOF 60초 마진(경계 조건은 앱 가드가 처리하지만 사이클을 깔끔하게)
+    ap.add_argument('--play-seconds', type=int, default=540)
     ap.add_argument('--sample', default=r'C:\Users\seung\Desktop\uhd_colorbar_59p94_16ch_10min.mxf')
     ap.add_argument('--exe', default=str(ROOT / 'release' / 'MasterQC V.1.1' / 'MasterQC.exe'))
     args = ap.parse_args()

@@ -1826,7 +1826,9 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
         moved_ms = max(0, now_ms - started_ms)
         audio_expected = bool(win.vp._audio_mix_expected())
         audio_status = win.vp.audio_mix.process_status()
-        audio_ok = True if not audio_expected else bool(win.vp.audio_mix.is_running())
+        audio_ok = True if not audio_expected else bool(
+            win.vp.audio_mix.is_running() or win.vp._near_end_of_media()
+        )
         children = runtime_child_process_status()
         log.info(
             f'{label} smoke playback check: moved={moved_ms}ms '
@@ -1855,7 +1857,9 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
         total_moved = max(0, now_ms - started_ms)
         audio_expected = bool(win.vp._audio_mix_expected())
         audio_status = win.vp.audio_mix.process_status()
-        audio_ok = True if not audio_expected else bool(win.vp.audio_mix.is_running())
+        audio_ok = True if not audio_expected else bool(
+            win.vp.audio_mix.is_running() or win.vp._near_end_of_media()
+        )
         children = runtime_child_process_status()
         state = win.vp.player.playbackState()
         log.info(
@@ -1866,6 +1870,9 @@ def _run_mxf_smoke_test(filepath, play_seconds=5.0, max_seconds=30.0, check_inte
         if not audio_ok:
             return _finish(8, f'audio process not running: {audio_status}')
         if state != QMediaPlayer.PlaybackState.PlayingState:
+            if win.vp._near_end_of_media():
+                # 소재 끝 도달 — 정지는 정상 완료
+                return _finish(0, f'stability ok (reached end of media, moved={total_moved}ms)')
             return _finish(10, f'playback stopped unexpectedly: state={state}')
         if interval_moved < 300:
             result['stalled_count'] = _safe_int(result.get('stalled_count'), 0) + 1
