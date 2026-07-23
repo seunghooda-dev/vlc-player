@@ -1,11 +1,12 @@
-MXF QC Player V.1.0
-===================
+MasterQC V.1.1
+==============
 
-This is a portable Windows package for MXF QC playback and inspection.
+This is a portable Windows package for broadcast QC playback and inspection
+(MXF, MOV, MP4, and other formats VLC can read).
 
 Quick Start
 -----------
-1. Run "MXF QC Player.exe".
+1. Run "MasterQC.exe".
 2. Use "파일 추가" to add MXF files.
 3. Double-click a file in the list, or select it and press CUE.
 4. Use the Black / Mute tabs for manual QC detection, or press "일괄" in
@@ -21,7 +22,7 @@ Runtime Files
 -------------
 The release folder is for program files only:
 
-- MXF QC Player.exe
+- MasterQC.exe
 - _internal\
 - tools\
 - mxf_qc_player.ico
@@ -30,7 +31,7 @@ The release folder is for program files only:
 
 User data is stored separately under:
 
-%LOCALAPPDATA%\MXF QC Player V.1.0
+%LOCALAPPDATA%\MasterQC
 
 The program creates these files there:
 
@@ -46,7 +47,7 @@ The app folder only needs to be readable. The user data folder must be
 writable. This separation makes future updates safer because replacing the app
 folder does not overwrite operator settings, logs, or QC history.
 
-The package uses a folder-style executable build. Keep MXF QC Player.exe and
+The package uses a folder-style executable build. Keep MasterQC.exe and
 the _internal\ folder together when moving the app to another PC.
 
 On first launch after an older package, if settings.json or archive.db is found
@@ -71,7 +72,7 @@ This package may include FFmpeg tools in the tools\ folder. If they are not
 included, install FFmpeg or place ffmpeg.exe, ffprobe.exe, and ffplay.exe in:
 
 - tools\
-- the same folder as MXF QC Player.exe
+- the same folder as MasterQC.exe
 - or Windows PATH
 
 Logs
@@ -79,11 +80,11 @@ Logs
 If a file does not play or a detection job fails, open the LOG button in the
 top bar or check:
 
-%LOCALAPPDATA%\MXF QC Player V.1.0\logs\player.log
+%LOCALAPPDATA%\MasterQC\logs\player.log
 
 Data migration and legacy release preservation events are recorded in:
 
-%LOCALAPPDATA%\MXF QC Player V.1.0\logs\migration.log
+%LOCALAPPDATA%\MasterQC\logs\migration.log
 
 This log uses one JSON record per line and is rotated automatically when it
 grows large.
@@ -104,7 +105,7 @@ It summarizes:
 - LOCALAPPDATA write access
 - DB/log/tmp/backups/report folder status
 
-For a command-line deployment check, close MXF QC Player first and run:
+For a command-line deployment check, close MasterQC first and run:
 
 preflight_check.bat
 
@@ -116,7 +117,7 @@ icon, and third-party notices.
 
 UI Layout Check
 ---------------
-To verify the main window at common operating sizes, close MXF QC Player and
+To verify the main window at common operating sizes, close MasterQC and
 run:
 
 ui_layout_check.bat
@@ -141,7 +142,7 @@ The report includes:
 
 Reports are stored by default under:
 
-%LOCALAPPDATA%\MXF QC Player V.1.0\reports
+%LOCALAPPDATA%\MasterQC\reports
 
 QC Result Report
 ----------------
@@ -187,7 +188,7 @@ days from these user data folders:
 - backups\
 - reports\
 
-The cleanup is limited to %LOCALAPPDATA%\MXF QC Player V.1.0. Original MXF
+The cleanup is limited to %LOCALAPPDATA%\MasterQC. Original MXF
 files, Desktop files, and files outside the app user data folder are never
 removed by this retention policy.
 
@@ -195,17 +196,17 @@ Deployment Smoke Test
 ---------------------
 For deployment checks, the EXE also supports a no-GUI startup test:
 
-MXF QC Player.exe --smoke-test
+MasterQC.exe --smoke-test
 
 This verifies that the packaged app can start and write its runtime files. A
 stricter dependency check is also available:
 
-MXF QC Player.exe --runtime-check
+MasterQC.exe --runtime-check
 
 The strict check returns a non-zero exit code when VLC, FFmpeg, FFprobe,
 FFplay, or required writable folders are missing.
 
-For a real MXF playback test, close MXF QC Player first and run:
+For a real MXF playback test, close MasterQC first and run:
 
 smoke_mxf_test.bat "C:\path\sample.mxf"
 
@@ -216,11 +217,11 @@ manual/deployment-only and does not run during normal app startup.
 
 The same test can be called directly:
 
-MXF QC Player.exe --mxf-smoke-test "C:\path\sample.mxf" --play-seconds 5
+MasterQC.exe --mxf-smoke-test "C:\path\sample.mxf" --play-seconds 5
 
 Long Playback Stability Test
 ----------------------------
-For long-run playback checks, close MXF QC Player first and run:
+For long-run playback checks, close MasterQC first and run:
 
 stability_mxf_test.bat "C:\path\long_sample.mxf" 1800 30
 
@@ -232,14 +233,14 @@ helper processes were not left behind.
 
 The same test can be called directly:
 
-MXF QC Player.exe --mxf-stability-test "C:\path\long_sample.mxf" --play-seconds 1800 --check-interval 30
+MasterQC.exe --mxf-stability-test "C:\path\long_sample.mxf" --play-seconds 1800 --check-interval 30
 
 Use a sample longer than the requested duration. The stability mode intentionally
 fails when the sample is shorter than the requested playback time.
 
 Broadcast Sample Validation
 ---------------------------
-For a practical sample-by-sample release check, close MXF QC Player and run:
+For a practical sample-by-sample release check, close MasterQC and run:
 
 broadcast_sample_validation.bat "C:\path\sample-folder"
 
@@ -250,7 +251,7 @@ CUE / five-second playback / audio-process check used by smoke_mxf_test.bat.
 
 The script writes a report to:
 
-%LOCALAPPDATA%\MXF QC Player V.1.0\reports
+%LOCALAPPDATA%\MasterQC\reports
 
 Use BROADCAST_SAMPLE_CHECKLIST.txt to decide which real-world sample types
 should be covered before deployment.
@@ -307,20 +308,20 @@ shortcut icon, and runs a runtime check. It does not move or delete user data.
 
 Release ZIPs are written with a timestamped name and a latest-copy alias:
 
-MXF QC Player V.1.0_YYYYMMDD_HHMMSS.zip
-MXF QC Player V.1.0.zip
+MasterQC V.1.1_YYYYMMDD_HHMMSS.zip
+MasterQC V.1.1.zip
 
 Before replacing the development release folder, update_desktop_release.bat
 backs up the current program folder under:
 
-%LOCALAPPDATA%\MXF QC Player V.1.0\backups\release
+%LOCALAPPDATA%\MasterQC\backups\release
 
 If a new build has a problem, close the app and run rollback_release.bat to
 copy the latest release backup back into the release folder.
 
 Version
 -------
-MXF QC Player V.1.0
+MasterQC V.1.1
 
 The EXE includes Windows file-version metadata. The release update policy is
 documented in UPDATE_POLICY.txt.
