@@ -79,6 +79,8 @@ def main():
     log(f'중지하려면 이 파일을 만드세요: {STOP_FILE}')
 
     cycle = 0
+    consecutive_fail = 0
+    max_consecutive_fail = 3
     while time.monotonic() < deadline:
         if STOP_FILE.exists():
             log('STOP 파일 감지 — 안전 정지')
@@ -106,13 +108,24 @@ def main():
         results.append((cycle, code, elapsed, peak_mb))
         log(f'cycle {cycle}: exit={code} elapsed={elapsed:.0f}s peak_mem={peak_mb:.0f}MB')
         if code != 0:
-            log(f'FAIL cycle {cycle} — 소크 중단 (로그: %LOCALAPPDATA% 아님, {SOAK_DIR}\\user_data\\logs)')
-            break
+            consecutive_fail += 1
+            log(f'FAIL cycle {cycle} (연속 {consecutive_fail}회) — 로그: {SOAK_DIR}\\user_data\\logs')
+            # 밤샘 실행이 간헐적 실패 1회로 통째로 끝나면 그날 밤을 버린다.
+            # 계속 돌려 실패율을 얻되, 연속 실패는 고장으로 보고 중단한다.
+            if consecutive_fail >= max_consecutive_fail:
+                log(f'연속 {consecutive_fail}회 실패 — 소크 중단')
+                break
+        else:
+            consecutive_fail = 0
         time.sleep(5)
 
     ok = [r for r in results if r[1] == 0]
+    bad = [r for r in results if r[1] != 0]
     log('=' * 50)
-    log(f'soak 종료: 총 {len(results)}사이클, 성공 {len(ok)}, 실패 {len(results) - len(ok)}')
+    log(f'soak 종료: 총 {len(results)}사이클, 성공 {len(ok)}, 실패 {len(bad)}')
+    if bad:
+        rate = len(bad) / len(results) * 100
+        log(f'실패율 {rate:.0f}% — ' + ', '.join(f'cycle {c}(exit={e})' for c, e, _, _ in bad))
     if len(ok) >= 2:
         first, last = ok[0][3], ok[-1][3]
         max_peak = max(r[3] for r in ok)
