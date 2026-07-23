@@ -742,6 +742,7 @@ class VideoPanel(QWidget):
         for cb, _ in self._ch_checks:
             cb.clicked.connect(self._on_ch_select)
             cb.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # Space 토글 방지
+        self._update_ch_check_tooltips(0)
         chl.addStretch()
         layout.addWidget(ch_bar)
 
@@ -944,6 +945,19 @@ class VideoPanel(QWidget):
         if source_count > visible_count:
             return f"{visible_count}CH/{source_count}CH"
         return f"{visible_count}CH"
+
+    def _update_ch_check_tooltips(self, source_count):
+        # 비활성 체크박스가 왜 안 눌리는지 화면에서 알 수 있게 한다(소스 채널 수 부족/오디오 없음).
+        count = max(0, self._safe_int_value(source_count, 0))
+        for cb, ch_no in getattr(self, '_ch_checks', []):
+            if not getattr(self, 'cur_file', None):
+                cb.setToolTip("파일을 불러오면 출력 채널을 선택할 수 있습니다")
+            elif count <= 0:
+                cb.setToolTip("이 소스에는 오디오가 없습니다")
+            elif ch_no <= count:
+                cb.setToolTip(f"{ch_no}번 채널 출력 (전부 해제하면 무음)")
+            else:
+                cb.setToolTip(f"소스가 {count}채널이라 {ch_no}번 채널은 없습니다")
 
     def _set_audio_channel_display(self, info=None):
         text = self._audio_channel_display_text(info)
@@ -1909,6 +1923,7 @@ class VideoPanel(QWidget):
         for cb, ch_no in self._ch_checks:
             cb.setChecked((not no_audio_hint) and ch_no in (1, 2))
             cb.setEnabled(ch_no <= provisional_ch)
+        self._update_ch_check_tooltips(provisional_ch)
         self._selected_chs = [1, 2] if not no_audio_hint else []
         mix_streams, mix_channels = self._provisional_audio_mix_layout(info)
         self.audio_mix.set_file(filepath, mix_streams, mix_channels)
@@ -1973,6 +1988,7 @@ class VideoPanel(QWidget):
             cb.setEnabled(enabled and not getattr(self, '_loading', False))
             if enabled and first_enabled is None:
                 first_enabled = cb
+        self._update_ch_check_tooltips(stream_count)
         default_channels = [1, 2]
         valid_previous = []
         for ch in previous_selected:
@@ -2055,6 +2071,7 @@ class VideoPanel(QWidget):
         stream_count = self._audio_channel_control_count()
         for cb, ch_no in getattr(self, '_ch_checks', []):
             cb.setEnabled(enabled and stream_count > 0 and ch_no <= stream_count)
+        self._update_ch_check_tooltips(stream_count)
         analysis_ready = bool(self._analysis_buttons_ready())
         for name in ('btn_black', 'btn_audio', 'btn_freeze'):
             btn = getattr(self, name, None)
