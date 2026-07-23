@@ -769,6 +769,8 @@ class VideoPanel(QWidget):
         self.btn_black = _ai_btn('⬛  블랙', '1프레임 이상 검정 화면 구간 검출')
         self.btn_audio = _ai_btn('🔇  뮤트', '1초 이상 무음 구간 수동 검출 + 피크 측정')
         self.btn_freeze = _ai_btn('⏸  프리즈', '1초 이상 정지 화면 구간 수동 검출')
+        self.btn_ai_stop = _ai_btn('■  중지', '진행 중인 검출(블랙/뮤트/프리즈/일괄) 중지  (Esc)')
+        self.btn_ai_stop.setEnabled(False)
 
         self.prog_ai = QProgressBar()
         self.prog_ai.setFixedHeight(4); self.prog_ai.setRange(0,0); self.prog_ai.hide()
@@ -785,7 +787,9 @@ class VideoPanel(QWidget):
         self.btn_black.clicked.connect(self.start_black_detect)
         self.btn_audio.clicked.connect(self.start_audio_analyze)
         self.btn_freeze.clicked.connect(self.start_freeze_detect)
+        self.btn_ai_stop.clicked.connect(self._request_analysis_stop)
         ail.addWidget(self.btn_black); ail.addWidget(self.btn_audio); ail.addWidget(self.btn_freeze)
+        ail.addWidget(self.btn_ai_stop)
         ail.addSpacing(8)
         ail.addWidget(self.prog_ai)
         ail.addWidget(self.ai_lbl)
@@ -2776,9 +2780,16 @@ class VideoPanel(QWidget):
             if cb.isChecked() and cb.isEnabled()
         ]
         if not selected:
-            for cb, ch_no in self._ch_checks:
-                cb.setChecked(ch_no in (1, 2) and cb.isEnabled())
-            selected = self._get_selected_audio_channels()
+            # 전 채널 해제 = 무음 모니터링 허용(예: 콜바 톤을 끄고 화면만 확인).
+            # 빈 선택은 _audio_mix_expected()가 False가 되어 자동 재시작/복구도 중단된다.
+            self._selected_chs = []
+            if self.cur_file:
+                self._cancel_audio_mix()
+                self.audio_mix.set_channels([])
+                self.ai_lbl.setText("✓ 출력 채널 없음 — 무음 (숫자를 체크하면 다시 출력)")
+                record_state_event('audio-mix', 'channel selection cleared',
+                                   file=Path(self.cur_file).name)
+            return
         self._selected_chs = selected
         if self.cur_file:
             if not self._audio_mix_expected():
@@ -3739,6 +3750,15 @@ class VideoPanel(QWidget):
             except Exception as e:
                 log.warning(f'audio analyze forward failed: {e}')
         self.ai_lbl.setText("⚠ 오른쪽 오디오 탭을 사용할 수 없습니다")
+
+    def _request_analysis_stop(self):
+        """AI바 중지 버튼 → 진행 중인 검출 취소(Esc 단축키와 동일 경로)"""
+        rp = getattr(self, '_right_panel', None)
+        if rp and hasattr(rp, 'cancel_active_analysis'):
+            try:
+                rp.cancel_active_analysis('사용자 중지 버튼')
+            except Exception as e:
+                log.error(f'analysis stop button failed: {e}')
 
     def start_black_detect(self):
         """AI바 블랙 버튼 → 오른쪽 블랙 탭 분석 실행"""

@@ -2895,6 +2895,20 @@ def _run_ui_layout_check():
         ch_numbers = [n for _, n in getattr(vp, '_ch_checks', [])]
         if ch_numbers != list(range(1, 17)):
             return f'{label}: audio select checkboxes changed {ch_numbers}'
+        # 채널 전체 해제(무음 모니터링) 허용 회귀 가드 — 마지막 채널 해제가 되돌려지면 실패
+        for cb, _n in vp._ch_checks:
+            cb.setEnabled(True)
+        for cb, _n in vp._ch_checks:
+            if cb.isChecked():
+                cb.click()
+        if vp._selected_chs != [] or any(cb.isChecked() for cb, _n in vp._ch_checks):
+            return f'{label}: clearing all audio channels failed (snap-back regression)'
+        for cb, ch_no in vp._ch_checks:
+            cb.setChecked(ch_no in (1, 2))
+        vp._selected_chs = [1, 2]
+        # 검출 중지 버튼 존재/기본 비활성 가드
+        if not hasattr(vp, 'btn_ai_stop') or vp.btn_ai_stop.isEnabled():
+            return f'{label}: analysis stop button missing or enabled while idle'
         # 트랜스포트 겹침 금지 — 좁은 창에서 버튼/볼륨이 서로 침범하면 실패
         def _global_rect(w):
             top_left = w.mapToGlobal(w.rect().topLeft())

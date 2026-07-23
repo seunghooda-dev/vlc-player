@@ -3354,6 +3354,10 @@ class RightPanel(QWidget):
                 pass
         if hasattr(self, 'exp_list'):
             self.exp_list.setEnabled(browse_enabled)
+        # 중지 버튼은 분석이 도는 동안만 활성화
+        stop_btn = getattr(self.vp, 'btn_ai_stop', None)
+        if stop_btn:
+            stop_btn.setEnabled(bool(busy))
         black = getattr(self, 'btn_run_black', None)
         audio = getattr(self, 'btn_run_audio', None)
         freeze = getattr(self, 'btn_run_freeze', None)
