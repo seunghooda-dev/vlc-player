@@ -34,6 +34,9 @@ GitHub `seunghooda-dev/vlc-player` (origin/main 직push, v* 태그 → Release �
 - 바탕화면 배포: `update_desktop_release.bat` (빌드→검증→릴리스 폴더 교체→바로가기 자동 갱신).
   실행 중 앱이 있으면 릴리스 폴더 잠김 — 먼저 종료. bat 간 호출은 `%~dp0` 절대 경로 유지.
 - 단일 인스턴스 뮤텍스 `Local\MasterQC_SingleInstance` — 앱 실행 중엔 GUI 스모크 전부 차단.
+- 외부 전달용 암호 패키지: `make_secure_package.ps1` (7-Zip AES-256 + `-mhe=on` 헤더 암호화).
+  암호는 `MASTERQC_ZIP_PW` 환경변수나 실행 시 입력으로만 받는다 — 소스·스크립트·커밋에 넣지 말 것.
+  받는 PC에도 7-Zip 필요(윈도우 탐색기는 AES 아카이브를 못 연다).
 
 ## 16채널 (UHD 마스터)
 
