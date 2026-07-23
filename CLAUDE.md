@@ -33,6 +33,8 @@ GitHub `seunghooda-dev/vlc-player` (origin/main 직push, v* 태그 → Release �
   APP_VERSION은 창 제목·리포트·바로가기 이름의 단일 소스.
 - 바탕화면 배포: `update_desktop_release.bat` (빌드→검증→릴리스 폴더 교체→바로가기 자동 갱신).
   실행 중 앱이 있으면 릴리스 폴더 잠김 — 먼저 종료. bat 간 호출은 `%~dp0` 절대 경로 유지.
+  `package_release.bat`은 패키징 후 타임스탬프 zip을 최신 `KEEP_ZIPS`(기본 3)개만 남기고 정리한다
+  — 최신 alias zip·릴리스 폴더·암호 `.7z`는 건드리지 않는다.
 - **bat 파일에는 한글을 넣지 말 것(ASCII 전용).** `chcp 65001`이 있어도 cmd 파서가 멀티바이트에서
   깨져 **직전 `set` 변수가 빈 값이 되고 한글 조각이 명령으로 실행된다**(2026-07-23 실측 재현).
   주석이 필요하면 영문 `rem`. 한국어 설명은 .py/.ps1/문서에만.

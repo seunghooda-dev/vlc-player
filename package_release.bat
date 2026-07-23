@@ -9,6 +9,8 @@ set "DATA_NAME=MasterQC"
 set "APP_VERSION=V.1.1"
 set "PACKAGE_NAME=%APP_NAME% %APP_VERSION%"
 set "RELEASE_ROOT=release"
+rem How many timestamped release zips to keep. Older ones are pruned after packaging.
+set "KEEP_ZIPS=3"
 set "PACKAGE_DIR=%CD%\%RELEASE_ROOT%\%PACKAGE_NAME%"
 for /f %%T in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-Date -Format yyyyMMdd_HHmmss"') do set "BUILD_STAMP=%%T"
 set "ZIP_PATH=%CD%\%RELEASE_ROOT%\%PACKAGE_NAME%_%BUILD_STAMP%.zip"
@@ -108,6 +110,13 @@ if exist "%PACKAGE_DIR%\backups" rmdir /s /q "%PACKAGE_DIR%\backups"
 echo.
 echo Creating zip package...
 powershell -NoProfile -ExecutionPolicy Bypass -Command "if (Test-Path -LiteralPath '%ZIP_PATH%') { Remove-Item -LiteralPath '%ZIP_PATH%' -Force }; if (Test-Path -LiteralPath '%ZIP_LATEST_PATH%') { Remove-Item -LiteralPath '%ZIP_LATEST_PATH%' -Force }; Compress-Archive -LiteralPath '%PACKAGE_DIR%' -DestinationPath '%ZIP_PATH%' -Force; Copy-Item -LiteralPath '%ZIP_PATH%' -Destination '%ZIP_LATEST_PATH%' -Force"
+if errorlevel 1 goto fail
+
+echo.
+echo Pruning old release zips (keeping newest %KEEP_ZIPS%)...
+rem Only timestamped zips of this package are pruned. The latest-copy alias,
+rem the release folder, and encrypted .7z hand-off packages are never touched.
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem -LiteralPath '%CD%\%RELEASE_ROOT%' -Filter '%PACKAGE_NAME%_*.zip' -File | Sort-Object LastWriteTime -Descending | Select-Object -Skip %KEEP_ZIPS% | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force; Write-Host ('  pruned: ' + $_.Name) }"
 if errorlevel 1 goto fail
 
 echo.
