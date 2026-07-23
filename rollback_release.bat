@@ -3,7 +3,9 @@ chcp 65001 > nul
 setlocal
 cd /d "%~dp0"
 
-set "APP_NAME=MasterQC"
+set "APP_NAME=MasterQC Player"
+rem Data folder name is independent from the EXE name (must match constants.APP_DATA_NAME).
+set "DATA_NAME=MasterQC"
 set "APP_VERSION=V.1.1"
 set "PACKAGE_NAME=%APP_NAME% %APP_VERSION%"
 set "SCRIPT_DIR=%~dp0"
@@ -12,7 +14,7 @@ if exist "%SCRIPT_DIR%%APP_NAME%.exe" (
 ) else (
     set "PACKAGE_DIR=%CD%\release\%PACKAGE_NAME%"
 )
-set "BACKUP_ROOT=%LOCALAPPDATA%\%APP_NAME%\backups\release"
+set "BACKUP_ROOT=%LOCALAPPDATA%\%DATA_NAME%\backups\release"
 set "SELECTED=%~1"
 
 echo ================================================

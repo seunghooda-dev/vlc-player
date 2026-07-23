@@ -3,7 +3,7 @@ constants.py — 색상, 스타일, 경로, 로거
 모든 모듈이 import하는 공통 상수
 """
 """
-MasterQC - PyQt6 완전판
+MasterQC Player - PyQt6 완전판
 파일 탐색 + 비디오 플레이어 + DB + STT + 씬감지 + 검색
 """
 
@@ -44,9 +44,9 @@ BASE_DIR     = APP_DIR
 
 # 표시용 앱 버전 — 창 제목/리포트/바로가기 표기의 단일 소스.
 # 릴리스 시 version_info.txt(EXE 리소스)와 함께 올린다.
-APP_VERSION = "1.1.8"
+APP_VERSION = "1.1.9"
 APP_DATA_NAME = "MasterQC"
-# 개명(MasterQC) 이전 명칭 — 이전 데이터 폴더 마이그레이션과 레거시 경로 탐색에만 사용
+# 개명(MasterQC Player) 이전 명칭 — 이전 데이터 폴더 마이그레이션과 레거시 경로 탐색에만 사용
 PREVIOUS_APP_DATA_NAME = "MXF QC Player V.1.0"
 USER_DATA_DIR_ENV = "MXF_QC_USER_DATA_DIR"
 
@@ -388,7 +388,7 @@ def cache_summary():
 def format_cache_summary(summary=None, max_entries=30):
     summary = summary or cache_summary()
     lines = []
-    lines.append('MasterQC 캐시 상태')
+    lines.append('MasterQC Player 캐시 상태')
     lines.append('=' * 42)
     lines.append(f"위치: {summary.get('root')}")
     lines.append(f"전체 용량: {format_bytes(summary.get('total_bytes', 0))}")

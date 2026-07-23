@@ -1629,7 +1629,7 @@ class RightPanel(QWidget):
             frame_mode = self._frame_mode_label(fps, info.get('df'))
             meta_status, meta_issues = self._metadata_qc_summary(info, fp)
             row = {
-                '앱버전': f'MasterQC v{APP_VERSION}',
+                '앱버전': f'MasterQC Player v{APP_VERSION}',
                 '검수시각': datetime.now().isoformat(timespec='seconds'),
                 'QC상태': badge,
                 '파일명': f.get('name') or p_name,
@@ -1879,7 +1879,7 @@ class RightPanel(QWidget):
         target.parent.mkdir(parents=True, exist_ok=True)
         tmp = target.with_name(f'.{target.name}.{time.time_ns()}.tmp')
         lines = []
-        lines.append(f'MasterQC v{APP_VERSION} - QC 결과 리포트')
+        lines.append(f'MasterQC Player v{APP_VERSION} - QC 결과 리포트')
         lines.append('=' * 64)
         lines.append(f'생성시각: {datetime.now().isoformat(timespec="seconds")}')
         lines.append(f'파일수  : {len(rows)}')
@@ -2337,7 +2337,7 @@ class RightPanel(QWidget):
             if callable(stale_refresh):
                 stale_refresh(all_files, force=True)
             issue_files = self._attention_file_records()
-        lines = ["MasterQC 확인 필요 파일 요약"]
+        lines = ["MasterQC Player 확인 필요 파일 요약"]
         try:
             total = len(self._file_records()) if files is None else None
         except Exception:

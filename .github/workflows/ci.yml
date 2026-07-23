@@ -85,12 +85,12 @@ jobs:
         env:
           MXF_QC_USER_DATA_DIR: ${{ runner.temp }}\mxf_qc_exe
         run: |
-          & "dist\MasterQC\MasterQC.exe" --db-smoke-test
+          & "dist\MasterQC Player\MasterQC Player.exe" --db-smoke-test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & "dist\MasterQC\MasterQC.exe" --settings-smoke-test
+          & "dist\MasterQC Player\MasterQC Player.exe" --settings-smoke-test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Zip onedir package
-        run: Compress-Archive -Path "dist\MasterQC" -DestinationPath "MasterQC-win64.zip"
+        run: Compress-Archive -Path "dist\MasterQC Player" -DestinationPath "MasterQC-win64.zip"
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
@@ -103,4 +103,4 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" "MasterQC-win64.zip" --title "MasterQC ${{ github.ref_name }}" --generate-notes
+        run: gh release create "${{ github.ref_name }}" "MasterQC-win64.zip" --title "MasterQC Player ${{ github.ref_name }}" --generate-notes

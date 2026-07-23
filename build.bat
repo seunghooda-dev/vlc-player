@@ -7,7 +7,7 @@ set "PY=C:\Users\seung\AppData\Local\Python\bin\python.exe"
 if not exist "%PY%" set "PY=python"
 
 echo ================================================
-echo   MasterQC V.1.1 - build desktop executable
+echo   MasterQC Player V.1.1 - build desktop executable
 echo ================================================
 echo.
 
@@ -41,7 +41,7 @@ if not exist "%ProgramFiles%\VideoLAN\VLC\libvlc.dll" (
     --clean ^
     --onedir ^
     --windowed ^
-    --name "MasterQC" ^
+    --name "MasterQC Player" ^
     --icon "assets\mxf_qc_player.ico" ^
     --version-file "version_info.txt" ^
     --add-data "assets;assets" ^
@@ -50,7 +50,7 @@ if not exist "%ProgramFiles%\VideoLAN\VLC\libvlc.dll" (
     main.py
 if errorlevel 1 goto fail
 
-set "DIST_EXE=%CD%\dist\MasterQC\MasterQC.exe"
+set "DIST_EXE=%CD%\dist\MasterQC Player\MasterQC Player.exe"
 if not exist "%DIST_EXE%" (
     echo [error] Built EXE was not found: %DIST_EXE%
     goto fail
@@ -62,7 +62,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "$p = Start-Process -File
 if errorlevel 1 goto fail
 
 echo.
-echo Build complete: dist\MasterQC\MasterQC.exe
+echo Build complete: dist\MasterQC Player\MasterQC Player.exe
 echo Build mode: onedir
 echo Runtime files will be created in the user data folder:
 echo   %LOCALAPPDATA%\MasterQC

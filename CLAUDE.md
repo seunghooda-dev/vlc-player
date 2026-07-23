@@ -1,4 +1,4 @@
-# MasterQC (구 MXF QC Player)
+# MasterQC Player (구 MXF QC Player)
 
 방송용 MXF/MP4/MOV QC 데스크톱 플레이어 — Python/PyQt6 + VLC(재생) + FFmpeg(분석·오디오 믹스).
 GitHub `seunghooda-dev/vlc-player` (origin/main 직push, v* 태그 → Release 자동 생성).
@@ -33,6 +33,11 @@ GitHub `seunghooda-dev/vlc-player` (origin/main 직push, v* 태그 → Release �
   APP_VERSION은 창 제목·리포트·바로가기 이름의 단일 소스.
 - 바탕화면 배포: `update_desktop_release.bat` (빌드→검증→릴리스 폴더 교체→바로가기 자동 갱신).
   실행 중 앱이 있으면 릴리스 폴더 잠김 — 먼저 종료. bat 간 호출은 `%~dp0` 절대 경로 유지.
+- **bat 파일에는 한글을 넣지 말 것(ASCII 전용).** `chcp 65001`이 있어도 cmd 파서가 멀티바이트에서
+  깨져 **직전 `set` 변수가 빈 값이 되고 한글 조각이 명령으로 실행된다**(2026-07-23 실측 재현).
+  주석이 필요하면 영문 `rem`. 한국어 설명은 .py/.ps1/문서에만.
+- 표시 이름(`MasterQC Player`)과 데이터 폴더 이름(`MasterQC`)은 별개다. bat은 `APP_NAME`(EXE·패키지·
+  바로가기)과 `DATA_NAME`(`%LOCALAPPDATA%` 경로)을 분리해 쓴다 — 합치면 백업/롤백이 빈 폴더를 본다.
 - 단일 인스턴스 뮤텍스 `Local\MasterQC_SingleInstance` — 앱 실행 중엔 GUI 스모크 전부 차단.
 - 외부 전달용 암호 패키지: `make_secure_package.ps1` (7-Zip AES-256 + `-mhe=on` 헤더 암호화).
   암호는 `MASTERQC_ZIP_PW` 환경변수나 실행 시 입력으로만 받는다 — 소스·스크립트·커밋에 넣지 말 것.

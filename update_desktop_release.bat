@@ -3,7 +3,9 @@ chcp 65001 > nul
 setlocal
 cd /d "%~dp0"
 
-set "APP_NAME=MasterQC"
+set "APP_NAME=MasterQC Player"
+rem Data folder name is independent from the EXE name (must match constants.APP_DATA_NAME).
+set "DATA_NAME=MasterQC"
 set "APP_VERSION=V.1.1"
 set "PACKAGE_DIR=%CD%\release\%APP_NAME% %APP_VERSION%"
 set "TARGET_EXE=%PACKAGE_DIR%\%APP_NAME%.exe"
@@ -14,7 +16,7 @@ echo   %APP_NAME% %APP_VERSION% - desktop update
 echo ================================================
 echo.
 echo User data is stored outside the release folder:
-echo   %LOCALAPPDATA%\%APP_NAME%
+echo   %LOCALAPPDATA%\%DATA_NAME%
 echo The release folder will contain only program files, tools, README, and licenses.
 
 if exist "%TARGET_EXE%" (

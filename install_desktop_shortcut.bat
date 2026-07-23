@@ -3,7 +3,7 @@ chcp 65001 > nul
 setlocal
 cd /d "%~dp0"
 
-set "APP_NAME=MasterQC"
+set "APP_NAME=MasterQC Player"
 set "APP_VERSION=V.1.1"
 set "PACKAGE_NAME=%APP_NAME% %APP_VERSION%"
 set "TARGET_EXE=%CD%\%APP_NAME%.exe"

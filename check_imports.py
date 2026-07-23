@@ -1252,7 +1252,7 @@ def check_core_logic():
                 },
             ],
         )
-        if 'MasterQC 확인 필요 파일 요약' not in issue_summary_text or '확인 필요 4개' not in issue_summary_text:
+        if 'MasterQC Player 확인 필요 파일 요약' not in issue_summary_text or '확인 필요 4개' not in issue_summary_text:
             errors.append(f"  FAIL issue summary copy header: {issue_summary_text}")
         if 'bad-a.mxf: 블랙 있음 / 블랙 있음 1 / 무음 정상 0 / 프리즈 미분석 / 첫문제 블랙 00:00:04;00' not in issue_summary_text:
             errors.append(f"  FAIL issue summary copy black detail: {issue_summary_text}")
@@ -2818,7 +2818,7 @@ def check_core_logic():
 
 def main():
     print("=" * 55)
-    print("  MasterQC - Import consistency check")
+    print("  MasterQC Player - Import consistency check")
     print("=" * 55)
     all_ok = True
 

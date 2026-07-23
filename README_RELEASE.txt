@@ -1,12 +1,12 @@
-MasterQC V.1.1
-==============
+MasterQC Player V.1.1
+=====================
 
 This is a portable Windows package for broadcast QC playback and inspection
 (MXF, MOV, MP4, and other formats VLC can read).
 
 Quick Start
 -----------
-1. Run "MasterQC.exe".
+1. Run "MasterQC Player.exe".
 2. Use "파일 추가" to add MXF files.
 3. Double-click a file in the list, or select it and press CUE.
 4. Use the Black / Mute tabs for manual QC detection, or press "일괄" in
@@ -22,7 +22,7 @@ Runtime Files
 -------------
 The release folder is for program files only:
 
-- MasterQC.exe
+- MasterQC Player.exe
 - _internal\
 - tools\
 - mxf_qc_player.ico
@@ -32,6 +32,10 @@ The release folder is for program files only:
 User data is stored separately under:
 
 %LOCALAPPDATA%\MasterQC
+
+This folder keeps the shorter name on purpose. The program was renamed to
+MasterQC Player, but the data folder is left unchanged so existing settings,
+QC history, and reports stay in place after the update.
 
 The program creates these files there:
 
@@ -47,7 +51,7 @@ The app folder only needs to be readable. The user data folder must be
 writable. This separation makes future updates safer because replacing the app
 folder does not overwrite operator settings, logs, or QC history.
 
-The package uses a folder-style executable build. Keep MasterQC.exe and
+The package uses a folder-style executable build. Keep MasterQC Player.exe and
 the _internal\ folder together when moving the app to another PC.
 
 On first launch after an older package, if settings.json or archive.db is found
@@ -72,7 +76,7 @@ This package may include FFmpeg tools in the tools\ folder. If they are not
 included, install FFmpeg or place ffmpeg.exe, ffprobe.exe, and ffplay.exe in:
 
 - tools\
-- the same folder as MasterQC.exe
+- the same folder as MasterQC Player.exe
 - or Windows PATH
 
 Logs
@@ -105,7 +109,7 @@ It summarizes:
 - LOCALAPPDATA write access
 - DB/log/tmp/backups/report folder status
 
-For a command-line deployment check, close MasterQC first and run:
+For a command-line deployment check, close MasterQC Player first and run:
 
 preflight_check.bat
 
@@ -117,7 +121,7 @@ icon, and third-party notices.
 
 UI Layout Check
 ---------------
-To verify the main window at common operating sizes, close MasterQC and
+To verify the main window at common operating sizes, close MasterQC Player and
 run:
 
 ui_layout_check.bat
@@ -196,17 +200,17 @@ Deployment Smoke Test
 ---------------------
 For deployment checks, the EXE also supports a no-GUI startup test:
 
-MasterQC.exe --smoke-test
+MasterQC Player.exe --smoke-test
 
 This verifies that the packaged app can start and write its runtime files. A
 stricter dependency check is also available:
 
-MasterQC.exe --runtime-check
+MasterQC Player.exe --runtime-check
 
 The strict check returns a non-zero exit code when VLC, FFmpeg, FFprobe,
 FFplay, or required writable folders are missing.
 
-For a real MXF playback test, close MasterQC first and run:
+For a real MXF playback test, close MasterQC Player first and run:
 
 smoke_mxf_test.bat "C:\path\sample.mxf"
 
@@ -217,11 +221,11 @@ manual/deployment-only and does not run during normal app startup.
 
 The same test can be called directly:
 
-MasterQC.exe --mxf-smoke-test "C:\path\sample.mxf" --play-seconds 5
+MasterQC Player.exe --mxf-smoke-test "C:\path\sample.mxf" --play-seconds 5
 
 Long Playback Stability Test
 ----------------------------
-For long-run playback checks, close MasterQC first and run:
+For long-run playback checks, close MasterQC Player first and run:
 
 stability_mxf_test.bat "C:\path\long_sample.mxf" 1800 30
 
@@ -233,14 +237,14 @@ helper processes were not left behind.
 
 The same test can be called directly:
 
-MasterQC.exe --mxf-stability-test "C:\path\long_sample.mxf" --play-seconds 1800 --check-interval 30
+MasterQC Player.exe --mxf-stability-test "C:\path\long_sample.mxf" --play-seconds 1800 --check-interval 30
 
 Use a sample longer than the requested duration. The stability mode intentionally
 fails when the sample is shorter than the requested playback time.
 
 Broadcast Sample Validation
 ---------------------------
-For a practical sample-by-sample release check, close MasterQC and run:
+For a practical sample-by-sample release check, close MasterQC Player and run:
 
 broadcast_sample_validation.bat "C:\path\sample-folder"
 
@@ -308,8 +312,8 @@ shortcut icon, and runs a runtime check. It does not move or delete user data.
 
 Release ZIPs are written with a timestamped name and a latest-copy alias:
 
-MasterQC V.1.1_YYYYMMDD_HHMMSS.zip
-MasterQC V.1.1.zip
+MasterQC Player V.1.1_YYYYMMDD_HHMMSS.zip
+MasterQC Player V.1.1.zip
 
 Before replacing the development release folder, update_desktop_release.bat
 backs up the current program folder under:
@@ -321,7 +325,7 @@ copy the latest release backup back into the release folder.
 
 Version
 -------
-MasterQC V.1.1
+MasterQC Player V.1.1
 
 The EXE includes Windows file-version metadata. The release update policy is
 documented in UPDATE_POLICY.txt.

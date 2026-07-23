@@ -1,4 +1,4 @@
-# MasterQC Development Workflow
+# MasterQC Player Development Workflow
 
 Use the fast source workflow while editing code. Build the EXE only when the
 change needs to be tested as a packaged app or prepared for release.
@@ -27,10 +27,10 @@ The GitHub Actions CI runs the pytest suite plus the full `check_imports.py` gat
 
 If `ArchiveTagger.spec` exists locally, `dev_check.bat` prints a warning. That
 file is a legacy ignored artifact and is not used by the current build path.
-Current packaged builds are driven by `build.bat` and use the `MasterQC`
+Current packaged builds are driven by `build.bat` and use the `MasterQC Player`
 name.
 
-`dev_run.bat` does not build `dist\MasterQC.exe`. If the packaged EXE is
+`dev_run.bat` does not build `dist\MasterQC Player.exe`. If the packaged EXE is
 already running, close it before starting the source version so the single
 instance guard does not activate the wrong window.
 

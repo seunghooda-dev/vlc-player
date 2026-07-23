@@ -8,7 +8,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$PackageDir = (Join-Path $PSScriptRoot 'release\MasterQC V.1.1'),
+    [string]$PackageDir = (Join-Path $PSScriptRoot 'release\MasterQC Player V.1.1'),
     [string]$OutputDir  = (Join-Path $PSScriptRoot 'release')
 )
 
@@ -52,17 +52,17 @@ if ([string]::IsNullOrWhiteSpace($password)) {
     exit 4
 }
 
-$exePath = Join-Path $PackageDir 'MasterQC.exe'
+$exePath = Join-Path $PackageDir 'MasterQC Player.exe'
 $version = if (Test-Path -LiteralPath $exePath) {
     'v' + ((Get-Item -LiteralPath $exePath).VersionInfo.ProductVersion -replace '\.\d+$', '')
 } else { 'vUNKNOWN' }
 
 $stamp   = Get-Date -Format 'yyyyMMdd_HHmmss'
-$outPath = Join-Path $OutputDir "MasterQC_$($version)_secure_$stamp.7z"
+$outPath = Join-Path $OutputDir "MasterQC Player_$($version)_secure_$stamp.7z"
 if (Test-Path -LiteralPath $outPath) { Remove-Item -LiteralPath $outPath -Force }
 
 Write-Host '================================================'
-Write-Host '  MasterQC - 암호 패키지 생성'
+Write-Host '  MasterQC Player - 암호 패키지 생성'
 Write-Host '================================================'
 Write-Host "  7-Zip : $sevenZip"
 Write-Host "  대상   : $PackageDir"

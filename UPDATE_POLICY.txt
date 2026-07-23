@@ -1,5 +1,5 @@
-MasterQC V.1.1 - Update Policy
-==============================
+MasterQC Player V.1.1 - Update Policy
+=====================================
 
 Goal
 ----
@@ -9,7 +9,7 @@ Program Folder
 --------------
 The release folder contains only files needed to run the program:
 
-- MasterQC.exe
+- MasterQC Player.exe
 - _internal\
 - tools\
 - mxf_qc_player.ico
@@ -31,7 +31,7 @@ The release folder contains only files needed to run the program:
 
 This folder can be replaced during an update.
 
-Keep MasterQC.exe and _internal\ together. The app is packaged this way
+Keep MasterQC Player.exe and _internal\ together. The app is packaged this way
 to avoid one-file temporary extraction issues with native Qt/VLC runtime DLLs.
 
 User Data Folder
@@ -71,16 +71,16 @@ program folder to:
 
 Target PC Update
 ----------------
-1. Close MasterQC.
+1. Close MasterQC Player.
 2. Replace the release folder with the new package folder.
 3. Run preflight_check.bat.
-4. Start MasterQC.exe.
+4. Start MasterQC Player.exe.
 
 Release ZIP files include a build timestamp, for example:
 
-MasterQC V.1.1_20260513_143000.zip
+MasterQC Player V.1.1_20260513_143000.zip
 
-MasterQC V.1.1.zip is also refreshed as the latest-copy alias.
+MasterQC Player V.1.1.zip is also refreshed as the latest-copy alias.
 
 Legacy Data
 -----------
